@@ -1,17 +1,16 @@
 // ================= CONFIGURATION =================
-// 1. YOUR FIREBASE CONFIG: Paste the ENTIRE object from Phase I, Step 2
-// Your web app's Firebase configuration
+// 1. YOUR FIREBASE CONFIG
 const firebaseConfig = {
-  apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co",
-  authDomain: "our-music-player.firebaseapp.com",
-  databaseURL: "https://our-music-player-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "our-music-player",
-  storageBucket: "our-music-player.firebasestorage.app",
-  messagingSenderId: "444208622552",
-  appId: "1:444208622552:web:839ca00a5797f52d1660ad",
-  measurementId: "G-B4GFLNFCLL"
+    apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co",
+    authDomain: "our-music-player.firebaseapp.com",
+    databaseURL: "https://our-music-player-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "our-music-player",
+    storageBucket: "our-music-player.firebasestorage.app",
+    messagingSenderId: "444208622552",
+    appId: "1:444208622552:web:839ca00a5797f52d1660ad"
 };
-// 2. YOUR YOUTUBE DATA API KEY (From Phase I, Step 3)
+
+// 2. YOUR YOUTUBE DATA API KEY
 const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
 
 // Initialize Firebase
@@ -38,7 +37,7 @@ var firstScriptTag = document.getElementsByTagName('script')[0];
 firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
 function onPlayerReady(event) {
-    listenForSync(); // Start listening to Firebase
+    listenForSync(); 
 }
 
 // ================= SEARCH FUNCTIONALITY =================
@@ -51,6 +50,7 @@ async function searchYouTube() {
     const query = document.getElementById('searchInput').value;
     if (!query) return;
 
+    // Fetch call using the YouTube API key
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${query}&type=video&key=${YOUTUBE_API_KEY}`;
 
     try {
@@ -74,7 +74,7 @@ function displayResults(videos) {
 
         const card = document.createElement('div');
         card.className = 'song-card';
-        card.onclick = () => selectSong(videoId); 
+        card.onclick = () => selectSong(videoId, title); // Passes title for debug
 
         card.innerHTML = `
             <img src="${thumbnail}" alt="thumb">
@@ -89,17 +89,25 @@ function displayResults(videos) {
 
 // ================= SYNCING LOGIC =================
 
-function selectSong(videoId) {
+// Added songTitle parameter for easy debugging
+function selectSong(videoId, songTitle) { 
+    console.log(`Attempting to set song in Firebase: ${songTitle} (${videoId})`); // <-- DEBUGGING LINE
+    
     // Send the new video ID to Firebase
     syncRef.update({
         videoId: videoId,
         status: 'play',
         timestamp: Date.now()
+    }).then(() => {
+        console.log("Firebase update succeeded.");
+        document.getElementById('statusText').innerText = `Loading: ${songTitle.substring(0, 30)}...`;
+    }).catch(error => {
+        console.error("Firebase update failed:", error); // <-- CRITICAL DEBUG
+        alert("Sync failed! Check your Firebase Rules/Internet connection.");
     });
 }
 
 function syncAction(action) {
-    // Send the action (play/pause) to Firebase
     syncRef.update({
         status: action,
         timestamp: Date.now()
@@ -119,7 +127,7 @@ function listenForSync() {
         // Sync Play/Pause
         if (data.status === 'play') {
             player.playVideo();
-            document.getElementById('statusText').innerText = "Playing for you & her...";
+            document.getElementById('statusText').innerText = "Playing for Sarthak & Reechita...";
         } else if (data.status === 'pause') {
             player.pauseVideo();
             document.getElementById('statusText').innerText = "Paused.";
