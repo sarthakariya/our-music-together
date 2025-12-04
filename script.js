@@ -339,7 +339,17 @@ function playNext() {
     }
 }
 
-// ================= QUEUE & SEARCH (Collaborative) =================
+function playPrev() {
+    if (queueIndex > 0) {
+        // Anyone can push the previous song command
+        updateFirebase({ queueIndex: queueIndex - 1, status: 'play', seekTime: 0 });
+    } else {
+        // Restart current song if at the beginning
+        updateFirebase({ status: 'play', seekTime: 0 });
+    }
+}
+
+// ================= QUEUE & SEARCH (Collaborative - Fully Unrestricted) =================
 
 dom.search.addEventListener('input', (e) => {
     const q = e.target.value;
