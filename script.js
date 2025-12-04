@@ -22,7 +22,7 @@ const syncRef = database.ref('session');
 let currentQueue = [];
 let currentSongIndex = 0;
 let player;
-let isSeeking = false; // Flag to prevent sync conflicts during manual seeking
+let isSeeking = false; 
 
 const dom = {
     playBtn: document.getElementById('play-btn'),
@@ -34,7 +34,7 @@ const dom = {
     duration: document.getElementById('duration')
 };
 
-// ================= YOUTUBE PLAYER SETUP =================
+// ================= YOUTUBE PLAYER SETUP (Ad Fix Reinforcement) =================
 function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
         height: '100%',
@@ -48,7 +48,8 @@ function onYouTubeIframeAPIReady() {
             'fs': 0,
             'modestbranding': 1,
             'iv_load_policy': 3,
-            'html5': 1 // Forces HTML5 player for better music-only playback
+            'html5': 1, 
+            'autoplay': 0 // Crucial: Never let YouTube control autoplay
         },
         events: { 
             'onReady': onPlayerReady,
@@ -57,6 +58,7 @@ function onYouTubeIframeAPIReady() {
     });
 }
 
+// Load YouTube API script
 var tag = document.createElement('script');
 tag.src = "https://www.youtube.com/iframe_api";
 var firstScriptTag = document.getElementsByTagName('script')[0];
@@ -71,6 +73,20 @@ function onPlayerReady(event) {
 function onPlayerStateChange(event) {
     if (event.data === 0) { // State 0 means ended
         playNextSong();
+    } else if (event.data === 3) { // State 3 means buffering (often an ad)
+        // CRITICAL AD FIX: If one device buffers (ads/latency), enforce sync
+        syncRef.once('value').then(snapshot => {
+            const data = snapshot.val();
+            if (data && data.status === 'play') {
+                // If Firebase says PLAY, but we are BUFFERING, enforce the current position.
+                // This usually forces the player past the ad/buffer lag.
+                if (data.seekTime) {
+                   player.seekTo(data.seekTime, true);
+                }
+                player.playVideo();
+                dom.statusText.innerText = `Re-syncing past lag/ad...`;
+            }
+        });
     }
 }
 
@@ -78,7 +94,8 @@ function playNextSong() {
     if (currentSongIndex < currentQueue.length - 1) {
         updateFirebaseState({
             queueIndex: currentSongIndex + 1,
-            status: 'play'
+            status: 'play',
+            seekTime: 0
         });
     } else {
         updateFirebaseState({
@@ -89,9 +106,8 @@ function playNextSong() {
 
 // ================= TIME AND SEEK LOGIC =================
 
-// Utility to format seconds to M:SS
 function formatTime(seconds) {
-    if (isNaN(seconds)) return '0:00';
+    if (isNaN(seconds) || seconds < 0) return '0:00';
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = Math.floor(seconds % 60);
     return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
@@ -112,20 +128,18 @@ function updateTimeDisplay() {
     }
 }
 
-// Universal function to sync seeking when the user releases the scrub bar
 function seekSync() {
+    isSeeking = false;
     const duration = player.getDuration();
     const seekTime = (dom.seekBar.value / 100) * duration;
     
     // Set the state in Firebase for immediate sync
     updateFirebaseState({
         seekTime: Math.floor(seekTime),
-        timestamp: Date.now() // Use timestamp to force sync update
+        timestamp: Date.now() 
     });
-    isSeeking = false;
 }
 
-// Universal function for quick jump (e.g., skip 10 seconds forward/back)
 function syncSeek(seconds) {
     const newTime = player.getCurrentTime() + seconds;
 
@@ -135,7 +149,7 @@ function syncSeek(seconds) {
     });
 }
 
-// ================= FIREBASE SYNC FUNCTIONS =================
+// ================= FIREBASE SYNC FUNCTIONS (Reinforced) =================
 
 function updateFirebaseState(updates) {
     syncRef.update(updates).catch(error => {
@@ -146,10 +160,9 @@ function updateFirebaseState(updates) {
 
 // CRITICAL UNIVERSAL PLAY/PAUSE CONTROL
 function syncAction(action) {
-    // This updates Firebase, which then triggers listenForSync on all devices
     updateFirebaseState({
         status: action,
-        timestamp: Date.now() // Forces real-time update even if status hasn't changed
+        timestamp: Date.now() 
     });
 }
 
@@ -179,22 +192,21 @@ function listenForSync() {
                 dom.songDisplay.innerText = currentSong.title;
             }
 
-            // 2. Sync Play/Pause (Universal)
+            // 2. Sync Play/Pause (Universal - Real-Time)
             if (data.status === 'play') {
-                player.playVideo();
-                dom.statusText.innerText = `Playing: ${currentSong.title}`;
+                if (player.getPlayerState() !== 1) player.playVideo(); // 1 = playing
+                dom.statusText.innerText = `Playing: ${currentSong.title} | Syncing with Reechita...`;
                 dom.playBtn.style.display = 'none';
                 dom.pauseBtn.style.display = 'block';
-            } else { // pause or other status
-                player.pauseVideo();
-                dom.statusText.innerText = `Paused: ${currentSong ? currentSong.title : 'Ready'}`;
+            } else { 
+                if (player.getPlayerState() === 1) player.pauseVideo(); 
+                dom.statusText.innerText = `Paused: ${currentSong.title}`;
                 dom.playBtn.style.display = 'block';
                 dom.pauseBtn.style.display = 'none';
             }
             
-            // 3. Sync Seek Position (Universal)
+            // 3. Sync Seek Position (Universal - Only seek if needed)
             if (data.seekTime !== undefined && Math.abs(player.getCurrentTime() - data.seekTime) > 3) {
-                 // Only seek if difference is more than 3 seconds to avoid constant syncing
                  player.seekTo(data.seekTime, true);
                  dom.statusText.innerText = `Seeking to ${formatTime(data.seekTime)}...`;
             }
@@ -202,11 +214,9 @@ function listenForSync() {
     });
 }
 
-
-// ================= (REST OF SEARCH/QUEUE/DRAG LOGIC IS THE SAME) =================
+// ================= (REST OF SEARCH/QUEUE/DRAG LOGIC REMAINS BELOW) =================
 
 async function searchYouTube() {
-    // ... (Your search function code here, no changes needed) ...
     const query = document.getElementById('searchInput').value;
     if (!query) return;
 
@@ -257,6 +267,7 @@ function addToQueue(videoId, title, thumbnail) {
     if (currentQueue.length === 0) {
         updates.queueIndex = 0;
         updates.status = 'play';
+        updates.seekTime = 0;
     }
     
     updateFirebaseState(updates);
@@ -267,7 +278,7 @@ function playSongFromQueue(index) {
         updateFirebaseState({
             queueIndex: index,
             status: 'play',
-            seekTime: 0 // Reset seek time when starting a new song
+            seekTime: 0 
         });
     }
 }
@@ -299,7 +310,7 @@ function renderQueue() {
     setupDragDrop();
 }
 
-// ... (REST OF DRAG AND DROP LOGIC IS THE SAME AS PREVIOUS VERSION) ...
+// --- DRAG AND DROP LOGIC (Unchanged and stable) ---
 
 let draggedItem = null;
 
