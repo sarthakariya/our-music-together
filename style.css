@@ -1,3 +1,7 @@
+/*
+ * DARK THEME & ADVANCED GLASSMORPHISM STYLES
+ */
+
 body {
     margin: 0;
     padding: 0;
@@ -5,34 +9,38 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    background: linear-gradient(45deg, #a18cd1 0%, #fbc2eb 100%);
+    /* Deep Space Gradient for a premium dark look */
+    background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
     font-family: 'Segoe UI', sans-serif;
-    color: white;
+    color: #E0E0E0; /* Light gray text for readability */
 }
 
 .main-container {
     display: flex;
-    gap: 20px;
-    height: 80vh;
+    gap: 30px;
+    height: 90vh;
     width: 90%;
-    max-width: 1000px;
+    max-width: 1200px;
+    padding: 20px;
 }
 
 .glass-panel {
-    background: rgba(255, 255, 255, 0.2);
-    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-    backdrop-filter: blur(10px);
+    background: rgba(40, 40, 70, 0.4); /* Darker, less transparent glass */
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); /* Stronger shadow */
+    backdrop-filter: blur(15px);
     border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    padding: 20px;
+    border: 1px solid rgba(100, 100, 150, 0.3);
+    padding: 30px;
     display: flex;
     flex-direction: column;
+    transition: all 0.3s ease-out; /* Smooth transitions */
 }
 
 .player-panel {
     flex: 1;
+    min-width: 350px;
     text-align: center;
-    justify-content: center;
+    justify-content: space-between;
 }
 
 .search-panel {
@@ -40,88 +48,186 @@ body {
     overflow: hidden;
 }
 
+h1 {
+    font-size: 2.5em;
+    font-weight: 500;
+    color: #fbc2eb; /* Romantic accent color */
+    text-shadow: 0 0 10px rgba(251, 194, 235, 0.5);
+    margin-bottom: 5px;
+}
+
+p {
+    color: #B0B0B0;
+    margin-top: 0;
+}
+
 #player-container {
     border-radius: 15px;
     overflow: hidden;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
     margin: 20px 0;
     height: 250px;
 }
 
+/* --- Controls & Input --- */
 .search-box {
     display: flex;
     gap: 10px;
     margin-bottom: 20px;
+    position: relative;
 }
 
 input {
     flex: 1;
-    padding: 12px;
+    padding: 12px 20px;
     border-radius: 50px;
     border: none;
-    background: rgba(255,255,255,0.9);
+    background: rgba(60, 60, 100, 0.7); /* Darker input field */
+    color: #E0E0E0;
     outline: none;
+    transition: background 0.3s, box-shadow 0.3s;
+}
+
+input:focus {
+    background: rgba(70, 70, 120, 0.9);
+    box-shadow: 0 0 10px rgba(251, 194, 235, 0.3);
 }
 
 button {
     padding: 10px 20px;
     border-radius: 50px;
     border: none;
-    background: #ff758c;
+    background: #ff758c; /* Pink accent */
     color: white;
     cursor: pointer;
     font-weight: bold;
-    transition: 0.2s;
+    transition: 0.2s ease-in-out;
 }
 
-button:hover { background: #ff7eb3; }
+button:hover {
+    background: #ff7eb3;
+    transform: scale(1.05) translateY(-2px);
+    box-shadow: 0 5px 15px rgba(255, 117, 140, 0.5);
+}
 
-.results-list {
-    overflow-y: auto; 
+.btn-control {
+    font-size: 20px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    margin: 0 15px;
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+/* --- Search Results & Queue List --- */
+
+.results-list, .queue-list {
+    overflow-y: auto;
     flex: 1;
-    padding-right: 5px;
+    padding-right: 10px;
+    margin-top: 10px;
 }
 
-.results-list::-webkit-scrollbar { width: 5px; }
-.results-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.5); border-radius: 10px; }
+/* Custom Scrollbar for Advanced Look */
+.results-list::-webkit-scrollbar, .queue-list::-webkit-scrollbar { width: 8px; }
+.results-list::-webkit-scrollbar-thumb, .queue-list::-webkit-scrollbar-thumb { 
+    background: #505080; 
+    border-radius: 10px; 
+}
+.results-list::-webkit-scrollbar-track, .queue-list::-webkit-scrollbar-track { 
+    background: rgba(0, 0, 0, 0.2); 
+}
 
+/* Song Card Styling */
 .song-card {
     display: flex;
     align-items: center;
-    gap: 10px;
-    background: rgba(0,0,0,0.2);
+    gap: 15px;
+    background: rgba(50, 50, 90, 0.3);
     padding: 10px;
     border-radius: 10px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     cursor: pointer;
-    transition: 0.2s;
+    transition: background 0.3s, transform 0.2s;
+    user-select: none; /* Helps with drag */
 }
 
 .song-card:hover {
-    background: rgba(255,255,255,0.3);
-    transform: scale(1.02);
+    background: rgba(70, 70, 120, 0.5);
+    transform: translateX(5px);
 }
 
 .song-card img {
-    width: 60px;
-    height: 45px;
+    width: 70px;
+    height: 50px;
     border-radius: 5px;
     object-fit: cover;
 }
 
 .song-info h4 {
     margin: 0;
-    font-size: 14px;
+    font-size: 16px;
+    color: white;
+}
+.song-info p {
+    font-size: 12px;
+    color: #A0A0A0;
+}
+
+/* Queue Specific Styles */
+.queue-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 15px;
+    background: rgba(60, 60, 100, 0.5);
+    border-radius: 10px;
+    margin-bottom: 5px;
+    cursor: grab;
+    border-left: 5px solid #ff758c; /* Accent bar */
+    transition: background 0.3s;
+}
+
+.queue-item:hover {
+    background: rgba(70, 70, 120, 0.7);
+}
+
+.queue-index {
+    font-weight: bold;
+    color: #fbc2eb;
+    margin-right: 15px;
+    width: 20px;
+}
+
+.queue-info {
+    flex-grow: 1;
+    font-size: 16px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 200px;
 }
 
-.btn-control {
-    font-size: 20px;
-    width: 50px;
+.currently-playing {
+    border-left: 5px solid #4CAF50; /* Green highlight for current song */
+    animation: pulseGlow 1.5s infinite alternate;
+}
+
+.drag-placeholder {
+    border: 2px dashed #ff758c;
     height: 50px;
-    border-radius: 50%;
-    margin: 0 10px;
+    margin-bottom: 5px;
+    border-radius: 10px;
+}
+
+/* Advanced Animations */
+@keyframes pulseGlow {
+    from { box-shadow: 0 0 5px rgba(76, 175, 80, 0.7); }
+    to { box-shadow: 0 0 20px rgba(76, 175, 80, 0.9); }
+}
+
+.status {
+    margin-top: 15px;
+    font-style: italic;
+    color: #fbc2eb;
 }
