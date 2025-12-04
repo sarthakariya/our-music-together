@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sarthak & Reechita's Sync Player</title>
+    <title>Sarthak & Reechita's Sync Music Player</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
-    
     <link rel="stylesheet" href="style.css"> 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
@@ -15,15 +14,25 @@
     <div class="main-container">
         <div class="glass-panel player-panel">
             <h1>Sarthak & Reechita</h1>
-            <p>Connected <i class="fa-solid fa-link"></i></p>
+            <p>Real-Time Sync Activated <i class="fa-solid fa-link"></i></p>
             
-            <div id="player-container">
+            <div id="player-container" style="display: none;"> 
                 <div id="player"></div>
             </div>
 
+            <div id="current-song-display">Loading...</div>
+
+            <div class="seek-container">
+                <span id="current-time">0:00</span>
+                <input type="range" id="seek-bar" value="0" min="0" max="100" onmouseup="seekSync()" ontouchend="seekSync()">
+                <span id="duration">0:00</span>
+            </div>
+
             <div class="controls">
-                <button class="btn-control" onclick="syncAction('play')"><i class="fa-solid fa-play"></i></button>
-                <button class="btn-control" onclick="syncAction('pause')"><i class="fa-solid fa-pause"></i></button>
+                <button class="btn-control" onclick="syncSeek(-10)"><i class="fa-solid fa-backward-step"></i></button>
+                <button class="btn-control" onclick="syncAction('play')" id="play-btn"><i class="fa-solid fa-play"></i></button>
+                <button class="btn-control" onclick="syncAction('pause')" id="pause-btn" style="display: none;"><i class="fa-solid fa-pause"></i></button>
+                <button class="btn-control" onclick="syncSeek(10)"><i class="fa-solid fa-forward-step"></i></button>
             </div>
             <div id="statusText" class="status">Waiting for a song...</div>
         </div>
@@ -44,13 +53,12 @@
             </div>
 
             <div id="results-container" class="results-list">
-                </div>
+            </div>
         </div>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-database-compat.js"></script>
-    
     <script src="script.js"></script>
 </body>
 </html>
