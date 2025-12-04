@@ -103,6 +103,7 @@ body {
     border: 5px solid var(--primary);
     background-size: cover;
     background-position: center;
+    background-repeat: no-repeat;
 }
 
 @keyframes rotate {
@@ -142,7 +143,6 @@ body {
 }
 
 #seek-bar {
-    /* (Keep Seek Bar Styles) */
     flex-grow: 1;
     -webkit-appearance: none;
     appearance: none;
@@ -163,6 +163,16 @@ body {
     transition: background 0.3s;
 }
 
+#seek-bar::-moz-range-thumb {
+    width: 15px;
+    height: 15px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--accent);
+    border: none;
+    cursor: pointer;
+}
+
 .playback-buttons {
     display: flex;
     justify-content: center;
@@ -180,6 +190,9 @@ body {
     cursor: pointer;
     transition: all 0.2s;
     box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-ctrl:hover {
@@ -288,6 +301,7 @@ body {
     height: 40px;
     border-radius: 5px;
     margin-right: 10px;
+    object-fit: cover;
 }
 
 .song-meta h4 {
@@ -374,3 +388,9 @@ body {
     animation: spin 1s linear infinite;
     margin-bottom: 20px;
 }
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
