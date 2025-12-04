@@ -83,6 +83,9 @@ function updateFirebase(updates) {
 }
 
 
+
+
+
 // ================= CORE SYNC LOGIC =================
 
 // MASTER: Pushes its current time and status (needed for the Ad Guard)
@@ -164,7 +167,9 @@ function syncPlayerState(data) {
     if (player.getVideoData().video_id !== song.videoId) {
         player.loadVideoById(song.videoId);
         dom.title.innerText = song.title;
-        dom.art.style.backgroundImage = `url('${song.thumbnail}')`;
+        if (dom.art) {
+            dom.art.style.backgroundImage = `url('${song.thumbnail}')`;
+        }
     }
 
     // 2. AD GUARD CHECK (Only the Master runs this check)
@@ -191,10 +196,14 @@ function syncPlayerState(data) {
     // Force play/pause
     if (serverStatus === 'play' && myState !== 1) {
         player.playVideo();
-        dom.disc.style.animationPlayState = 'running';
+        if (dom.disc) {
+            dom.disc.style.animationPlayState = 'running';
+        }
     } else if (serverStatus === 'pause' && myState === 1) {
         player.pauseVideo();
-        dom.disc.style.animationPlayState = 'paused';
+        if (dom.disc) {
+            dom.disc.style.animationPlayState = 'paused';
+        }
     }
     
     // 4. Update play/pause button icon 
@@ -204,6 +213,9 @@ function syncPlayerState(data) {
         dom.playBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
     }
 }
+
+
+
 
 
 // MASTER AD GUARD FUNCTION: ONLY monitors the Master player's buffering state
@@ -233,8 +245,13 @@ function checkMasterLag() {
         dom.overlay.classList.add('active');
         dom.msg.innerText = "AD DETECTED / BUFFERING";
         
-        dom.disc.style.animationPlayState = 'paused';
-        document.getElementById('sync-timer').innerText = secondsRemaining;
+        if (dom.disc) {
+            dom.disc.style.animationPlayState = 'paused';
+        }
+        const syncTimerEl = document.getElementById('sync-timer');
+        if (syncTimerEl) {
+            syncTimerEl.innerText = secondsRemaining;
+        }
 
     } else {
         // Clear shield if Master is no longer stuck
@@ -271,13 +288,19 @@ function removeStalePlayers() {
 }
 
 
+
+
+
 // ================= COLLABORATIVE CONTROLS (FULL EQUAL CONTROL) =================
 
 function updateLagUI() {
     if (lagStartTime) {
         const timeElapsed = Date.now() - lagStartTime;
         const secondsElapsed = Math.floor(timeElapsed / 1000);
-        document.getElementById('lag-status').innerText = `Lag duration: ${secondsElapsed} seconds`;
+        const lagStatusEl = document.getElementById('lag-status');
+        if (lagStatusEl) {
+            lagStatusEl.innerText = `Lag duration: ${secondsElapsed} seconds`;
+        }
     }
 }
 
@@ -309,8 +332,14 @@ function togglePlay() {
     // 1. Local action (smooth UI)
     if (isPlaying) {
         player.pauseVideo();
+        if (dom.disc) {
+            dom.disc.style.animationPlayState = 'paused';
+        }
     } else {
         player.playVideo();
+        if (dom.disc) {
+            dom.disc.style.animationPlayState = 'running';
+        }
     }
 
     // 2. Network action (sync all players)
@@ -383,7 +412,7 @@ async function searchYouTube(q) {
     data.items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'song-item';
-        const safeTitle = item.snippet.title.replace(/'/g, "\\'");
+        const safeTitle = item.snippet.title.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         
         div.innerHTML = `
             <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
@@ -460,7 +489,10 @@ function switchTab(t) {
 
 // UI HELPERS
 dom.seekBar.addEventListener('change', () => {
-    const time = (dom.seekBar.value / 100) * player.getDuration();
+    if (!player) return;
+    const d = player.getDuration();
+    if (!d) return;
+    const time = (dom.seekBar.value / 100) * d;
     
     // 1. Local action
     player.seekTo(time, true);
@@ -468,6 +500,7 @@ dom.seekBar.addEventListener('change', () => {
     // 2. Network action
     updateFirebase({ seekTime: time });
 });
+
 function updateProgress() {
     if (!player) return;
     const c = player.getCurrentTime();
@@ -478,8 +511,10 @@ function updateProgress() {
         dom.dur.innerText = formatTime(d);
     }
 }
+
 function formatTime(s) {
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
     return `${m}:${sec < 10 ? '0' : ''}${sec}`;
 }
+
