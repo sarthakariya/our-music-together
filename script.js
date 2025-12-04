@@ -1,13 +1,16 @@
 // ================= CONFIGURATION =================
 // 1. YOUR FIREBASE CONFIG: Paste the ENTIRE object from Phase I, Step 2
+// Your web app's Firebase configuration
 const firebaseConfig = {
-    apiKey: "PASTE_FIREBASE_API_KEY", 
-    authDomain: "PASTE_PROJECT_ID.firebaseapp.com",
-    databaseURL: "PASTE_DATABASE_URL",
-    projectId: "PASTE_PROJECT_ID",
-    appId: "NUMBERS"
+  apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co",
+  authDomain: "our-music-player.firebaseapp.com",
+  databaseURL: "https://our-music-player-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "our-music-player",
+  storageBucket: "our-music-player.firebasestorage.app",
+  messagingSenderId: "444208622552",
+  appId: "1:444208622552:web:839ca00a5797f52d1660ad",
+  measurementId: "G-B4GFLNFCLL"
 };
-
 // 2. YOUR YOUTUBE DATA API KEY (From Phase I, Step 3)
 const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
 
