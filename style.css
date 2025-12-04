@@ -141,3 +141,39 @@ input[type=range]::-webkit-slider-thumb {
     .search-bar { background: rgba(255,255,255,0.05); margin: 10px; border-radius: 10px !important; }
     .list-wrapper { border-radius: 20px 20px 0 0; background: rgba(20,20,25,0.5); }
 }
+
+/* ADD THIS TO YOUR EXISTING style.css */
+
+:root {
+    /* Updated accent colors for Love Mode */
+    --primary: #9b59b6; /* Soft Purple */
+    --accent: #ff4757;  /* Deep Pink for highlighs/love */
+    --glass: rgba(25, 20, 30, 0.7);
+    --border: rgba(255, 255, 255, 0.1);
+    --text: #ffffff;
+}
+
+/* Updated controls for visual feedback */
+.btn-ctrl.main { 
+    background: linear-gradient(135deg, var(--primary), var(--accent)); 
+    box-shadow: 0 0 25px rgba(255, 71, 87, 0.6); 
+}
+.btn-ctrl:active { 
+    transform: scale(0.9); 
+    background: rgba(255, 255, 255, 0.1); 
+}
+
+/* Sync Shield enhancements */
+.loader-content h2 { 
+    color: var(--accent); 
+    font-family: 'Orbitron'; 
+    letter-spacing: 2px;
+}
+.spinner {
+    border-top: 4px solid var(--accent); /* Spinner uses pink accent */
+}
+
+/* Queue active song highlight */
+.song-item:hover { 
+    background: rgba(255, 71, 87, 0.1); /* Soft pink hover */
+}
