@@ -16,7 +16,7 @@ const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
-const syncRef = database.ref('session'); // Changed ref name to 'session' for better structure
+const syncRef = database.ref('session'); // CRITICAL: This is the new reference for the queue
 
 // ================= GLOBAL STATE =================
 let currentQueue = [];
@@ -32,10 +32,16 @@ function onYouTubeIframeAPIReady() {
         playerVars: { 'playsinline': 1, 'controls': 0, 'rel': 0 },
         events: { 
             'onReady': onPlayerReady,
-            'onStateChange': onPlayerStateChange // Crucial for auto-play next song
+            'onStateChange': onPlayerStateChange 
         }
     });
 }
+
+// Load YouTube API script
+var tag = document.createElement('script');
+tag.src = "https://www.youtube.com/iframe_api";
+var firstScriptTag = document.getElementsByTagName('script')[0];
+firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
 function onPlayerReady(event) {
     listenForSync(); 
@@ -49,14 +55,12 @@ function onPlayerStateChange(event) {
 }
 
 function playNextSong() {
-    // Only the user currently playing (the one whose browser triggered the 'ended' event) should update Firebase
     if (currentSongIndex < currentQueue.length - 1) {
         updateFirebaseState({
             queueIndex: currentSongIndex + 1,
             status: 'play'
         });
     } else {
-        // Queue ended
         updateFirebaseState({
             status: 'pause'
         });
@@ -67,37 +71,41 @@ function playNextSong() {
 
 // Writes a subset of state to Firebase
 function updateFirebaseState(updates) {
-    syncRef.update(updates);
+    syncRef.update(updates).catch(error => {
+        console.error("Firebase update failed:", error); 
+        document.getElementById('statusText').innerText = "ERROR: Sync failed! Check database rules.";
+    });
 }
 
 function listenForSync() {
     syncRef.on('value', (snapshot) => {
         const data = snapshot.val();
-        if (!data) {
+        
+        if (!data || !data.queue) {
             // Initialize the state if it doesn't exist
-            updateFirebaseState({
-                queue: [],
-                queueIndex: 0,
-                status: 'pause'
-            });
+            if (!data) {
+                 updateFirebaseState({ queue: [], queueIndex: 0, status: 'pause' });
+            }
+            document.getElementById('statusText').innerText = "Queue Empty. Search for music!";
+            renderQueue(); 
             return;
         }
 
-        currentQueue = data.queue || [];
-        currentSongIndex = data.queueIndex || 0;
+        currentQueue = data.queue;
+        currentSongIndex = data.queueIndex;
 
-        renderQueue(); // Update UI for the queue list
+        renderQueue(); 
 
         const currentSong = currentQueue[currentSongIndex];
         const statusText = document.getElementById('statusText');
 
         if (currentSong && player) {
-            // Load the new video ID if it's different
+            // CRITICAL: Load the new video ID if it's different
             if (player.getVideoData().video_id !== currentSong.videoId) {
                 player.loadVideoById(currentSong.videoId);
             }
 
-            // Sync Play/Pause
+            // CRITICAL: Sync Play/Pause status
             if (data.status === 'play') {
                 player.playVideo();
                 statusText.innerText = `Playing: ${currentSong.title} | Syncing with Reechita...`;
@@ -105,8 +113,6 @@ function listenForSync() {
                 player.pauseVideo();
                 statusText.innerText = `Paused: ${currentSong.title}`;
             }
-        } else {
-            statusText.innerText = "Queue Empty. Search for music!";
         }
     });
 }
@@ -117,22 +123,19 @@ function handleEnter(e) {
     if(e.key === 'Enter') searchYouTube();
 }
 
-// Function to add a song to the end of the queue
-function addToQueue(videoId, title, thumbnail) {
-    const newSong = { videoId, title, thumbnail, id: Date.now() }; // Use timestamp as unique ID
+async function searchYouTube() {
+    const query = document.getElementById('searchInput').value;
+    if (!query) return;
 
-    const newQueue = [...currentQueue, newSong];
-    
-    updateFirebaseState({
-        queue: newQueue
-    });
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${query}&type=video&key=${YOUTUBE_API_KEY}`;
 
-    // If the queue was empty, start playing the first song
-    if (currentQueue.length === 0) {
-        updateFirebaseState({
-            queueIndex: 0,
-            status: 'play'
-        });
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        displayResults(data.items);
+    } catch (error) {
+        console.error("Error searching:", error);
+        document.getElementById('results-container').innerHTML = `<p style="color: #ff4d4d;">Search failed. Check your API key or quota!</p>`;
     }
 }
 
@@ -148,7 +151,6 @@ function displayResults(videos) {
         if (videoId) {
             const card = document.createElement('div');
             card.className = 'song-card';
-            // Click to add to the queue!
             card.onclick = () => addToQueue(videoId, title, thumbnail); 
 
             card.innerHTML = `
@@ -163,7 +165,23 @@ function displayResults(videos) {
     });
 }
 
-// Function to play a song directly from the queue (on click)
+// Function to add a song to the end of the queue
+function addToQueue(videoId, title, thumbnail) {
+    const newSong = { videoId, title, thumbnail, id: Date.now() }; 
+    const newQueue = [...currentQueue, newSong];
+    
+    let updates = { queue: newQueue };
+    
+    // If the queue was empty, start playing the first song
+    if (currentQueue.length === 0) {
+        updates.queueIndex = 0;
+        updates.status = 'play';
+    }
+    
+    updateFirebaseState(updates);
+}
+
+// Function to play a song directly from the queue (on double-click)
 function playSongFromQueue(index) {
     if (index >= 0 && index < currentQueue.length) {
         updateFirebaseState({
@@ -188,7 +206,7 @@ function renderQueue() {
         item.className = `queue-item ${index === currentSongIndex ? 'currently-playing' : ''}`;
         item.draggable = true;
         item.setAttribute('data-index', index);
-        item.ondblclick = () => playSongFromQueue(index); // Double-click to play
+        item.ondblclick = () => playSongFromQueue(index); 
 
         item.innerHTML = `
             <span class="queue-index">${index + 1}</span>
@@ -198,7 +216,6 @@ function renderQueue() {
         container.appendChild(item);
     });
 
-    // Re-initialize drag handlers every time the queue renders
     setupDragDrop();
 }
 
@@ -208,7 +225,6 @@ let draggedItem = null;
 
 function setupDragDrop() {
     const items = document.querySelectorAll('.queue-item');
-    const container = document.getElementById('queue-container');
 
     items.forEach(item => {
         item.addEventListener('dragstart', handleDragStart);
@@ -230,19 +246,16 @@ function handleDragOver(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     
-    // Simple visual placeholder logic
     if (this !== draggedItem) {
-        const rect = this.getBoundingClientRect();
-        const midpoint = rect.y + rect.height / 2;
-        const insertBefore = e.clientY < midpoint;
-
-        // Remove placeholder from other elements
         document.querySelectorAll('.drag-placeholder').forEach(p => p.remove());
 
         const placeholder = document.createElement('div');
         placeholder.className = 'drag-placeholder';
 
-        if (insertBefore) {
+        const rect = this.getBoundingClientRect();
+        const midpoint = rect.y + rect.height / 2;
+        
+        if (e.clientY < midpoint) {
             this.parentNode.insertBefore(placeholder, this);
         } else {
             this.parentNode.insertBefore(placeholder, this.nextSibling);
@@ -260,12 +273,19 @@ function handleDrop(e) {
 
     if (draggedItem !== this) {
         const fromIndex = parseInt(draggedItem.getAttribute('data-index'));
-        let toIndex = parseInt(this.getAttribute('data-index'));
         
-        // Adjust toIndex based on insertion point (placeholder position)
-        const rect = this.getBoundingClientRect();
+        let targetElement = this;
+        // Check if dropping on a placeholder
+        if(targetElement.classList.contains('drag-placeholder')) {
+             targetElement = targetElement.previousElementSibling || targetElement.nextElementSibling;
+        }
+
+        let toIndex = Array.from(targetElement.parentNode.children).indexOf(targetElement);
+        
+        // Check if we dropped below the midpoint, meaning we move AFTER the target
+        const rect = targetElement.getBoundingClientRect();
         const midpoint = rect.y + rect.height / 2;
-        if (e.clientY > midpoint) {
+        if (e.clientY > midpoint && targetElement === this) {
             toIndex++; 
         }
 
@@ -282,29 +302,28 @@ function handleDragEnd() {
 
 // Function to perform the actual queue reordering in the global state and Firebase
 function rearrangeQueue(fromIndex, toIndex) {
-    const movedItem = currentQueue.splice(fromIndex, 1)[0];
+    const newQueue = [...currentQueue];
+    const movedItem = newQueue.splice(fromIndex, 1)[0];
     
-    // Correct the 'toIndex' if we are moving the item backwards
+    // Adjust toIndex based on insertion point
     if (toIndex > fromIndex) toIndex--;
 
-    currentQueue.splice(toIndex, 0, movedItem);
+    newQueue.splice(toIndex, 0, movedItem);
 
     let newCurrentIndex = currentSongIndex;
     
-    // If the song playing was moved, update its index
+    // Logic to ensure the 'currently playing' index follows the song if it moves
     if (fromIndex === currentSongIndex) {
         newCurrentIndex = toIndex;
-    } else if (fromIndex < currentSongIndex && toIndex >= currentSongIndex) {
-        // Song moved from before to after the current song
+    } else if (fromIndex < currentSongIndex && toIndex > currentSongIndex) {
         newCurrentIndex--;
     } else if (fromIndex > currentSongIndex && toIndex <= currentSongIndex) {
-        // Song moved from after to before the current song
         newCurrentIndex++;
     }
 
     // Push the updated queue and index to Firebase
     updateFirebaseState({
-        queue: currentQueue,
+        queue: newQueue,
         queueIndex: newCurrentIndex
     });
 }
