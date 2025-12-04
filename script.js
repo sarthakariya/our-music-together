@@ -9,7 +9,7 @@ const firebaseConfig = {
 };
 
 // 2. YOUR YOUTUBE DATA API KEY (From Phase I, Step 3)
-const YOUTUBE_API_KEY = "PASTE_YOUR_YOUTUBE_DATA_API_KEY_HERE";
+const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
 
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
