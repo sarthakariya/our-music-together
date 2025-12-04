@@ -19,17 +19,17 @@ let player;
 let queue = [];
 let queueIndex = 0;
 let isDragging = false;
-let syncInterval;
+let myPlayerState = -1; // -1 unstarted, 1 playing, 2 paused, 3 buffering
 
 const dom = {
+    blocker: document.getElementById('sync-blocker'),
     disc: document.getElementById('music-disc'),
     discArt: document.querySelector('.vinyl-center'),
     title: document.getElementById('current-song-title'),
-    status: document.getElementById('statusText'),
     playBtn: document.getElementById('play-pause-btn'),
     seekBar: document.getElementById('seek-bar'),
-    currentTime: document.getElementById('current-time'),
-    duration: document.getElementById('duration'),
+    currTime: document.getElementById('current-time'),
+    durTime: document.getElementById('duration'),
     searchInput: document.getElementById('searchInput'),
     resultsList: document.getElementById('results-list'),
     queueList: document.getElementById('queue-list'),
@@ -47,69 +47,33 @@ function onYouTubeIframeAPIReady() {
         events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
     });
 }
-// Load API
 var tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api";
 document.body.appendChild(tag);
 
 function onPlayerReady() {
     listenForSync();
     setInterval(updateProgress, 500);
-    // AD/SYNC ENFORCER: Checks every 2 seconds if we are desynced
-    setInterval(enforceSync, 2000);
 }
 
-// ================= LOGIC: AD HANDLING & SYNC ENFORCEMENT =================
+// ================= AD & SYNC LOGIC (THE FIX) =================
 
 function onPlayerStateChange(e) {
-    if (e.data === 0) { // Song Ended
-        playNext();
-    } 
-    else if (e.data === 3) { // Buffering (AD detected)
-        dom.statusText.innerText = "Buffering/Ad detected - Waiting to sync...";
-        // We don't pause the other person, but we prepare to jump when we are back
-    }
-}
-
-// This function forces your player to jump to the Firebase time if you lag behind (e.g., after an ad)
-function enforceSync() {
-    if (!player || !queue.length) return;
+    myPlayerState = e.data;
     
-    syncRef.once('value').then(snap => {
-        const data = snap.val();
-        if (data && data.status === 'play') {
-            const serverTime = data.seekTime + ((Date.now() - data.timestamp) / 1000);
-            const myTime = player.getCurrentTime();
-
-            // If we are more than 3 seconds off, FORCE JUMP
-            if (Math.abs(myTime - serverTime) > 3) {
-                console.log("Desync detected (Ad? Lag?). Forcing jump.");
-                player.seekTo(serverTime, true);
-                player.playVideo();
-            }
-        }
-    });
-}
-
-// ================= LOGIC: PLAYBACK & QUEUE =================
-
-function playNext() {
-    // Remove the finished song from the queue visually and logically
-    if (queue.length > 0) {
-        // queue.shift(); // Optional: Remove from array if you want it gone forever
-        // For now, we just move index
-        if (queueIndex < queue.length - 1) {
-            updateFirebase({ queueIndex: queueIndex + 1, status: 'play', seekTime: 0 });
-        } else {
-            updateFirebase({ status: 'pause' }); // End of playlist
-        }
+    // 0 = Ended
+    if (e.data === 0) playNext();
+    
+    // 3 = Buffering (Often Ads) OR -1 (Unstarted/Ad)
+    if (e.data === 3 || e.data === -1) {
+        // I am buffering/lagging. Tell everyone to WAIT.
+        updateFirebase({ isBuffering: true });
+    } else if (e.data === 1) {
+        // I am playing again. Tell everyone I'm ready.
+        updateFirebase({ isBuffering: false });
     }
 }
 
-function updateFirebase(updates) {
-    updates.timestamp = Date.now();
-    syncRef.update(updates);
-}
-
+// The heart of the sync
 function listenForSync() {
     syncRef.on('value', snap => {
         const data = snap.val();
@@ -120,45 +84,63 @@ function listenForSync() {
         
         renderQueueUI();
 
+        // 1. AD/BUFFER SHIELD LOGIC
+        // If ANYONE is buffering, show shield to EVERYONE
+        if (data.isBuffering) {
+            dom.blocker.classList.add('active');
+            if (myPlayerState === 1) player.pauseVideo(); // Pause me if I'm ahead
+        } else {
+            dom.blocker.classList.remove('active');
+        }
+
         if (queue.length > 0) {
             const song = queue[queueIndex];
-            
-            // 1. Sync Song Data
+
+            // 2. VIDEO ID
             if (player.getVideoData().video_id !== song.videoId) {
                 player.loadVideoById(song.videoId);
                 dom.title.innerText = song.title;
                 dom.discArt.style.backgroundImage = `url('${song.thumbnail}')`;
             }
 
-            // 2. Sync Status
-            if (data.status === 'play') {
-                if(player.getPlayerState() !== 1) player.playVideo();
-                dom.disc.style.animationPlayState = 'running';
-                dom.playBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-                dom.status.innerText = "Synced & Playing";
-            } else {
-                if(player.getPlayerState() === 1) player.pauseVideo();
-                dom.disc.style.animationPlayState = 'paused';
-                dom.playBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
-                dom.status.innerText = "Paused";
-            }
-
-            // 3. Initial Seek (only if huge difference, handled by Enforcer mostly)
-            if (Math.abs(player.getCurrentTime() - data.seekTime) > 5) {
-                player.seekTo(data.seekTime, true);
+            // 3. PLAY/PAUSE (Only if not buffering)
+            if (!data.isBuffering) {
+                if (data.status === 'play') {
+                    if (player.getPlayerState() !== 1) player.playVideo();
+                    dom.disc.style.animationPlayState = 'running';
+                    dom.playBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+                } else {
+                    if (player.getPlayerState() === 1) player.pauseVideo();
+                    dom.disc.style.animationPlayState = 'paused';
+                    dom.playBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+                }
+                
+                // 4. SEEK SYNC (Approximate)
+                if (Math.abs(player.getCurrentTime() - data.seekTime) > 4) {
+                    player.seekTo(data.seekTime, true);
+                }
             }
         } else {
-            dom.title.innerText = "Queue Empty";
-            dom.status.innerText = "Search to add songs";
+            dom.title.innerText = "SYSTEM READY";
             dom.disc.style.animationPlayState = 'paused';
         }
     });
 }
 
+function updateFirebase(updates) {
+    syncRef.update(updates);
+}
+
+// ================= CONTROLS =================
+
 function togglePlay() {
     if(queue.length === 0) return;
     const isPlaying = player.getPlayerState() === 1;
-    updateFirebase({ status: isPlaying ? 'pause' : 'play', seekTime: player.getCurrentTime() });
+    updateFirebase({ 
+        status: isPlaying ? 'pause' : 'play', 
+        seekTime: player.getCurrentTime(),
+        isBuffering: false // Manual action clears buffer state
+    });
 }
 
 function syncSeek(seconds) {
@@ -166,30 +148,79 @@ function syncSeek(seconds) {
     updateFirebase({ seekTime: newTime });
 }
 
-// Manual Seek Bar
-dom.seekBar.addEventListener('input', () => { isDragging = true; });
-dom.seekBar.addEventListener('change', () => {
-    isDragging = false;
-    const time = (dom.seekBar.value / 100) * player.getDuration();
-    updateFirebase({ seekTime: time });
-});
-
-function updateProgress() {
-    if (!player || isDragging) return;
-    const curr = player.getCurrentTime();
-    const dur = player.getDuration();
-    if(dur) {
-        dom.seekBar.value = (curr / dur) * 100;
-        dom.currentTime.innerText = formatTime(curr);
-        dom.duration.innerText = formatTime(dur);
+function playNext() {
+    if (queueIndex < queue.length - 1) {
+        updateFirebase({ queueIndex: queueIndex + 1, status: 'play', seekTime: 0, isBuffering: false });
+    } else {
+        updateFirebase({ status: 'pause', isBuffering: false });
     }
 }
 
-// ================= LOGIC: SEARCH & UI =================
+// ================= QUEUE MANAGEMENT =================
 
-// LIVE SEARCH LISTENER
+function renderQueueUI() {
+    dom.queueCount.innerText = `(${queue.length})`;
+    dom.queueList.innerHTML = '';
+    
+    if (queue.length === 0) {
+        dom.queueList.innerHTML = '<div class="empty-state">QUEUE EMPTY</div>';
+        return;
+    }
+
+    queue.forEach((song, idx) => {
+        const div = document.createElement('div');
+        div.className = 'song-item';
+        if (idx === queueIndex) div.style.borderLeft = '3px solid #00f2ff';
+        
+        div.innerHTML = `
+            <img src="${song.thumbnail}" class="song-thumb">
+            <div class="song-meta">
+                <h4>${song.title}</h4>
+                <p>${idx === queueIndex ? 'PLAYING' : 'QUEUED'}</p>
+            </div>
+            <div class="delete-btn" onclick="removeFromQueue(event, ${idx})">
+                <i class="fa-solid fa-xmark"></i>
+            </div>
+        `;
+        // Click to jump to song
+        div.onclick = (e) => {
+             if(!e.target.closest('.delete-btn')) {
+                 updateFirebase({ queueIndex: idx, status: 'play', seekTime: 0 });
+             }
+        };
+        dom.queueList.appendChild(div);
+    });
+}
+
+// DELETE FUNCTION
+window.removeFromQueue = function(e, index) {
+    e.stopPropagation(); // Stop click from playing song
+    const newQueue = [...queue];
+    newQueue.splice(index, 1);
+    
+    // Adjust index if we deleted a song before current
+    let newIndex = queueIndex;
+    if (index < queueIndex) newIndex--;
+    if (newQueue.length === 0) newIndex = 0;
+
+    updateFirebase({ queue: newQueue, queueIndex: newIndex });
+}
+
+window.clearQueue = function() {
+    if(confirm("Clear entire queue?")) {
+        updateFirebase({ queue: [], queueIndex: 0, status: 'pause' });
+    }
+}
+
+// ================= SEARCH =================
 dom.searchInput.addEventListener('input', (e) => {
     const query = e.target.value;
+    // Check if it's a YouTube Link
+    if (query.includes('youtube.com') || query.includes('youtu.be')) {
+        const videoId = query.split('v=')[1]?.split('&')[0] || query.split('/').pop();
+        if(videoId) addToQueue(videoId, "Shared Link Song", "https://img.youtube.com/vi/"+videoId+"/default.jpg");
+        return;
+    }
     if (query.length > 2) {
         searchYouTube(query);
         switchTab('results');
@@ -197,10 +228,9 @@ dom.searchInput.addEventListener('input', (e) => {
 });
 
 async function searchYouTube(query) {
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=5&q=${query}&type=video&key=${YOUTUBE_API_KEY}`;
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${query}&type=video&key=${YOUTUBE_API_KEY}`;
     const res = await fetch(url);
     const data = await res.json();
-    
     dom.resultsList.innerHTML = '';
     data.items.forEach(item => {
         const div = document.createElement('div');
@@ -209,8 +239,8 @@ async function searchYouTube(query) {
             <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
             <div class="song-meta">
                 <h4>${item.snippet.title}</h4>
-                <p>Click to Add</p>
             </div>
+            <i class="fa-solid fa-plus" style="color:#00f2ff"></i>
         `;
         div.onclick = () => addToQueue(item.id.videoId, item.snippet.title, item.snippet.thumbnails.default.url);
         dom.resultsList.appendChild(div);
@@ -219,51 +249,18 @@ async function searchYouTube(query) {
 
 function addToQueue(id, title, thumb) {
     const newQueue = [...queue, { videoId: id, title: title, thumbnail: thumb }];
-    // If empty, auto play
     if (queue.length === 0) {
         updateFirebase({ queue: newQueue, queueIndex: 0, status: 'play' });
     } else {
         updateFirebase({ queue: newQueue });
     }
-    // Visual feedback
     dom.searchInput.value = '';
     switchTab('queue');
-}
-
-function renderQueueUI() {
-    dom.queueCount.innerText = `(${queue.length})`;
-    dom.queueList.innerHTML = '';
-    
-    // Auto-remove previous songs from UI visualization (Optional)
-    // We only show songs from current index onwards
-    const visibleQueue = queue.slice(queueIndex); 
-
-    if (visibleQueue.length === 0) {
-        dom.queueList.innerHTML = '<div class="empty-state">No more songs in queue</div>';
-        return;
-    }
-
-    visibleQueue.forEach((song, idx) => {
-        const div = document.createElement('div');
-        div.className = 'song-item';
-        // Highlight current song
-        if (idx === 0) div.style.background = 'rgba(108, 99, 255, 0.2)'; 
-        
-        div.innerHTML = `
-            <img src="${song.thumbnail}" class="song-thumb">
-            <div class="song-meta">
-                <h4>${song.title}</h4>
-                <p>${idx === 0 ? 'Now Playing' : 'Up Next'}</p>
-            </div>
-        `;
-        dom.queueList.appendChild(div);
-    });
 }
 
 function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.scroll-list').forEach(l => l.classList.remove('active-list'));
-    
     if (tab === 'results') {
         document.querySelector('.tab:nth-child(1)').classList.add('active');
         dom.resultsList.classList.add('active-list');
@@ -273,6 +270,21 @@ function switchTab(tab) {
     }
 }
 
+// UI HELPERS
+dom.seekBar.addEventListener('change', () => {
+    const time = (dom.seekBar.value / 100) * player.getDuration();
+    updateFirebase({ seekTime: time });
+});
+function updateProgress() {
+    if (!player || dom.blocker.classList.contains('active')) return;
+    const curr = player.getCurrentTime();
+    const dur = player.getDuration();
+    if(dur) {
+        dom.seekBar.value = (curr / dur) * 100;
+        dom.currTime.innerText = formatTime(curr);
+        dom.durTime.innerText = formatTime(dur);
+    }
+}
 function formatTime(s) {
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
