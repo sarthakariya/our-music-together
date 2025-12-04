@@ -136,28 +136,47 @@ function listenForSync() {
 function checkPartnerHeartbeat(syncData) {
     database.ref('playerStatus').once('value', snapshot => {
         let isAnyPartnerLagging = false;
-        
+        let oldestTimestamp = Date.now();
+        let oldestPartnerId = null;
+
+        // PASS 1: Find the oldest (most lagged) partner
+        snapshot.forEach(childSnap => {
+            const partnerData = childSnap.val();
+            const partnerId = childSnap.key;
+
+            if (partnerId === playerRef.key) return; 
+            if (partnerData.queueIndex !== queueIndex) return; 
+
+            if (partnerData.timestamp < oldestTimestamp) {
+                oldestTimestamp = partnerData.timestamp;
+                oldestPartnerId = partnerId;
+            }
+        });
+
+        // PASS 2: Check for actual lag, but exclude the oldest partner (to prevent the feedback loop)
         snapshot.forEach(childSnap => {
             const partnerData = childSnap.val();
             const partnerId = childSnap.key;
             
-            if (partnerId === playerRef.key || partnerData.queueIndex !== queueIndex) return; 
+            // Skip my own player AND skip the player that is currently lagging the most
+            if (partnerId === playerRef.key || partnerId === oldestPartnerId) return;
 
             const timeSinceLastUpdate = Date.now() - partnerData.timestamp;
 
-            // DETECT LAG: If time hasn't updated in 5s AND we should be playing
+            // DETECT LAG: If time hasn't updated in 5s AND we should be playing globally
             if (timeSinceLastUpdate > 5000 && syncData.status === 'play' && !partnerData.isSeeking) {
                 isAnyPartnerLagging = true;
                 return;
             }
         });
 
+        // ------------------ ACTION LOGIC ------------------
+
         if (isAnyPartnerLagging) {
             
             // 1. Start/Check Lag Timer
             if (lagStartTime === null) {
                 lagStartTime = Date.now();
-                // Start the UI update interval immediately when lag is detected
                 if (!lagUpdateInterval) {
                      lagUpdateInterval = setInterval(updateLagUI, 1000);
                 }
@@ -169,7 +188,7 @@ function checkPartnerHeartbeat(syncData) {
             // 2. FORCE RESUME IF TIMEOUT EXCEEDED
             if (timeElapsed >= timeLimit) {
                 console.log("[SYNC] Auto-resuming due to 2-minute timeout.");
-                lagStartTime = null; // Reset the timer
+                lagStartTime = null; 
                 window.resumeSync();
                 return;
             }
@@ -182,15 +201,12 @@ function checkPartnerHeartbeat(syncData) {
             dom.disc.style.animationPlayState = 'paused';
             dom.playBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
             
-            // Update the remaining auto-resume time
             document.getElementById('sync-timer').innerText = secondsRemaining;
-
 
         } else {
             // No lag detected: Resume normal operation
-            lagStartTime = null; // Reset lag timer
+            lagStartTime = null; 
             
-            // Stop and clear the lag UI interval
             if (lagUpdateInterval) {
                 clearInterval(lagUpdateInterval);
                 lagUpdateInterval = null;
@@ -212,7 +228,7 @@ function checkPartnerHeartbeat(syncData) {
     });
 }
 
-// ================= GRACEFUL EXIT: REMOVE STALE PLAYERS =================
+// ================= GRACEFUL EXIT & LAG MONITORING =================
 
 function removeStaleHeartbeats() {
     const STALE_TIMEOUT_MS = 900000; // 15 minutes (15 * 60 * 1000)
@@ -222,25 +238,16 @@ function removeStaleHeartbeats() {
         snapshot.forEach(childSnap => {
             const partnerData = childSnap.val();
             
-            // Check if the partner's last timestamp is older than the cutoff
             if (partnerData.timestamp < cutoff) {
-                // DELETE the stale player node
                 database.ref('playerStatus/' + childSnap.key).remove()
                     .then(() => {
                         console.log(`[SYNC] Removed stale player: ${childSnap.key}`);
-                    })
-                    .catch(error => {
-                        console.error("Error removing stale node:", error);
                     });
             }
         });
     });
 }
 
-
-// ================= NEW UI UPDATE FUNCTION =================
-
-// Runs every second when lag is detected to update the counters
 function updateLagUI() {
     if (lagStartTime) {
         const timeElapsed = Date.now() - lagStartTime;
@@ -248,9 +255,6 @@ function updateLagUI() {
         document.getElementById('lag-status').innerText = `Monitoring delay: ${secondsElapsed} seconds`;
     }
 }
-
-
-// ================= CONTROLS & UI HELPERS =================
 
 window.resumeSync = function() {
     // Clear the UI countdown interval and reset lag variables
@@ -269,6 +273,8 @@ window.resumeSync = function() {
         seekTime: player.getCurrentTime() || 0,
     });
 }
+
+// ================= CONTROLS & UI HELPERS =================
 
 function togglePlay() {
     if(queue.length === 0) return;
@@ -326,7 +332,6 @@ async function searchYouTube(q) {
     data.items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'song-item';
-        // Sanitize title for onclick function
         const safeTitle = item.snippet.title.replace(/'/g, "\\'");
         
         div.innerHTML = `
@@ -368,7 +373,6 @@ function renderQueueUI() {
             <i class="fa-solid fa-xmark" style="padding:10px; color:#ff4757" onclick="window.deleteSong(event, ${idx})"></i>
         `;
         div.onclick = (e) => { 
-            // Ensure we don't play song if the delete button was clicked
             if(!e.target.classList.contains('fa-xmark')) {
                 updateFirebase({ queueIndex: idx, status: 'play', seekTime: 0 });
             }
@@ -377,7 +381,6 @@ function renderQueueUI() {
     });
 }
 
-// Ensure these are globally available for HTML to call
 window.deleteSong = function(e, idx) {
     e.stopPropagation();
     const newQueue = [...queue];
