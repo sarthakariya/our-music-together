@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sarthak & Reechita's Lab</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Poppins:wght@300;500&display=swap" rel="stylesheet">
+    <title>Sarthak & Reechita's Player</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Poppins:wght@300;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css"> 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -13,27 +13,28 @@
     <div id="sync-blocker" class="glass-overlay">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2>SYNCING...</h2>
-            <p>Waiting for partner's ad or connection</p>
+            <h2 id="blocker-text">SYNCING...</h2>
+            <p>Ad detected or connection syncing.<br>Playback will resume automatically.</p>
         </div>
     </div>
 
     <div class="main-container">
+        
         <div class="glass-card player-panel">
             <div class="header">
-                <h3>LINK STATUS</h3>
-                <div class="connection-badge"><span class="dot"></span> ONLINE</div>
+                <h3><i class="fa-solid fa-signal" style="color:#00ff88"></i> CONNECTED</h3>
             </div>
 
-            <div class="disc-container">
+            <div class="disc-wrapper">
                 <div class="vinyl-record" id="music-disc">
                     <div class="vinyl-center"></div>
                 </div>
             </div>
 
-            <div class="song-details">
-                <h2 id="current-song-title">SYSTEM READY</h2>
-                <div class="time-rail">
+            <div class="song-info">
+                <h2 id="current-song-title">Select a Song</h2>
+                
+                <div class="progress-area">
                     <span id="current-time">0:00</span>
                     <input type="range" id="seek-bar" value="0" min="0" max="100">
                     <span id="duration">0:00</span>
@@ -41,35 +42,35 @@
             </div>
 
             <div class="controls">
-                <button class="btn-tech" onclick="syncSeek(-10)"><i class="fa-solid fa-backward"></i></button>
-                <button class="btn-tech main" id="play-pause-btn" onclick="togglePlay()"><i class="fa-solid fa-play"></i></button>
-                <button class="btn-tech" onclick="syncSeek(10)"><i class="fa-solid fa-forward"></i></button>
+                <button class="btn-ctrl small" onclick="syncSeek(-10)"><i class="fa-solid fa-rotate-left"></i></button>
+                <button class="btn-ctrl main" id="play-pause-btn" onclick="togglePlay()"><i class="fa-solid fa-play"></i></button>
+                <button class="btn-ctrl small" onclick="syncSeek(10)"><i class="fa-solid fa-rotate-right"></i></button>
             </div>
 
-            <div id="player-container" style="position: absolute; top: -9999px; left: -9999px;">
+            <div id="player-container">
                 <div id="player"></div>
             </div>
         </div>
 
         <div class="right-section">
-            <div class="glass-card search-card">
-                <i class="fa-solid fa-magnifying-glass"></i>
+            <div class="glass-card search-bar">
+                <i class="fa-solid fa-search"></i>
                 <input type="text" id="searchInput" placeholder="Search or Paste Link..." autocomplete="off">
             </div>
 
-            <div class="glass-card list-container">
+            <div class="glass-card list-wrapper">
                 <div class="tabs">
-                    <div class="tab active" onclick="switchTab('results')">SEARCH RESULTS</div>
+                    <div class="tab active" onclick="switchTab('results')">RESULTS</div>
                     <div class="tab" onclick="switchTab('queue')">QUEUE <span id="queue-count">(0)</span></div>
-                    <div class="tab-action" onclick="clearQueue()" title="Clear All"><i class="fa-solid fa-trash"></i></div>
+                    <div class="tab-icon" onclick="clearQueue()"><i class="fa-solid fa-trash-can"></i></div>
                 </div>
 
                 <div id="results-list" class="scroll-list active-list">
-                    <div class="empty-state">TERMINAL READY. INPUT SEARCH.</div>
+                    <div class="empty-state">SEARCH FOR MUSIC</div>
                 </div>
 
                 <div id="queue-list" class="scroll-list">
-                    <div class="empty-state">QUEUE EMPTY</div>
+                    <div class="empty-state">QUEUE IS EMPTY</div>
                 </div>
             </div>
         </div>
