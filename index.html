@@ -2,57 +2,69 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sarthak & Reechita's Sync Music Player</title>
-    
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sarthak & Reechita's Player</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css"> 
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 
     <div class="main-container">
-        <div class="glass-panel player-panel">
-            <h1>Sarthak & Reechita</h1>
-            <p>Real-Time Sync Activated <i class="fa-solid fa-link"></i></p>
-            
-            <div id="player-container" style="display: none;"> 
-                <div id="player"></div>
+        <div class="glass-card player-panel">
+            <div class="header">
+                <h3>Sarthak <i class="fa-solid fa-heart pulse-icon"></i> Reechita</h3>
+                <div class="connection-dot" id="connectionStatus"></div>
             </div>
 
-            <div id="current-song-display">Loading...</div>
+            <div class="disc-container">
+                <div class="vinyl-record" id="music-disc">
+                    <div class="vinyl-center"></div>
+                </div>
+            </div>
 
-            <div class="seek-container">
+            <div class="song-details">
+                <h2 id="current-song-title">Select a Song</h2>
+                <p id="statusText">Waiting to sync...</p>
+            </div>
+
+            <div class="seek-wrapper">
                 <span id="current-time">0:00</span>
-                <input type="range" id="seek-bar" value="0" min="0" max="100" onmouseup="seekSync()" ontouchend="seekSync()">
+                <input type="range" id="seek-bar" value="0" min="0" max="100">
                 <span id="duration">0:00</span>
             </div>
 
             <div class="controls">
-                <button class="btn-control" onclick="syncSeek(-10)"><i class="fa-solid fa-backward-step"></i></button>
-                <button class="btn-control" onclick="syncAction('play')" id="play-btn"><i class="fa-solid fa-play"></i></button>
-                <button class="btn-control" onclick="syncAction('pause')" id="pause-btn" style="display: none;"><i class="fa-solid fa-pause"></i></button>
-                <button class="btn-control" onclick="syncSeek(10)"><i class="fa-solid fa-forward-step"></i></button>
+                <button class="btn-round small" onclick="syncSeek(-10)"><i class="fa-solid fa-rotate-left"></i></button>
+                <button class="btn-round main" id="play-pause-btn" onclick="togglePlay()"><i class="fa-solid fa-play"></i></button>
+                <button class="btn-round small" onclick="syncSeek(10)"><i class="fa-solid fa-rotate-right"></i></button>
             </div>
-            <div id="statusText" class="status">Waiting for a song...</div>
-        </div>
-
-        <div class="glass-panel queue-panel">
-            <h2><i class="fa-solid fa-list-ol"></i> Our Queue</h2>
-            <div id="queue-container" class="queue-list">
-                <p style="text-align: center; color: #999;">Queue is empty. Search for a song!</p>
-            </div>
-        </div>
-
-        <div class="glass-panel search-panel">
-            <h2><i class="fa-solid fa-search"></i> Search Music</h2>
             
-            <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Search for a song..." onkeypress="handleEnter(event)">
-                <button onclick="searchYouTube()"><i class="fa-solid fa-search"></i></button>
+            <div id="player-container" style="position: absolute; top: -9999px; left: -9999px;">
+                <div id="player"></div>
+            </div>
+        </div>
+
+        <div class="right-section">
+            
+            <div class="glass-card search-card">
+                <i class="fa-solid fa-search search-icon"></i>
+                <input type="text" id="searchInput" placeholder="Search song..." autocomplete="off">
             </div>
 
-            <div id="results-container" class="results-list">
+            <div class="list-container glass-card">
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab('results')">Results</div>
+                    <div class="tab" onclick="switchTab('queue')">Queue <span id="queue-count">(0)</span></div>
+                </div>
+
+                <div id="results-list" class="scroll-list active-list">
+                    <div class="empty-state">Start typing to search...</div>
+                </div>
+
+                <div id="queue-list" class="scroll-list">
+                    <div class="empty-state">Queue is empty</div>
+                </div>
             </div>
         </div>
     </div>
