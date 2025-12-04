@@ -20,9 +20,11 @@ let queueIndex = 0;
 let isDragging = false;
 let myState = -1; // -1 unstarted, 1 playing, 2 paused, 3 buffering
 
-// New Firebase Structure to monitor individual Heartbeats
+// Core Sync Variables
 const playerRef = database.ref('playerStatus/' + new Date().getTime()); // Unique reference for this device
-let lastReportedTime = 0;
+let lagStartTime = null; // Tracks when the current lag started
+let lagUpdateInterval; // Interval to update the "Lagging for X seconds" text
+
 
 const dom = {
     overlay: document.getElementById('sync-blocker'),
@@ -58,7 +60,10 @@ function onPlayerReady() {
     listenForSync();
     // Start monitoring: 500ms for UI, 1000ms for Heartbeat
     setInterval(updateProgress, 500);
-    setInterval(sendHeartbeat, 1000); // 1-second pulse
+    setInterval(sendHeartbeat, 1000); 
+    
+    // Cleanup players who leave the session (15-minute interval)
+    setInterval(removeStaleHeartbeats, 900000); 
 }
 
 function onPlayerStateChange(e) {
@@ -69,6 +74,7 @@ function onPlayerStateChange(e) {
 function updateFirebase(updates) {
     syncRef.update(updates);
 }
+
 
 // ================= AD & SYNC LOGIC (HEARTBEAT FIX) =================
 
@@ -110,11 +116,8 @@ function listenForSync() {
                 dom.title.innerText = song.title;
                 dom.art.style.backgroundImage = `url('${song.thumbnail}')`;
             }
-
-            // 2. GLOBAL PAUSE/PLAY LOGIC (Controlled by checkPartnerHeartbeat now)
-            // The checkPartnerHeartbeat function handles the play/pause logic based on 'HEARTBEAT LOST'
             
-            // 3. TIME JUMP (Force Sync) - Only sync time if the overlay is NOT active
+            // 2. TIME JUMP (Force Sync) - Only sync time if the overlay is NOT active
             if (!dom.overlay.classList.contains('active')) {
                 const serverTime = data.seekTime || 0;
                 // Check if we are outside the 4 second sync window
@@ -131,7 +134,6 @@ function listenForSync() {
 
 
 function checkPartnerHeartbeat(syncData) {
-    // We use .once('value') because we only need to check the status one time per syncRef update
     database.ref('playerStatus').once('value', snapshot => {
         let isAnyPartnerLagging = false;
         
@@ -139,28 +141,61 @@ function checkPartnerHeartbeat(syncData) {
             const partnerData = childSnap.val();
             const partnerId = childSnap.key;
             
-            // 1. Ignore my own heartbeat and players not on the current song
             if (partnerId === playerRef.key || partnerData.queueIndex !== queueIndex) return; 
 
-            // Calculate the age of the last update
             const timeSinceLastUpdate = Date.now() - partnerData.timestamp;
 
-            // 2. AD/LAG DETECTION: Is the partner stuck (> 5 seconds delay) AND are we supposed to be playing?
+            // DETECT LAG: If time hasn't updated in 5s AND we should be playing
             if (timeSinceLastUpdate > 5000 && syncData.status === 'play' && !partnerData.isSeeking) {
                 isAnyPartnerLagging = true;
-                return; // Stop checking, we found a stuck partner
+                return;
             }
         });
 
-        // ACTION: If someone is lagging/watching an ad (isAnyPartnerLagging = true)
         if (isAnyPartnerLagging) {
+            
+            // 1. Start/Check Lag Timer
+            if (lagStartTime === null) {
+                lagStartTime = Date.now();
+                // Start the UI update interval immediately when lag is detected
+                if (!lagUpdateInterval) {
+                     lagUpdateInterval = setInterval(updateLagUI, 1000);
+                }
+            }
+            const timeElapsed = Date.now() - lagStartTime;
+            const timeLimit = 120000; // 2 minutes (120 seconds)
+            const secondsRemaining = Math.max(0, Math.floor((timeLimit - timeElapsed) / 1000));
+            
+            // 2. FORCE RESUME IF TIMEOUT EXCEEDED
+            if (timeElapsed >= timeLimit) {
+                console.log("[SYNC] Auto-resuming due to 2-minute timeout.");
+                lagStartTime = null; // Reset the timer
+                window.resumeSync();
+                return;
+            }
+
+            // 3. APPLY SHIELD
             dom.overlay.classList.add('active');
-            dom.msg.innerText = "HEARTBEAT LOST. WAITING FOR SYNC...";
+            dom.msg.innerText = "HEARTBEAT LOST";
+            
             if (myState === 1) player.pauseVideo();
             dom.disc.style.animationPlayState = 'paused';
             dom.playBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+            
+            // Update the remaining auto-resume time
+            document.getElementById('sync-timer').innerText = secondsRemaining;
+
+
         } else {
-            // ACTION: Everyone is synced or paused intentionally
+            // No lag detected: Resume normal operation
+            lagStartTime = null; // Reset lag timer
+            
+            // Stop and clear the lag UI interval
+            if (lagUpdateInterval) {
+                clearInterval(lagUpdateInterval);
+                lagUpdateInterval = null;
+            }
+
             dom.overlay.classList.remove('active');
             
             // Re-apply the global play/pause status from Firebase
@@ -177,7 +212,63 @@ function checkPartnerHeartbeat(syncData) {
     });
 }
 
-// ================= CONTROLS =================
+// ================= GRACEFUL EXIT: REMOVE STALE PLAYERS =================
+
+function removeStaleHeartbeats() {
+    const STALE_TIMEOUT_MS = 900000; // 15 minutes (15 * 60 * 1000)
+    const cutoff = Date.now() - STALE_TIMEOUT_MS;
+
+    database.ref('playerStatus').once('value', snapshot => {
+        snapshot.forEach(childSnap => {
+            const partnerData = childSnap.val();
+            
+            // Check if the partner's last timestamp is older than the cutoff
+            if (partnerData.timestamp < cutoff) {
+                // DELETE the stale player node
+                database.ref('playerStatus/' + childSnap.key).remove()
+                    .then(() => {
+                        console.log(`[SYNC] Removed stale player: ${childSnap.key}`);
+                    })
+                    .catch(error => {
+                        console.error("Error removing stale node:", error);
+                    });
+            }
+        });
+    });
+}
+
+
+// ================= NEW UI UPDATE FUNCTION =================
+
+// Runs every second when lag is detected to update the counters
+function updateLagUI() {
+    if (lagStartTime) {
+        const timeElapsed = Date.now() - lagStartTime;
+        const secondsElapsed = Math.floor(timeElapsed / 1000);
+        document.getElementById('lag-status').innerText = `Monitoring delay: ${secondsElapsed} seconds`;
+    }
+}
+
+
+// ================= CONTROLS & UI HELPERS =================
+
+window.resumeSync = function() {
+    // Clear the UI countdown interval and reset lag variables
+    if (lagUpdateInterval) {
+        clearInterval(lagUpdateInterval);
+        lagUpdateInterval = null;
+    }
+    lagStartTime = null;
+
+    // Clear the active shield
+    dom.overlay.classList.remove('active');
+    
+    // Force the global status to "play" based on my current time
+    updateFirebase({ 
+        status: 'play', 
+        seekTime: player.getCurrentTime() || 0,
+    });
+}
 
 function togglePlay() {
     if(queue.length === 0) return;
@@ -201,7 +292,7 @@ function playNext() {
     }
 }
 
-// ================= SEARCH & QUEUE (FIXED SEARCH LISTENER) =================
+// ================= SEARCH & QUEUE =================
 
 dom.search.addEventListener('input', (e) => {
     const q = e.target.value;
@@ -223,7 +314,6 @@ dom.search.addEventListener('input', (e) => {
 });
 
 async function searchYouTube(q) {
-    // Replaced hardcoded key with variable
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${q}&type=video&key=${YOUTUBE_API_KEY}`;
     const res = await fetch(url);
     const data = await res.json();
