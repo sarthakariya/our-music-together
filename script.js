@@ -1,464 +1,313 @@
-// ================= CONFIGURATION & VARIABLES =================
-const firebaseConfig = {
-    apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co",
-    authDomain: "our-music-player.firebaseapp.com",
-    databaseURL: "https://our-music-player-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "our-music-player",
-    storageBucket: "our-music-player.firebasestorage.app",
-    messagingSenderId: "444208622552",
-    appId: "1:444208622552:web:839ca00a5797f52d1660ad"
-};
-const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
-
-firebase.initializeApp(firebaseConfig);
-const database = firebase.database();
-const syncRef = database.ref('session');
-
+// --- CONFIGURATION & INITIALIZATION ---
+// Note: Firebase configuration is loaded from index.html
+const FIREBASE_REF = firebase.database().ref('room_state');
 let player;
+let isMaster = false;
+let lastKnownContentTime = 0; 
+let lastSkipCommandTime = 0; 
 let queue = [];
 let queueIndex = 0;
-let myState = -1; // -1 unstarted, 1 playing, 2 paused, 3 buffering
+let myState = -1; 
 
-// Core Master/Ad Guard Variables
-const deviceId = new Date().getTime();
-const playerRef = database.ref('playerStatus/' + deviceId); 
-let isMaster = false;
-let masterId = null;
-
-// UI elements (reusing lag variables for simple status updates)
-let lagStartTime = null; 
-let lagUpdateInterval; 
-
+// --- DOM ELEMENTS (UPDATED FOR NEW UI) ---
 const dom = {
-    overlay: document.getElementById('sync-blocker'),
-    msg: document.getElementById('blocker-text'),
+    // Player Components
     disc: document.getElementById('music-disc'),
-    art: document.querySelector('.vinyl-center'),
+    art: document.getElementById('album-art'),
     title: document.getElementById('current-song-title'),
     playBtn: document.getElementById('play-pause-btn'),
     seekBar: document.getElementById('seek-bar'),
     curr: document.getElementById('current-time'),
     dur: document.getElementById('duration'),
-    search: document.getElementById('searchInput'),
-    resList: document.getElementById('results-list'),
-    qList: document.getElementById('queue-list'),
-    qCount: document.getElementById('queue-count')
+    masterStatus: document.getElementById('master-status'),
+
+    // Search and Queue
+    searchInput: document.getElementById('searchInput'),
+    resultsList: document.getElementById('results-list'),
+    queueList: document.getElementById('queue-list'),
+    queueCount: document.getElementById('queue-count'),
+
+    // Overlays and Controls
+    overlay: document.getElementById('syncOverlay'),
+    syncStatusText: document.getElementById('syncStatusText'),
+    sharedSkipButton: document.getElementById('sharedSkipButton'),
+    masterToggle: document.getElementById('masterToggle'),
+    volumeBar: document.getElementById('volume-bar')
 };
 
-// ================= YOUTUBE SETUP =================
+// --- YOUTUBE API SETUP ---
 function onYouTubeIframeAPIReady() {
+    // Player is still loaded, but its container is hidden
     player = new YT.Player('player', {
-        height: '100%', width: '100%', videoId: 'M7lc1UVf-VE',
-        playerVars: { 
-            'playsinline': 1, 
-            'controls': 0, 'rel': 0, 'fs': 0, 'iv_load_policy': 3, 'disablekb': 1
+        height: '0', // Minimal size as it's hidden
+        width: '0', 
+        videoId: 'bTqVqk7FSmY', 
+        playerVars: {
+            'playsinline': 1,
+            'controls': 0, // No default controls since we use custom ones
+            'rel': 0 
         },
-        events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
+        events: {
+            'onReady': onPlayerReady,
+            'onStateChange': onPlayerStateChange
+        }
     });
 }
-var tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api";
-document.body.appendChild(tag);
 
-function onPlayerReady() {
-    listenForSync();
-    // Report my presence and ensure cleanup if I disconnect
-    playerRef.onDisconnect().remove(); 
-    playerRef.set({ id: deviceId, timestamp: firebase.database.ServerValue.TIMESTAMP });
+function onPlayerReady(event) {
+    console.log("Player ready for Sarthak and Reechita!");
     
-    // Start reporting Master status and UI updates
-    setInterval(sendMasterStatus, 500); 
+    // Initial setup
+    player.setVolume(100);
+    dom.volumeBar.value = 100;
+
+    // Start sync listeners
+    startFirebaseListener();
+    
+    // Start updating UI controls
     setInterval(updateProgress, 500);
+}
+
+function onPlayerStateChange(event) {
+    myState = event.data;
     
-    // Schedule maintenance
-    setInterval(removeStalePlayers, 900000); 
-}
-
-function onPlayerStateChange(e) {
-    myState = e.data;
-    if (e.data === 0) playNext(); 
-}
-
-function updateFirebase(updates) {
-    syncRef.update(updates);
-}
-
-
-
-
-
-// ================= CORE SYNC LOGIC =================
-
-// MASTER: Pushes its current time and status (needed for the Ad Guard)
-function sendMasterStatus() {
-    // Only the Master sends its playback status
-    if (!player || !isMaster || queue.length === 0) return;
-
-    const state = player.getPlayerState();
-    if (state === 1 || state === 2) { 
-        updateFirebase({ 
-            seekTime: player.getCurrentTime(),
-            status: state === 1 ? 'play' : 'pause',
-        });
+    // If the song ends (State 0), move to the next one
+    if (event.data === YT.PlayerState.ENDED && isMaster) { 
+        playNext(); 
+    }
+    
+    // If the Master player changes state, update Firebase
+    if (isMaster) {
+        FIREBASE_REF.child('status').set(event.data);
     }
 }
 
-// Listener for all Firebase updates
-function listenForSync() {
-    syncRef.on('value', snap => {
-        const data = snap.val();
-        
-        // Handle empty session / Master election
-        if (!data || !data.master) {
-            claimMasterRole();
-        }
 
+// --- CORE SYNC AND AD SKIP LOGIC (Similar to before, adapted for new UI) ---
+
+function toggleMasterStatus() {
+    isMaster = !isMaster;
+    if (isMaster) {
+        dom.masterToggle.innerHTML = '<i class="fas fa-crown"></i> I AM THE MUSIC LEADER 👑';
+        dom.masterToggle.style.backgroundColor = '#ff4d4d';
+        sendMasterStatus(); 
+        console.log("Sarthak is the Master! Sending the true timeline to Reechita.");
+    } else {
+        dom.masterToggle.innerHTML = '<i class="fas fa-crown"></i> Be The Music Leader';
+        dom.masterToggle.style.backgroundColor = 'var(--accent-color)';
+        console.log("Switched to Viewer mode. Following the music leader.");
+    }
+}
+
+function sendMasterStatus() {
+    if (!isMaster) return;
+
+    const playerState = player.getPlayerState();
+    const currentTime = player.getCurrentTime();
+    
+    // --- ZERO PROGRESS AD DETECTION ---
+    if (playerState === YT.PlayerState.PLAYING) {
+        if (Math.abs(currentTime - lastKnownContentTime) < 0.1) {
+            FIREBASE_REF.child('ad_detected').set(true);
+        } else {
+            lastKnownContentTime = currentTime;
+            FIREBASE_REF.child('ad_detected').set(false); 
+        }
+    } else if (playerState !== YT.PlayerState.PLAYING) {
+        FIREBASE_REF.child('ad_detected').set(false);
+    }
+
+    FIREBASE_REF.update({
+        playbackTime: currentTime,
+        status: playerState,
+    });
+
+    setTimeout(sendMasterStatus, 500); 
+}
+
+let lastSkipCommandTime = 0; 
+let currentVideoId = null;
+
+function startFirebaseListener() {
+    FIREBASE_REF.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (!data) return; 
+
+        // Update local state from Firebase
         queue = data.queue || [];
         queueIndex = data.queueIndex || 0;
-        masterId = data.master;
+        const serverTime = data.playbackTime || 0;
+        const serverStatus = data.status;
+        const serverSkipCommand = data.skip_command_timestamp || 0;
+        const adIsDetected = data.ad_detected || false;
         
-        // Determine Ad Guard role
-        isMaster = (masterId === deviceId);
-
         renderQueueUI();
-        syncPlayerState(data);
-    });
-}
 
-// This function uses a transaction to ensure only one person can claim the role
-function claimMasterRole() {
-    syncRef.child('master').transaction((currentMaster) => {
-        if (currentMaster === null || currentMaster === undefined) {
-            return deviceId; // Claim master role
-        }
-        return; // Abort transaction if master already exists
-    }, (error, committed, snapshot) => {
-        if (committed) {
-            console.log("[SYNC] Successfully claimed Master Role.");
-        }
-    });
-}
-
-// Function to check if the Master Ad Guard has left
-function checkMasterPresence() {
-    if (!isMaster && masterId) {
-        database.ref('playerStatus/' + masterId).once('value', snapshot => {
-            if (!snapshot.exists()) {
-                console.warn("[SYNC] Current Master has left. Triggering new Master election.");
-                // Set master to null, which triggers the transaction logic
-                updateFirebase({ master: null }); 
-            }
-        });
-    }
-}
-
-// Function to enforce the state across all players
-function syncPlayerState(data) {
-    if (queue.length === 0) {
-        dom.title.innerText = "Select a Song";
-        dom.disc.style.animationPlayState = 'paused';
-        return;
-    }
-    
-    const song = queue[queueIndex];
-    const serverTime = data.seekTime || 0;
-    const serverStatus = data.status;
-
-    // 1. Load the correct video
-    if (player.getVideoData().video_id !== song.videoId) {
-        player.loadVideoById(song.videoId);
-        dom.title.innerText = song.title;
-        if (dom.art) {
-            dom.art.style.backgroundImage = `url('${song.thumbnail}')`;
-        }
-    }
-
-    // 2. AD GUARD CHECK (Only the Master runs this check)
-    if (isMaster) {
-        checkMasterLag();
-    } else {
-        // Viewers check if the Master is still alive
-        checkMasterPresence();
-        // Viewers clear their local shield state if the Master is healthy
-        dom.overlay.classList.remove('active');
-        if (lagUpdateInterval) { clearInterval(lagUpdateInterval); lagUpdateInterval = null; }
-        lagStartTime = null;
-    }
-    
-    // 3. FORCE TIME/STATUS SYNC (Applies to all players)
-    
-    // Only seek if the shield is not active AND the time difference is large
-    if (!dom.overlay.classList.contains('active')) {
-        if (Math.abs(player.getCurrentTime() - serverTime) > 4) {
-            player.seekTo(serverTime, true);
-        }
-    }
-
-    // Force play/pause
-    if (serverStatus === 'play' && myState !== 1) {
-        player.playVideo();
-        if (dom.disc) {
-            dom.disc.style.animationPlayState = 'running';
-        }
-    } else if (serverStatus === 'pause' && myState === 1) {
-        player.pauseVideo();
-        if (dom.disc) {
-            dom.disc.style.animationPlayState = 'paused';
-        }
-    }
-    
-    // 4. Update play/pause button icon 
-    if (serverStatus === 'play') {
-        dom.playBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-    } else {
-        dom.playBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
-    }
-}
-
-
-
-
-
-// MASTER AD GUARD FUNCTION: ONLY monitors the Master player's buffering state
-function checkMasterLag() {
-    // State 3 = Buffering/Ad. If Master is buffering, we assume it's an ad and freeze everyone.
-    const isMasterStuck = player.getPlayerState() === 3; 
-
-    if (isMasterStuck) {
-        
-        if (lagStartTime === null) {
-            lagStartTime = Date.now();
-            if (!lagUpdateInterval) {
-                 lagUpdateInterval = setInterval(updateLagUI, 1000);
+        // Load correct video if needed
+        if (queue.length > 0) {
+            const song = queue[queueIndex];
+            if (currentVideoId !== song.videoId) {
+                player.loadVideoById(song.videoId);
+                currentVideoId = song.videoId;
+                dom.title.textContent = song.title;
+                dom.art.style.backgroundImage = `url('${song.thumbnail}')`;
             }
         }
-        const timeElapsed = Date.now() - lagStartTime;
-        const timeLimit = 120000; 
-        const secondsRemaining = Math.max(0, Math.floor((timeLimit - timeElapsed) / 1000));
         
-        if (timeElapsed >= timeLimit) {
-            console.log("[SYNC] Auto-resuming Master due to 2-minute timeout.");
-            lagStartTime = null; 
-            window.resumeSync();
-            return;
+        // --- 1. HANDLE AD DETECTION UI ---
+        if (adIsDetected) {
+            dom.overlay.classList.add('active');
+            dom.syncStatusText.textContent = "Oops! An interruption. Click the button to skip it together.";
+            dom.sharedSkipButton.style.display = 'block';
+        } else {
+            dom.overlay.classList.remove('active');
+            dom.sharedSkipButton.style.display = 'none';
         }
 
-        dom.overlay.classList.add('active');
-        dom.msg.innerText = "AD DETECTED / BUFFERING";
+        // --- 2. HANDLE SHARED SKIP COMMAND ---
+        if (serverSkipCommand > lastSkipCommandTime) {
+            player.seekTo(serverTime + 1, true); 
+            lastSkipCommandTime = serverSkipCommand; 
+            FIREBASE_REF.child('ad_detected').set(false);
+            dom.syncStatusText.textContent = "Perfectly synchronized! Back to the music. ❤️";
+            return; 
+        }
         
-        if (dom.disc) {
-            dom.disc.style.animationPlayState = 'paused';
-        }
-        const syncTimerEl = document.getElementById('sync-timer');
-        if (syncTimerEl) {
-            syncTimerEl.innerText = secondsRemaining;
-        }
-
-    } else {
-        // Clear shield if Master is no longer stuck
-        lagStartTime = null; 
-        
-        if (lagUpdateInterval) {
-            clearInterval(lagUpdateInterval);
-            lagUpdateInterval = null;
-        }
-
-        dom.overlay.classList.remove('active');
-    }
-}
-
-// Function to clean up stale player references
-function removeStalePlayers() {
-    const STALE_TIMEOUT_MS = 900000; 
-    const cutoff = Date.now() - STALE_TIMEOUT_MS;
-
-    database.ref('playerStatus').once('value', snapshot => {
-        snapshot.forEach(childSnap => {
-            const partnerData = childSnap.val();
-            const partnerId = childSnap.key;
-
-            if (partnerData.timestamp < cutoff) {
-                database.ref('playerStatus/' + partnerId).remove();
-                if (partnerId === masterId) {
-                     // Trigger a new master election
-                     updateFirebase({ master: null });
+        // --- 3. HANDLE REGULAR PLAYBACK SYNC ---
+        if (!isMaster) {
+             // Sync play/pause state
+            if (player.getPlayerState() !== serverStatus) {
+                if (serverStatus === YT.PlayerState.PLAYING) {
+                    player.playVideo();
+                } else if (serverStatus === YT.PlayerState.PAUSED) {
+                    player.pauseVideo();
                 }
             }
-        });
-    });
-}
 
+            // Sync rotating disc animation
+            if (serverStatus === YT.PlayerState.PLAYING) {
+                dom.playBtn.innerHTML = '<i class="fas fa-pause"></i>';
+                dom.disc.classList.remove('paused');
+            } else {
+                dom.playBtn.innerHTML = '<i class="fas fa-play"></i>';
+                dom.disc.classList.add('paused');
+            }
 
-
-
-
-// ================= COLLABORATIVE CONTROLS (FULL EQUAL CONTROL) =================
-
-function updateLagUI() {
-    if (lagStartTime) {
-        const timeElapsed = Date.now() - lagStartTime;
-        const secondsElapsed = Math.floor(timeElapsed / 1000);
-        const lagStatusEl = document.getElementById('lag-status');
-        if (lagStatusEl) {
-            lagStatusEl.innerText = `Lag duration: ${secondsElapsed} seconds`;
+            // Correct time drift for viewers
+            const currentTime = player.getCurrentTime();
+            if (Math.abs(currentTime - serverTime) > 3) {
+                player.seekTo(serverTime, true);
+            }
         }
-    }
-}
-
-// Manual "Skip Ad" / Force Play
-window.resumeSync = function() {
-    if (!player) return;
-
-    if (lagUpdateInterval) {
-        clearInterval(lagUpdateInterval);
-        lagUpdateInterval = null;
-    }
-    lagStartTime = null;
-
-    dom.overlay.classList.remove('active');
-    
-    // 1. Local action (smooth UI)
-    player.playVideo(); 
-    // 2. Network action (sync all players)
-    updateFirebase({ 
-        status: 'play', 
-        seekTime: player.getCurrentTime() || 0,
     });
 }
+
+function skipAdSynchronized() {
+    FIREBASE_REF.child('skip_command_timestamp').set(Date.now());
+    dom.syncStatusText.textContent = "🚀 Skip command sent! Synchronizing...";
+    dom.overlay.classList.remove('active');
+    dom.sharedSkipButton.style.display = 'none';
+}
+
+
+// --- PLAYER CONTROLS (Full Control for everyone) ---
 
 function togglePlay() {
     if(queue.length === 0) return;
-    const isPlaying = player.getPlayerState() === 1;
+    const isPlaying = player.getPlayerState() === YT.PlayerState.PLAYING;
 
-    // 1. Local action (smooth UI)
+    // Local action provides smooth UX
     if (isPlaying) {
         player.pauseVideo();
-        if (dom.disc) {
-            dom.disc.style.animationPlayState = 'paused';
-        }
     } else {
         player.playVideo();
-        if (dom.disc) {
-            dom.disc.style.animationPlayState = 'running';
-        }
     }
 
-    // 2. Network action (sync all players)
-    updateFirebase({ 
-        status: isPlaying ? 'pause' : 'play', 
-        seekTime: player.getCurrentTime(),
+    // Network action syncs all players
+    FIREBASE_REF.update({ 
+        status: isPlaying ? YT.PlayerState.PAUSED : YT.PlayerState.PLAYING, 
+        playbackTime: player.getCurrentTime(),
     });
 }
 
 function syncSeek(seconds) {
     const newTime = player.getCurrentTime() + seconds;
-    
-    // 1. Local action (smooth UI)
     player.seekTo(newTime, true);
-    
-    // 2. Network action (sync all players)
-    updateFirebase({ seekTime: newTime });
+    FIREBASE_REF.update({ playbackTime: newTime });
 }
 
 function playNext() {
     if (queueIndex < queue.length - 1) {
-        // Anyone can push the next song command
-        updateFirebase({ queueIndex: queueIndex + 1, status: 'play', seekTime: 0 });
+        FIREBASE_REF.update({ queueIndex: queueIndex + 1, status: YT.PlayerState.PLAYING, playbackTime: 0 });
     } else {
-        updateFirebase({ status: 'pause', seekTime: 0 });
+        FIREBASE_REF.update({ status: YT.PlayerState.PAUSED, playbackTime: 0 });
     }
 }
 
 function playPrev() {
     if (queueIndex > 0) {
-        // Anyone can push the previous song command
-        updateFirebase({ queueIndex: queueIndex - 1, status: 'play', seekTime: 0 });
+        FIREBASE_REF.update({ queueIndex: queueIndex - 1, status: YT.PlayerState.PLAYING, playbackTime: 0 });
     } else {
-        // Restart current song if at the beginning
-        updateFirebase({ status: 'play', seekTime: 0 });
+        FIREBASE_REF.update({ status: YT.PlayerState.PLAYING, playbackTime: 0 }); // Restart current song
     }
 }
 
-// ================= QUEUE & SEARCH (Collaborative - Fully Unrestricted) =================
+function setVolume(volume) {
+    player.setVolume(volume);
+}
 
-dom.search.addEventListener('input', (e) => {
+
+// --- QUEUE AND SEARCH ---
+
+dom.searchInput.addEventListener('input', (e) => {
     const q = e.target.value;
+    // NOTE: YOUTUBE API KEY is needed for this search function!
+    // Since we are fixing the quota issue later, this remains conceptual for now.
     
-    // Handle URL pastes
-    if (q.includes('youtu')) { 
-        const id = q.split('v=')[1]?.split('&')[0] || q.split('/').pop();
-        if(id) {
-            addToQueue(id, "Shared Link", "https://img.youtube.com/vi/"+id+"/default.jpg");
-        }
-        return;
-    }
-    
-    // Handle search terms
     if (q.length > 2) {
-        searchYouTube(q);
-        switchTab('results');
+        // Placeholder for future searchYouTube(q) implementation
+        dom.resultsList.innerHTML = '<p class="empty-state">Searching... (API Key needed here)</p>';
     }
 });
 
-async function searchYouTube(q) {
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${q}&type=video&key=${YOUTUBE_API_KEY}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    dom.resList.innerHTML = '';
-    
-    if (data.items.length === 0) {
-        dom.resList.innerHTML = '<div class="empty-state">NO RESULTS FOUND</div>';
-    }
-
-    data.items.forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'song-item';
-        const safeTitle = item.snippet.title.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        
-        div.innerHTML = `
-            <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
-            <div class="song-meta"><h4>${item.snippet.title}</h4></div>
-            <i class="fa-solid fa-plus" style="padding:10px; color:#00cec9" onclick="addToQueue('${item.id.videoId}', '${safeTitle}', '${item.snippet.thumbnails.default.url}')"></i>
-        `;
-        dom.resList.appendChild(div);
-    });
-}
-
 function addToQueue(id, title, thumb) {
     const newQueue = [...queue, { videoId: id, title: title, thumbnail: thumb }];
+    const updates = { queue: newQueue };
     if (queue.length === 0) {
-        updateFirebase({ queue: newQueue, queueIndex: 0, status: 'play', seekTime: 0 });
-    } else {
-        updateFirebase({ queue: newQueue });
+        updates.queueIndex = 0;
+        updates.status = YT.PlayerState.PLAYING;
+        updates.playbackTime = 0;
     }
-    dom.search.value = '';
-    switchTab('queue');
+    FIREBASE_REF.update(updates);
+    dom.searchInput.value = '';
 }
 
 function renderQueueUI() {
-    dom.qCount.innerText = `(${queue.length})`;
-    dom.qList.innerHTML = '';
-    if (queue.length === 0) { dom.qList.innerHTML = '<div class="empty-state">QUEUE EMPTY</div>'; return; }
+    dom.queueCount.textContent = `${queue.length} Songs`;
+    dom.queueList.innerHTML = '';
+    if (queue.length === 0) { dom.queueList.innerHTML = '<p class="empty-state">Queue is empty. Find a song!</p>'; return; }
     
     queue.forEach((song, idx) => {
         const div = document.createElement('div');
         div.className = 'song-item';
-        if (idx === queueIndex) div.style.background = 'rgba(0, 255, 255, 0.1)';
+        if (idx === queueIndex) div.style.background = 'rgba(255, 153, 204, 0.15)'; // Highlight playing song
         
         div.innerHTML = `
             <img src="${song.thumbnail}" class="song-thumb">
             <div class="song-meta">
                 <h4>${song.title}</h4>
-                <p style="font-size:10px; color:#00cec9">${idx === queueIndex ? 'PLAYING NOW' : 'QUEUED'}</p>
+                <p style="font-size:11px; color:var(--primary-color)">${idx === queueIndex ? 'PLAYING NOW' : 'QUEUED'}</p>
             </div>
-            <i class="fa-solid fa-xmark" style="padding:10px; color:#ff4757" onclick="window.deleteSong(event, ${idx})"></i>
+            <i class="fas fa-times" style="padding:10px; color:#ff4d4d" onclick="deleteSong(event, ${idx})"></i>
         `;
+        
         div.onclick = (e) => { 
-            // Anyone can click to change song
-            if(!e.target.classList.contains('fa-xmark')) {
-                updateFirebase({ queueIndex: idx, status: 'play', seekTime: 0 });
+            // Click to change song
+            if(!e.target.classList.contains('fa-times')) {
+                FIREBASE_REF.update({ queueIndex: idx, status: YT.PlayerState.PLAYING, playbackTime: 0 });
             }
         };
-        dom.qList.appendChild(div);
+        dom.queueList.appendChild(div);
     });
 }
 
@@ -468,37 +317,24 @@ window.deleteSong = function(e, idx) {
     newQueue.splice(idx, 1);
     let newIdx = queueIndex;
     if (idx < queueIndex) newIdx--;
-    updateFirebase({ queue: newQueue, queueIndex: newIdx < 0 ? 0 : newIdx });
+    FIREBASE_REF.update({ queue: newQueue, queueIndex: newIdx < 0 ? 0 : newIdx });
 }
 
 window.clearQueue = function() {
-    if(confirm("Clear Queue?")) updateFirebase({ queue: [], queueIndex: 0, status: 'pause' });
+    if(confirm("Clear the entire queue?")) FIREBASE_REF.update({ queue: [], queueIndex: 0, status: YT.PlayerState.PAUSED });
 }
 
-function switchTab(t) {
-    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.scroll-list').forEach(el => el.classList.remove('active-list'));
-    if (t === 'results') {
-        dom.resList.classList.add('active-list');
-        document.querySelector('.tab:nth-child(1)').classList.add('active');
-    } else {
-        dom.qList.classList.add('active-list');
-        document.querySelector('.tab:nth-child(2)').classList.add('active');
-    }
-}
 
-// UI HELPERS
+// --- UI HELPERS ---
+
 dom.seekBar.addEventListener('change', () => {
     if (!player) return;
     const d = player.getDuration();
     if (!d) return;
     const time = (dom.seekBar.value / 100) * d;
     
-    // 1. Local action
     player.seekTo(time, true);
-    
-    // 2. Network action
-    updateFirebase({ seekTime: time });
+    FIREBASE_REF.update({ playbackTime: time });
 });
 
 function updateProgress() {
@@ -507,8 +343,8 @@ function updateProgress() {
     const d = player.getDuration();
     if(d) {
         dom.seekBar.value = (c / d) * 100;
-        dom.curr.innerText = formatTime(c);
-        dom.dur.innerText = formatTime(d);
+        dom.curr.textContent = formatTime(c);
+        dom.dur.textContent = formatTime(d);
     }
 }
 
@@ -517,4 +353,3 @@ function formatTime(s) {
     const sec = Math.floor(s % 60);
     return `${m}:${sec < 10 ? '0' : ''}${sec}`;
 }
-
