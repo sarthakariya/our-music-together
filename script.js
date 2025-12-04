@@ -17,12 +17,11 @@ const syncRef = database.ref('session');
 let player;
 let queue = [];
 let queueIndex = 0;
-let isDragging = false;
 let myState = -1; // -1 unstarted, 1 playing, 2 paused, 3 buffering
 
-// Core Master/Viewer Sync Variables
+// Core Master/Ad Guard Variables
 const deviceId = new Date().getTime();
-const playerRef = database.ref('playerStatus/' + deviceId); // Unique reference for this device
+const playerRef = database.ref('playerStatus/' + deviceId); 
 let isMaster = false;
 let masterId = null;
 
@@ -43,9 +42,7 @@ const dom = {
     search: document.getElementById('searchInput'),
     resList: document.getElementById('results-list'),
     qList: document.getElementById('queue-list'),
-    qCount: document.getElementById('queue-count'),
-    // Get all buttons that non-master clients shouldn't use
-    ctrlBtns: document.querySelectorAll('.btn-ctrl')
+    qCount: document.getElementById('queue-count')
 };
 
 // ================= YOUTUBE SETUP =================
@@ -64,21 +61,21 @@ document.body.appendChild(tag);
 
 function onPlayerReady() {
     listenForSync();
-    // Start reporting my presence
+    // Report my presence and ensure cleanup if I disconnect
     playerRef.onDisconnect().remove(); 
     playerRef.set({ id: deviceId, timestamp: firebase.database.ServerValue.TIMESTAMP });
     
-    // Start sending heartbeat/status updates every 500ms
+    // Start reporting Master status and UI updates
     setInterval(sendMasterStatus, 500); 
     setInterval(updateProgress, 500);
     
-    // Clean up players who leave the session (15-minute interval)
+    // Schedule maintenance
     setInterval(removeStalePlayers, 900000); 
 }
 
 function onPlayerStateChange(e) {
     myState = e.data;
-    if (e.data === 0) playNext(); // 0 = Ended
+    if (e.data === 0) playNext(); 
 }
 
 function updateFirebase(updates) {
@@ -86,13 +83,13 @@ function updateFirebase(updates) {
 }
 
 
-// ================= MASTER/VIEWER SYNC LOGIC =================
+// ================= CORE SYNC LOGIC =================
 
-// MASTER: Sends current time to Firebase
+// MASTER: Pushes its current time and status (needed for the Ad Guard)
 function sendMasterStatus() {
+    // Only the Master sends its playback status
     if (!player || !isMaster || queue.length === 0) return;
 
-    // Only update time if actively playing (State 1) or paused intentionally (State 2)
     const state = player.getPlayerState();
     if (state === 1 || state === 2) { 
         updateFirebase({ 
@@ -102,64 +99,56 @@ function sendMasterStatus() {
     }
 }
 
-// Controls the Master/Viewer role and updates the entire app state
+// Listener for all Firebase updates
 function listenForSync() {
     syncRef.on('value', snap => {
         const data = snap.val();
-        if (!data) {
-            // If session is empty, I claim master role
+        
+        // Handle empty session / Master election
+        if (!data || !data.master) {
             claimMasterRole();
-            return;
         }
 
         queue = data.queue || [];
         queueIndex = data.queueIndex || 0;
         masterId = data.master;
-
-        // Determine if I am the Master
-        if (masterId === deviceId) {
-            isMaster = true;
-            enableControls(true);
-        } else if (!masterId) {
-            // If no master is defined, I claim the role
-            claimMasterRole();
-            return;
-        } else {
-            isMaster = false;
-            enableControls(false);
-        }
+        
+        // Determine Ad Guard role
+        isMaster = (masterId === deviceId);
 
         renderQueueUI();
-        
-        // SYNC LOGIC (Applies to ALL players: Master and Viewers)
         syncPlayerState(data);
     });
 }
 
-// Function to claim the Master role
+// This function uses a transaction to ensure only one person can claim the role
 function claimMasterRole() {
-    updateFirebase({ master: deviceId });
-    console.log("[SYNC] Claiming Master Role.");
-    isMaster = true;
-    enableControls(true);
-}
-
-// Function to enable/disable controls based on role
-function enableControls(isMaster) {
-    dom.ctrlBtns.forEach(btn => {
-        btn.disabled = !isMaster;
-        btn.style.opacity = isMaster ? 1 : 0.5;
-        btn.style.cursor = isMaster ? 'pointer' : 'not-allowed';
+    syncRef.child('master').transaction((currentMaster) => {
+        if (currentMaster === null || currentMaster === undefined) {
+            return deviceId; // Claim master role
+        }
+        return; // Abort transaction if master already exists
+    }, (error, committed, snapshot) => {
+        if (committed) {
+            console.log("[SYNC] Successfully claimed Master Role.");
+        }
     });
-    // Special handling for the search button (always allowed)
-    document.getElementById('searchInput').disabled = false;
-    document.getElementById('searchInput').style.opacity = 1;
-
-    document.getElementById('resume-btn').style.display = isMaster ? 'block' : 'none';
 }
 
+// Function to check if the Master Ad Guard has left
+function checkMasterPresence() {
+    if (!isMaster && masterId) {
+        database.ref('playerStatus/' + masterId).once('value', snapshot => {
+            if (!snapshot.exists()) {
+                console.warn("[SYNC] Current Master has left. Triggering new Master election.");
+                // Set master to null, which triggers the transaction logic
+                updateFirebase({ master: null }); 
+            }
+        });
+    }
+}
 
-// Function to apply the shared state to the local player
+// Function to enforce the state across all players
 function syncPlayerState(data) {
     if (queue.length === 0) {
         dom.title.innerText = "Select a Song";
@@ -178,33 +167,37 @@ function syncPlayerState(data) {
         dom.art.style.backgroundImage = `url('${song.thumbnail}')`;
     }
 
-    // 2. Check for Ad/Lag ONLY if I am the Master
+    // 2. AD GUARD CHECK (Only the Master runs this check)
     if (isMaster) {
         checkMasterLag();
     } else {
-        // VIEWERS: Just follow the master's time and status
-        
-        // Hide the shield for viewers
+        // Viewers check if the Master is still alive
+        checkMasterPresence();
+        // Viewers clear their local shield state if the Master is healthy
         dom.overlay.classList.remove('active');
         if (lagUpdateInterval) { clearInterval(lagUpdateInterval); lagUpdateInterval = null; }
         lagStartTime = null;
-
-        // Force time sync
+    }
+    
+    // 3. FORCE TIME/STATUS SYNC (Applies to all players)
+    
+    // Only seek if the shield is not active AND the time difference is large
+    if (!dom.overlay.classList.contains('active')) {
         if (Math.abs(player.getCurrentTime() - serverTime) > 4) {
             player.seekTo(serverTime, true);
         }
+    }
 
-        // Force play/pause
-        if (serverStatus === 'play' && myState !== 1) {
-            player.playVideo();
-            dom.disc.style.animationPlayState = 'running';
-        } else if (serverStatus === 'pause' && myState === 1) {
-            player.pauseVideo();
-            dom.disc.style.animationPlayState = 'paused';
-        }
+    // Force play/pause
+    if (serverStatus === 'play' && myState !== 1) {
+        player.playVideo();
+        dom.disc.style.animationPlayState = 'running';
+    } else if (serverStatus === 'pause' && myState === 1) {
+        player.pauseVideo();
+        dom.disc.style.animationPlayState = 'paused';
     }
     
-    // Update play/pause button icon (Applies to all)
+    // 4. Update play/pause button icon 
     if (serverStatus === 'play') {
         dom.playBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
     } else {
@@ -213,13 +206,13 @@ function syncPlayerState(data) {
 }
 
 
-// ONLY RUNS ON MASTER PLAYER
+// MASTER AD GUARD FUNCTION: ONLY monitors the Master player's buffering state
 function checkMasterLag() {
-    // 1. Detect if the MASTER is stuck on an ad (State 3: Buffering)
+    // State 3 = Buffering/Ad. If Master is buffering, we assume it's an ad and freeze everyone.
     const isMasterStuck = player.getPlayerState() === 3; 
 
     if (isMasterStuck) {
-        // 1. Start/Check Lag Timer
+        
         if (lagStartTime === null) {
             lagStartTime = Date.now();
             if (!lagUpdateInterval) {
@@ -227,10 +220,9 @@ function checkMasterLag() {
             }
         }
         const timeElapsed = Date.now() - lagStartTime;
-        const timeLimit = 120000; // 2 minutes (120 seconds)
+        const timeLimit = 120000; 
         const secondsRemaining = Math.max(0, Math.floor((timeLimit - timeElapsed) / 1000));
         
-        // 2. FORCE RESUME IF TIMEOUT EXCEEDED
         if (timeElapsed >= timeLimit) {
             console.log("[SYNC] Auto-resuming Master due to 2-minute timeout.");
             lagStartTime = null; 
@@ -238,7 +230,6 @@ function checkMasterLag() {
             return;
         }
 
-        // 3. APPLY SHIELD
         dom.overlay.classList.add('active');
         dom.msg.innerText = "AD DETECTED / BUFFERING";
         
@@ -246,7 +237,7 @@ function checkMasterLag() {
         document.getElementById('sync-timer').innerText = secondsRemaining;
 
     } else {
-        // No lag detected: Resume normal operation
+        // Clear shield if Master is no longer stuck
         lagStartTime = null; 
         
         if (lagUpdateInterval) {
@@ -258,12 +249,9 @@ function checkMasterLag() {
     }
 }
 
-// Only runs on the Master device
+// Function to clean up stale player references
 function removeStalePlayers() {
-    if (!isMaster) return; 
-
-    // We only remove players whose ID is NOT the current master ID
-    const STALE_TIMEOUT_MS = 900000; // 15 minutes (15 * 60 * 1000)
+    const STALE_TIMEOUT_MS = 900000; 
     const cutoff = Date.now() - STALE_TIMEOUT_MS;
 
     database.ref('playerStatus').once('value', snapshot => {
@@ -271,18 +259,20 @@ function removeStalePlayers() {
             const partnerData = childSnap.val();
             const partnerId = childSnap.key;
 
-            if (partnerId !== masterId && partnerData.timestamp < cutoff) {
-                // DELETE the stale player node
+            if (partnerData.timestamp < cutoff) {
                 database.ref('playerStatus/' + partnerId).remove();
+                if (partnerId === masterId) {
+                     // Trigger a new master election
+                     updateFirebase({ master: null });
+                }
             }
         });
     });
 }
 
 
-// ================= CONTROLS & UI HELPERS =================
+// ================= COLLABORATIVE CONTROLS (FULL EQUAL CONTROL) =================
 
-// Helper to update the lag status text
 function updateLagUI() {
     if (lagStartTime) {
         const timeElapsed = Date.now() - lagStartTime;
@@ -291,9 +281,9 @@ function updateLagUI() {
     }
 }
 
-// Master's "Skip Ad" equivalent command
+// Manual "Skip Ad" / Force Play
 window.resumeSync = function() {
-    if (!isMaster) return;
+    if (!player) return;
 
     if (lagUpdateInterval) {
         clearInterval(lagUpdateInterval);
@@ -303,8 +293,9 @@ window.resumeSync = function() {
 
     dom.overlay.classList.remove('active');
     
-    // Forces the master player to play and pushes the new time/status to all Viewers
+    // 1. Local action (smooth UI)
     player.playVideo(); 
+    // 2. Network action (sync all players)
     updateFirebase({ 
         status: 'play', 
         seekTime: player.getCurrentTime() || 0,
@@ -312,9 +303,17 @@ window.resumeSync = function() {
 }
 
 function togglePlay() {
-    if(!isMaster || queue.length === 0) return;
+    if(queue.length === 0) return;
     const isPlaying = player.getPlayerState() === 1;
-    // Pushes the command to all Viewers
+
+    // 1. Local action (smooth UI)
+    if (isPlaying) {
+        player.pauseVideo();
+    } else {
+        player.playVideo();
+    }
+
+    // 2. Network action (sync all players)
     updateFirebase({ 
         status: isPlaying ? 'pause' : 'play', 
         seekTime: player.getCurrentTime(),
@@ -322,27 +321,30 @@ function togglePlay() {
 }
 
 function syncSeek(seconds) {
-    if(!isMaster) return;
     const newTime = player.getCurrentTime() + seconds;
+    
+    // 1. Local action (smooth UI)
     player.seekTo(newTime, true);
-    // Pushes the command to all Viewers
+    
+    // 2. Network action (sync all players)
     updateFirebase({ seekTime: newTime });
 }
 
 function playNext() {
-    if(!isMaster) return;
     if (queueIndex < queue.length - 1) {
+        // Anyone can push the next song command
         updateFirebase({ queueIndex: queueIndex + 1, status: 'play', seekTime: 0 });
     } else {
         updateFirebase({ status: 'pause', seekTime: 0 });
     }
 }
 
-// ================= SEARCH & QUEUE (Non-Master functions always allowed) =================
+// ================= QUEUE & SEARCH (Collaborative) =================
 
 dom.search.addEventListener('input', (e) => {
     const q = e.target.value;
     
+    // Handle URL pastes
     if (q.includes('youtu')) { 
         const id = q.split('v=')[1]?.split('&')[0] || q.split('/').pop();
         if(id) {
@@ -351,6 +353,7 @@ dom.search.addEventListener('input', (e) => {
         return;
     }
     
+    // Handle search terms
     if (q.length > 2) {
         searchYouTube(q);
         switchTab('results');
@@ -406,12 +409,12 @@ function renderQueueUI() {
             <img src="${song.thumbnail}" class="song-thumb">
             <div class="song-meta">
                 <h4>${song.title}</h4>
-                <p style="font-size:10px; color:#00cec9">${idx === queueIndex ? (isMaster ? 'MASTER PLAYING' : 'VIEWER PLAYING') : 'QUEUED'}</p>
+                <p style="font-size:10px; color:#00cec9">${idx === queueIndex ? 'PLAYING NOW' : 'QUEUED'}</p>
             </div>
             <i class="fa-solid fa-xmark" style="padding:10px; color:#ff4757" onclick="window.deleteSong(event, ${idx})"></i>
         `;
         div.onclick = (e) => { 
-            if(!isMaster) return; // Only Master can change song
+            // Anyone can click to change song
             if(!e.target.classList.contains('fa-xmark')) {
                 updateFirebase({ queueIndex: idx, status: 'play', seekTime: 0 });
             }
@@ -421,7 +424,6 @@ function renderQueueUI() {
 }
 
 window.deleteSong = function(e, idx) {
-    if(!isMaster) return; // Only Master can delete
     e.stopPropagation();
     const newQueue = [...queue];
     newQueue.splice(idx, 1);
@@ -431,7 +433,6 @@ window.deleteSong = function(e, idx) {
 }
 
 window.clearQueue = function() {
-    if(!isMaster) return; // Only Master can clear
     if(confirm("Clear Queue?")) updateFirebase({ queue: [], queueIndex: 0, status: 'pause' });
 }
 
@@ -447,11 +448,15 @@ function switchTab(t) {
     }
 }
 
-// UI HELPERS (Always allowed)
+// UI HELPERS
 dom.seekBar.addEventListener('change', () => {
-    if(!isMaster) return; // Only Master can seek
     const time = (dom.seekBar.value / 100) * player.getDuration();
-    syncSeek(time - player.getCurrentTime()); // Calculate difference for syncSeek
+    
+    // 1. Local action
+    player.seekTo(time, true);
+    
+    // 2. Network action
+    updateFirebase({ seekTime: time });
 });
 function updateProgress() {
     if (!player) return;
