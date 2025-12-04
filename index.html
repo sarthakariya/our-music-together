@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Listen Together</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+
+    <div class="main-container">
+        <div class="glass-panel player-panel">
+            <h1>Sarthak & [Her Name]</h1>
+            <p>Connected <i class="fa-solid fa-link"></i></p>
+            
+            <div id="player-container">
+                <div id="player"></div>
+            </div>
+
+            <div class="controls">
+                <button class="btn-control" onclick="syncAction('play')"><i class="fa-solid fa-play"></i></button>
+                <button class="btn-control" onclick="syncAction('pause')"><i class="fa-solid fa-pause"></i></button>
+            </div>
+            <div id="statusText">Waiting for a song...</div>
+        </div>
+
+        <div class="glass-panel search-panel">
+            <h2><i class="fa-solid fa-music"></i> Library</h2>
+            
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search for a song..." onkeypress="handleEnter(event)">
+                <button onclick="searchYouTube()"><i class="fa-solid fa-search"></i></button>
+            </div>
+
+            <div id="results-container" class="results-list">
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-database-compat.js"></script>
+    
+    <script src="script.js"></script>
+</body>
+</html>
