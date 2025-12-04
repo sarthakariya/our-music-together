@@ -2,82 +2,86 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sarthak & Reechita's Player</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Poppins:wght@300;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css"> 
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Together Music</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Montserrat:wght@700;900&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 </head>
 <body>
 
-    <div id="sync-blocker" class="glass-overlay">
-        <div class="loader-content">
-            <div class="spinner"></div>
-            <h2 id="blocker-text">SYNCING...</h2>
-            <p>Ad detected or connection syncing.<br>Playback will resume automatically.</p>
-        </div>
-    </div>
-
-    <div class="main-container">
-        
-        <div class="glass-card player-panel">
-            <div class="header">
-                <h3><i class="fa-solid fa-signal" style="color:#00ff88"></i> CONNECTED</h3>
+    <div class="container">
+        <div class="left-panel">
+            <div id="player"></div>
+            
+            <div id="music-disc">
+                <div class="vinyl-center"></div>
             </div>
 
-            <div class="disc-wrapper">
-                <div class="vinyl-record" id="music-disc">
-                    <div class="vinyl-center"></div>
+            <div id="sync-blocker" class="glass-overlay">
+                <div class="loader-content">
+                    <div class="spinner"></div>
+                    <h2 id="blocker-text">HEARTBEAT LOST</h2>
+                    
+                    <p id="lag-status">Monitoring delay: 0 seconds</p> 
+
+                    <p style="font-size: 0.8em; margin-bottom: 5px;">Waiting for partner to finish ad or browser to unfreeze.</p>
+                    
+                    <button id="resume-btn" onclick="window.resumeSync()" class="btn-ctrl main" style="margin-top: 20px;">
+                        FORCE SYNC & RESUME (Timeout in <span id="sync-timer">120</span>s)
+                    </button>
                 </div>
             </div>
 
-            <div class="song-info">
-                <h2 id="current-song-title">Select a Song</h2>
-                
-                <div class="progress-area">
+            <div class="controls glass-effect">
+                <div class="song-info">
+                    <h2 id="current-song-title">Welcome to Together Music!</h2>
+                </div>
+
+                <div class="seek-bar-container">
                     <span id="current-time">0:00</span>
                     <input type="range" id="seek-bar" value="0" min="0" max="100">
                     <span id="duration">0:00</span>
                 </div>
-            </div>
 
-            <div class="controls">
-                <button class="btn-ctrl small" onclick="syncSeek(-10)"><i class="fa-solid fa-rotate-left"></i></button>
-                <button class="btn-ctrl main" id="play-pause-btn" onclick="togglePlay()"><i class="fa-solid fa-play"></i></button>
-                <button class="btn-ctrl small" onclick="syncSeek(10)"><i class="fa-solid fa-rotate-right"></i></button>
-            </div>
-
-            <div id="player-container">
-                <div id="player"></div>
+                <div class="playback-buttons">
+                    <button class="btn-ctrl" onclick="syncSeek(-15)"><i class="fa-solid fa-backward-step"></i></button>
+                    <button class="btn-ctrl main" id="play-pause-btn" onclick="togglePlay()"><i class="fa-solid fa-play"></i></button>
+                    <button class="btn-ctrl" onclick="syncSeek(15)"><i class="fa-solid fa-forward-step"></i></button>
+                </div>
             </div>
         </div>
-
-        <div class="right-section">
-            <div class="glass-card search-bar">
-                <i class="fa-solid fa-search"></i>
-                <input type="text" id="searchInput" placeholder="Search or Paste Link..." autocomplete="off">
+        
+        <div class="right-panel">
+            <div class="header glass-effect">
+                <h3>Together Sync</h3>
+            </div>
+            
+            <div class="search-section">
+                <input type="text" id="searchInput" placeholder="Search YouTube or paste video link...">
             </div>
 
-            <div class="glass-card list-wrapper">
-                <div class="tabs">
-                    <div class="tab active" onclick="switchTab('results')">RESULTS</div>
-                    <div class="tab" onclick="switchTab('queue')">QUEUE <span id="queue-count">(0)</span></div>
-                    <div class="tab-icon" onclick="clearQueue()"><i class="fa-solid fa-trash-can"></i></div>
-                </div>
-
-                <div id="results-list" class="scroll-list active-list">
-                    <div class="empty-state">SEARCH FOR MUSIC</div>
-                </div>
-
-                <div id="queue-list" class="scroll-list">
-                    <div class="empty-state">QUEUE IS EMPTY</div>
-                </div>
+            <div class="tab-controls">
+                <div class="tab active" onclick="switchTab('results')"><i class="fa-solid fa-magnifying-glass"></i> Results</div>
+                <div class="tab" onclick="switchTab('queue')"><i class="fa-solid fa-list"></i> Queue <span id="queue-count">(0)</span></div>
             </div>
+
+            <div id="results-list" class="scroll-list active-list">
+                <div class="empty-state">Search for a song to begin!</div>
+            </div>
+            
+            <div id="queue-list" class="scroll-list">
+                </div>
+            
+            <button class="btn-ctrl main clear-btn" onclick="window.clearQueue()"><i class="fa-solid fa-trash-can"></i> Clear Queue</button>
         </div>
     </div>
 
-    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-database-compat.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
