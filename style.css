@@ -10,7 +10,7 @@
     --glass: rgba(255, 255, 255, 0.08); /* Increased transparency for glass base */
     --glass-hover: rgba(255, 255, 255, 0.15); /* Brighter glass on hover */
     --glass-border: rgba(255, 255, 255, 0.2); /* Stronger, clearer border */
-    --text-main: #ffffff;            /* Pure white text for high contrast */
+    --text-main: #ffffff;           /* Pure white text for high contrast */
     --text-dim: #b3b3c2;            /* Slightly brighter dim text for better readability */
     --text-error: #ff5252;          /* Light red for error states */
     
@@ -192,6 +192,10 @@ body {
     height: 50px;
     animation: spin 1s linear infinite;
     margin: 0 auto 20px;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 #forceSyncBtn {
     padding: 15px 30px;
