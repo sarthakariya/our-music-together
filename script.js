@@ -27,7 +27,7 @@ let player;
 let currentQueue = [];
 let currentSearchResults = [];
 let currentVideoId = null;
-let isSeeking = false; // This is now handled by the native player, but we keep the flag for sync logic
+let isSeeking = false; 
 let isPartnerPlaying = false; 
 let lastBroadcaster = "System";
 let isManualAction = false; 
@@ -59,8 +59,9 @@ function onYouTubeIframeAPIReady() {
         width: '100%',
         videoId: '', 
         playerVars: {
-            'controls': 1, // <--- 🔑 CHANGE: Enable official YouTube player controls
-            'disablekb': 0, // <--- 🔑 CHANGE: Enable keyboard controls (like spacebar play/pause, arrows seek)
+            // We use official controls now for better seek/time management
+            'controls': 1, 
+            'disablekb': 0, 
             'rel': 0,
             'showinfo': 0,
             'modestbranding': 1,
@@ -75,24 +76,17 @@ function onYouTubeIframeAPIReady() {
 }
 
 function onPlayerReady(event) {
+    // Volume Control Listener Setup
     player.setVolume(70); 
     document.getElementById('volume-progress').style.width = '70%'; 
     
-    // Attach volume listener (still useful for custom UI)
     document.getElementById('volume-bar').addEventListener('input', (e) => {
         const volume = parseInt(e.target.value);
         player.setVolume(volume);
         document.getElementById('volume-progress').style.width = volume + '%';
     });
 
-    // We no longer need the custom seek bar listeners, as the native player handles seeking!
-    // The following blocks are removed:
-    // seekBar.addEventListener('mousedown', ...
-    // seekBar.addEventListener('mouseup', ...
-    // seekBar.addEventListener('input', ...
-    
-    // We no longer need to update time locally, as the native player shows it!
-    // clearInterval is unnecessary, but keeping a simplified interval for sync broadcast is still useful.
+    // Time broadcast interval (for sync)
     setInterval(broadcastTimeIfPlaying, 1000); 
 
     // **********************************************
@@ -112,14 +106,13 @@ function onPlayerReady(event) {
     loadInitialData(); 
 }
 
-// Replaced updateLocalTime with a simpler function for sync broadcast
 function broadcastTimeIfPlaying() {
-     if (player && player.getPlayerState && currentVideoId) {
+    if (player && player.getPlayerState && currentVideoId) {
         const state = player.getPlayerState();
         const currentTime = player.getCurrentTime();
         const duration = player.getDuration();
         
-        // This handles automatic playNextSong logic
+        // Auto play next song if ended
         if (state === YT.PlayerState.PLAYING && duration - currentTime < 1 && duration > 0) {
             playNextSong();
             return; 
@@ -127,9 +120,9 @@ function broadcastTimeIfPlaying() {
 
         // Only broadcast state if we are the last known broadcaster and currently playing
         if (state === YT.PlayerState.PLAYING && lastBroadcaster === myName) {
-             broadcastState('play', currentTime, currentVideoId, false);
+            broadcastState('play', currentTime, currentVideoId, false);
         }
-     }
+    }
 }
 
 function onPlayerStateChange(event) {
@@ -137,8 +130,6 @@ function onPlayerStateChange(event) {
     const playIcon = '<i class="fa-solid fa-play"></i>';
     const pauseIcon = '<i class="fa-solid fa-pause"></i>';
     
-    // NOTE: The visual custom play/pause button is now largely redundant 
-    // but we keep it updated based on state.
     if (event.data === YT.PlayerState.PLAYING) {
         playPauseBtn.innerHTML = pauseIcon;
         isManualAction = false; 
@@ -148,17 +139,17 @@ function onPlayerStateChange(event) {
         playPauseBtn.innerHTML = playIcon;
 
         // CRITICAL AD/BUFFER LOGIC
-        // This is triggered by native player stalls (ads/buffering)
         if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.BUFFERING) {
             
             if (!isPartnerPlaying && !isManualAction && !ignoreTemporaryState) {
-                 broadcastState('pause', player.getCurrentTime(), currentVideoId, true); 
+                // This means the local player paused due to an ad/buffer and was not controlled by the partner or me.
+                broadcastState('pause', player.getCurrentTime(), currentVideoId, true); 
             }
         } 
         
         if (event.data === YT.PlayerState.ENDED) {
             if (!isPartnerPlaying) {
-                 broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
+                broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
             }
             playNextSong();
         }
@@ -203,30 +194,36 @@ function loadAndPlayVideo(videoId, title) {
     if (player && videoId) {
         isManualAction = false; 
         ignoreTemporaryState = true; 
+        
+        // This command auto-plays the video
         player.loadVideoById(videoId);
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
         
-        broadcastState('play', player.getCurrentTime(), videoId, false); 
+        // Wait a moment before broadcasting to let the video start loading/playing
+        setTimeout(() => {
+            if(player.getPlayerState() === YT.PlayerState.PLAYING || player.getPlayerState() === YT.PlayerState.BUFFERING) {
+                 broadcastState('play', player.getCurrentTime(), videoId, false); 
+            }
+        }, 300); 
         
-        // Remove manual time display update functions
         renderQueue(currentQueue, currentVideoId);
     }
 }
 
-// The manual time display function is no longer needed
-// function updateTimeDisplay(currentTime, duration) { ... } 
 
+// --- QUEUE MANAGEMENT ---
 
-// --- QUEUE MANAGEMENT (No change in functionality, only removal of unused time functions) ---
 function playNextSong() {
     const currentIndex = currentQueue.findIndex(song => song.videoId === currentVideoId);
-    const nextIndex = (currentIndex + 1) % currentQueue.length;
+    // Loop around to the start of the queue
+    const nextIndex = (currentIndex + 1) % currentQueue.length; 
+    
     if (currentQueue.length > 0) {
         loadAndPlayVideo(currentQueue[nextIndex].videoId, currentQueue[nextIndex].title);
     } else {
         currentVideoId = null;
-        if (player.stopVideo) player.stopVideo();
+        if (player && player.stopVideo) player.stopVideo();
         document.getElementById('current-song-title').textContent = "Queue Ended";
     }
 }
@@ -234,14 +231,13 @@ function playNextSong() {
 function playPreviousSong() {
     const currentIndex = currentQueue.findIndex(song => song.videoId === currentVideoId);
     let prevIndex = currentIndex - 1;
-    if (prevIndex < 0) { prevIndex = currentQueue.length - 1; }
+    // Loop around to the end of the queue
+    if (prevIndex < 0) { prevIndex = currentQueue.length - 1; } 
+    
     if (currentQueue.length > 0) {
         loadAndPlayVideo(currentQueue[prevIndex].videoId, currentQueue[prevIndex].title);
     }
 }
-
-document.getElementById('prev-btn').onclick = playPreviousSong;
-document.getElementById('next-btn').onclick = playNextSong;
 
 function addToQueue(videoId, title, uploader, thumbnail, event) {
     if (event) event.stopPropagation();
@@ -262,11 +258,13 @@ function addBatchToQueue(songs) {
     queueRef.update(updates)
         .then(() => {
             switchTab('queue');
+            // Auto-load and play the first song if nothing is currently playing
             if (!currentVideoId && songs.length > 0) {
+                // Wait for the queue listener to process the updates
                 setTimeout(() => {
                     if (currentQueue.length > 0) {
-                         const firstSong = currentQueue.find(s => s.videoId === songs[0].videoId);
-                         if (firstSong) { loadAndPlayVideo(firstSong.videoId, firstSong.title); }
+                        const firstSong = currentQueue.find(s => s.videoId === songs[0].videoId);
+                        if (firstSong) { loadAndPlayVideo(firstSong.videoId, firstSong.title); }
                     }
                 }, 500);
             }
@@ -276,7 +274,9 @@ function addBatchToQueue(songs) {
 
 function removeFromQueue(videoId, event) {
     if (event) event.stopPropagation();
-    const songToRemove = currentQueue.find(song => song.videoId === currentVideoId);
+    // Find the Firebase key associated with the videoId
+    const songToRemove = currentQueue.find(song => song.videoId === videoId); 
+    
     if (songToRemove && songToRemove.key) {
         queueRef.child(songToRemove.key).remove()
             .then(() => {
@@ -291,7 +291,7 @@ function clearQueue() {
         queueRef.set(null) 
             .then(() => {
                 currentVideoId = null;
-                if (player.stopVideo) player.stopVideo();
+                if (player && player.stopVideo) player.stopVideo();
                 document.getElementById('current-song-title').textContent = "Queue Cleared";
             })
             .catch(error => { console.error("Error clearing queue:", error); });
@@ -299,7 +299,7 @@ function clearQueue() {
 }
 
 
-// --- RENDERING VIEWS (Unchanged for brevity) ---
+// --- RENDERING VIEWS ---
 
 function switchTab(tabName) {
     document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
@@ -314,7 +314,6 @@ function renderQueue(queueArray, currentVideoId) {
     if (queueArray.length === 0) {
         queueList.innerHTML = '<p class="empty-state">Queue is empty. Find a song to get the party started!</p>';
         document.getElementById('queue-count').textContent = 0;
-        document.getElementById('total-queue-size').textContent = 0;
         return;
     }
     queueArray.forEach((song, index) => {
@@ -334,7 +333,6 @@ function renderQueue(queueArray, currentVideoId) {
         queueList.appendChild(item);
     });
     document.getElementById('queue-count').textContent = queueArray.length;
-    document.getElementById('total-queue-size').textContent = queueArray.length;
     const playingItem = queueList.querySelector('.song-item.playing');
     if (playingItem) {
         playingItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -366,7 +364,7 @@ function renderSearchResults(resultsArray) {
 }
 
 
-// --- YOUTUBE SEARCH & PLAYLIST PARSING (Unchanged for brevity) ---
+// --- YOUTUBE SEARCH & PLAYLIST PARSING ---
 
 async function searchYouTube(query, maxResults = 10, type = 'video') {
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=${type}&maxResults=${maxResults}&key=${YOUTUBE_API_KEY}`;
@@ -376,8 +374,8 @@ async function searchYouTube(query, maxResults = 10, type = 'video') {
         const data = await response.json();
 
         if (data.error) {
-             console.error("YouTube API Error:", data.error.message);
-             return [];
+            console.error("YouTube API Error:", data.error.message);
+            return [];
         }
 
         const results = data.items
@@ -448,7 +446,7 @@ async function fetchPlaylist(playlistId, pageToken = null, allSongs = []) {
     }
 }
 
-// --- SPOTIFY WORKAROUND (Unchanged for brevity) ---
+// --- SPOTIFY WORKAROUND ---
 
 function extractSpotifyId(url) {
     const match = url.match(/(?:playlist|album|track)\/([a-zA-Z0-9]+)/);
@@ -489,10 +487,10 @@ async function fetchSpotifyData(link) {
         }
         
         if (foundSongs.length > 0) {
-             statusDiv.innerHTML = `<p class="empty-state" style="color: var(--primary);">✅ Added ${foundSongs.length} songs from Spotify link to the queue!</p>`;
-             addBatchToQueue(foundSongs);
+            statusDiv.innerHTML = `<p class="empty-state" style="color: var(--primary);">✅ Added ${foundSongs.length} songs from Spotify link to the queue!</p>`;
+            addBatchToQueue(foundSongs);
         } else {
-             statusDiv.innerHTML = `<p class="empty-state" style="color: var(--text-error);">Could not find matching YouTube videos for the Spotify tracks.</p>`;
+            statusDiv.innerHTML = `<p class="empty-state" style="color: var(--text-error);">Could not find matching YouTube videos for the Spotify tracks.</p>`;
         }
         setTimeout(() => switchTab('queue'), 3000); 
         
@@ -503,7 +501,7 @@ async function fetchSpotifyData(link) {
 }
 
 
-// --- MAIN SEARCH HANDLER (Unchanged for brevity) ---
+// --- MAIN SEARCH HANDLER ---
 
 async function handleSearchAndLinks() {
     const inputElement = document.getElementById('searchInput');
@@ -536,15 +534,8 @@ async function handleSearchAndLinks() {
     inputElement.value = '';
 }
 
-document.getElementById('search-btn').onclick = handleSearchAndLinks;
-document.getElementById('searchInput').addEventListener('keypress', function (e) {
-    if (e.key === 'Enter') {
-        handleSearchAndLinks();
-    }
-});
 
-
-// --- FIREBASE SYNC (REALTIME DATABASE) (Sync logic adjusted for native controls) ---
+// --- FIREBASE SYNC (REALTIME DATABASE) ---
 
 function loadInitialData() {
     // 1. Queue Listener
@@ -610,7 +601,6 @@ function applyRemoteCommand(state) {
     const partnerIsPlaying = state.action === 'play';
     isPartnerPlaying = true; 
     
-    // We get the current player time locally to measure drift against the remote time
     const localTime = player.getCurrentTime ? player.getCurrentTime() : 0; 
     
     // CRITICAL AD STALL LOGIC ENFORCEMENT
@@ -621,11 +611,9 @@ function applyRemoteCommand(state) {
          }
          return; 
     }
-    // END CRITICAL AD STALL LOGIC ENFORCEMENT
-
-
+    
+    // Check for NEW SONG OR DIFFERENT SONG IN SYNC
     if (state.videoId !== currentVideoId) {
-        // NEW SONG OR DIFFERENT SONG IN SYNC
         const song = currentQueue.find(s => s.videoId === state.videoId);
         const title = song ? song.title : 'External Sync';
 
@@ -662,6 +650,14 @@ function applyRemoteCommand(state) {
     }
 }
 
+function forcePlay() {
+    document.getElementById('syncOverlay').classList.remove('active');
+    if (currentVideoId) {
+        player.playVideo();
+        broadcastState('play', player.getCurrentTime(), currentVideoId, false);
+    }
+}
+
 function updateSyncStatus() {
     const msgEl = document.getElementById('sync-status-msg');
     
@@ -683,7 +679,7 @@ function updateSyncStatus() {
 }
 
 
-// --- CHAT FUNCTIONS (Unchanged for brevity) ---
+// --- CHAT FUNCTIONS ---
 
 function sendChatMessage() {
     const input = document.getElementById('chatInput');
@@ -720,8 +716,37 @@ function displayChatMessage(user, text, timestamp) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-document.getElementById('chatInput').addEventListener('keypress', function (e) {
-    if (e.key === 'Enter') {
-        sendChatMessage();
-    }
-});
+
+// --- INITIALIZATION: EVENT LISTENERS (The fix for duplicate actions!) ---
+
+function initializeAppListeners() {
+    console.log("Setting up application event listeners (Sarthak's fix implemented)...");
+    
+    // 1. Player Controls
+    // Ensure these are attached only once here, and remove any 'onclick' from index.html
+    document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
+    document.getElementById('prev-btn').addEventListener('click', playPreviousSong);
+    document.getElementById('next-btn').addEventListener('click', playNextSong);
+
+    // 2. Search Handlers (Consolidated and fixed the duplication)
+    document.getElementById('search-btn').addEventListener('click', handleSearchAndLinks);
+    document.getElementById('searchInput').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            handleSearchAndLinks();
+        }
+    });
+
+    // 3. Chat Handlers (Consolidated and fixed the duplication)
+    document.getElementById('chatSendBtn').addEventListener('click', sendChatMessage); // Assuming you add an ID 'chatSendBtn' to your send button
+    document.getElementById('chatInput').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            sendChatMessage();
+        }
+    });
+
+    // 4. Force Sync Button
+    document.getElementById('forceSyncBtn').addEventListener('click', forcePlay);
+}
+
+// Call this function once when the script loads
+initializeAppListeners();
