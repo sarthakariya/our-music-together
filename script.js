@@ -28,8 +28,9 @@ let currentQueue = [];
 let currentSearchResults = [];
 let currentVideoId = null;
 let isSeeking = false;
-let isPartnerPlaying = false; // Flag to prevent command loops
+let isPartnerPlaying = false; 
 let lastBroadcaster = "System";
+let ignoreTemporaryState = false; // CRITICAL NEW FLAG: Debounce momentary buffering/pauses
 
 // --- USER IDENTIFICATION ---
 let myName = "Sarthak"; 
@@ -49,7 +50,6 @@ const partnerName = (myName === "Sarthak") ? "Reechita" : "Sarthak";
 
 // --- YOUTUBE PLAYER FUNCTIONS ---
 
-// Function called by the YouTube API once it's ready
 function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
         height: '100%',
@@ -109,23 +109,36 @@ function onPlayerStateChange(event) {
     // 1. Update visual button state
     if (event.data === YT.PlayerState.PLAYING) {
         playPauseBtn.innerHTML = pauseIcon;
-        // When the player starts playing locally (and it wasn't a remote command)
-        if (!isPartnerPlaying) {
+
+        // Broadcast PLAY command only if local initiation AND not just resuming from an ignored state
+        if (!isPartnerPlaying && !ignoreTemporaryState) {
              broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
+        
+        ignoreTemporaryState = false;
+
     } else {
         playPauseBtn.innerHTML = playIcon;
-        // When the player pauses locally (intentional or Ad/Buffer)
-        if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.BUFFERING) {
-            if (!isPartnerPlaying) {
+
+        if (event.data === YT.PlayerState.PAUSED) {
+            // CRITICAL FIX: Only broadcast PAUSE if it was a manual click, not a buffer/ad stall.
+            // If the player state changed to PAUSED immediately after a command (which causes momentary PAUSE/BUFFER), ignore it.
+            if (!isPartnerPlaying && !ignoreTemporaryState) {
                  broadcastState('pause', player.getCurrentTime(), currentVideoId);
             }
-        } else if (event.data === YT.PlayerState.ENDED) {
+        } 
+        
+        if (event.data === YT.PlayerState.ENDED) {
             if (!isPartnerPlaying) {
                  broadcastState('pause', player.getCurrentTime(), currentVideoId);
             }
             playNextSong();
         }
+    }
+    
+    // Reset partner flag and clear ignore flag after a short delay
+    if (ignoreTemporaryState) {
+        setTimeout(() => { ignoreTemporaryState = false; }, 500); // 500ms debounce
     }
     
     isPartnerPlaying = false; 
@@ -153,7 +166,6 @@ function updateLocalTime() {
         }
 
         // AGGRESSIVE 1-SECOND SYNC BROADCAST: Leader sends time updates
-        // This ensures the two players stay within 1 second of each other.
         if (state === YT.PlayerState.PLAYING && lastBroadcaster === myName) {
              broadcastState('play', currentTime, currentVideoId);
         }
@@ -166,24 +178,25 @@ function togglePlayPause() {
     const state = player.getPlayerState();
     
     if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
+        ignoreTemporaryState = true; // Set flag when pausing manually
         player.pauseVideo();
     } else {
+        ignoreTemporaryState = true; // Set flag when playing manually
         if (!currentVideoId && currentQueue.length > 0) {
             loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title);
         } else if (currentVideoId) {
             player.playVideo();
         }
     }
-    // Command is broadcast in onPlayerStateChange
 }
 
 function loadAndPlayVideo(videoId, title) {
     if (player && videoId) {
+        ignoreTemporaryState = true; // Set flag when loading new video
         player.loadVideoById(videoId);
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
         
-        // Broadcast the new song to the partner 
         broadcastState('play', player.getCurrentTime(), videoId);
         
         updateTimeDisplay(0, player.getDuration());
@@ -207,7 +220,7 @@ function updateTimeDisplay(currentTime, duration) {
     document.getElementById('duration').textContent = formatTime(duration);
 }
 
-// --- QUEUE MANAGEMENT (Standard functions remain the same) ---
+// --- QUEUE MANAGEMENT ---
 
 function playNextSong() {
     const currentIndex = currentQueue.findIndex(song => song.videoId === currentVideoId);
@@ -317,7 +330,7 @@ function clearQueue() {
 }
 
 
-// --- RENDERING VIEWS (Standard functions remain the same) ---
+// --- RENDERING VIEWS ---
 
 function switchTab(tabName) {
     document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
@@ -393,7 +406,7 @@ function renderSearchResults(resultsArray) {
 }
 
 
-// --- YOUTUBE SEARCH & PLAYLIST PARSING (Standard functions remain the same) ---
+// --- YOUTUBE SEARCH & PLAYLIST PARSING ---
 
 async function searchYouTube() {
     const inputElement = document.getElementById('searchInput');
@@ -607,7 +620,7 @@ function updateSyncStatus() {
 }
 
 
-// --- CHAT FUNCTIONS (Standard functions remain the same) ---
+// --- CHAT FUNCTIONS ---
 
 function sendChatMessage() {
     const input = document.getElementById('chatInput');
