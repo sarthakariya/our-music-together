@@ -29,6 +29,7 @@
         
         <header class="top-bar">
             <h1>Sarthak <i class="fa-solid fa-heart pulse"></i> Reechita</h1>
+            <p id="sync-status-msg" class="sync-status-msg"><i class="fa-solid fa-sync fa-spin"></i> Initializing Deep Space Connection...</p>
         </header>
 
         <div class="main-layout">
@@ -36,13 +37,100 @@
             <section class="player-card glass-panel">
                 
                 <div class="video-wrapper">
-                    <div id="player"></div>
+                    <div id="player"></div> 
                     <div class="video-overlay" style="pointer-events: none;"></div>
                 </div>
-                
-                </section>
 
+                <div class="info-area">
+                    <h2 id="current-song-title" class="truncate-text">No Song Loaded</h2>
+                </div>
+
+                <div class="time-control">
+                    <span id="current-time">0:00</span>
+                    <div class="slider-wrapper">
+                        <input type="range" id="seek-bar" min="0" max="100" value="0">
+                        <div class="slider-progress" id="seek-progress" style="width: 0%;"></div>
+                    </div>
+                    <span id="duration">-:--</span>
+                </div>
+
+                <div class="controls">
+                    <button class="btn-sec" id="prev-btn" title="Previous Track">
+                        <i class="fa-solid fa-backward-step"></i>
+                    </button>
+                    <button class="btn-main" id="play-pause-btn" onclick="togglePlayPause()" title="Play / Pause">
+                        <i class="fa-solid fa-play"></i>
+                    </button>
+                    <button class="btn-sec" id="next-btn" title="Next Track">
+                        <i class="fa-solid fa-forward-step"></i>
+                    </button>
+                </div>
+                
+                <div class="volume-area">
+                    <i class="fa-solid fa-volume-low"></i>
+                    <div class="slider-wrapper volume-slider-wrapper">
+                        <input type="range" id="volume-bar" min="0" max="100" value="70">
+                        <div class="slider-progress volume-progress-fill" id="volume-progress" style="width: 70%;"></div>
+                    </div>
+                    <i class="fa-solid fa-volume-high"></i>
+                </div>
+
+            </section>
+            
+            <div class="library-container">
+                
+                <section class="glass-panel top-panel library-card">
+                    <h3 class="section-title-inline">Deep Space Library</h3>
+
+                    <div class="search-wrapper">
+                        <input type="text" id="searchInput" placeholder="Search YouTube for music..." title="Search YouTube">
+                        <button id="search-btn" class="search-btn" onclick="searchYouTube()">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </button>
+                    </div>
+
+                    <div class="tabs">
+                        <button class="tab active" id="tab-queue" onclick="switchTab('queue')">
+                            Queue (<span id="queue-count">0</span>)
+                        </button>
+                        <button class="tab" id="tab-results" onclick="switchTab('results')">
+                            Search Results
+                        </button>
+                    </div>
+
+                    <div class="list-view active" id="queue-list">
+                        <p class="empty-state">Queue is empty. Find a song to get the party started!</p>
+                    </div>
+
+                    <div class="list-view" id="results-list">
+                        </div>
+
+                    <div class="library-footer">
+                        <span>Total Queue Size: <span id="total-queue-size">0</span> Tracks</span>
+                        <button class="clear-btn" id="clear-queue-btn" onclick="clearQueue()">
+                            <i class="fa-solid fa-eraser"></i> Clear Queue
+                        </button>
+                    </div>
+
+                </section>
+                
+                <section class="glass-panel bottom-panel chat-card">
+                    <h3><i class="fa-solid fa-comments"></i> Live Sync Chat</h3>
+                    
+                    <div class="chat-messages" id="chat-messages">
+                        </div>
+
+                    <div class="chat-input-wrapper">
+                        <input type="text" id="chatInput" placeholder="Send a message to your partner..." title="Chat Input">
+                        <button class="send-btn" id="send-chat-btn" onclick="sendChatMessage()">
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </div>
+
+                </section>
             </div>
+
+        </div>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
