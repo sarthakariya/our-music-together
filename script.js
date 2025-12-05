@@ -27,7 +27,7 @@ let player;
 let currentQueue = [];
 let currentSearchResults = [];
 let currentVideoId = null;
-let isSeeking = false;
+let isSeeking = false; // This is now handled by the native player, but we keep the flag for sync logic
 let isPartnerPlaying = false; 
 let lastBroadcaster = "System";
 let isManualAction = false; 
@@ -59,8 +59,8 @@ function onYouTubeIframeAPIReady() {
         width: '100%',
         videoId: '', 
         playerVars: {
-            'controls': 0, 
-            'disablekb': 1,
+            'controls': 1, // <--- 🔑 CHANGE: Enable official YouTube player controls
+            'disablekb': 0, // <--- 🔑 CHANGE: Enable keyboard controls (like spacebar play/pause, arrows seek)
             'rel': 0,
             'showinfo': 0,
             'modestbranding': 1,
@@ -78,29 +78,58 @@ function onPlayerReady(event) {
     player.setVolume(70); 
     document.getElementById('volume-progress').style.width = '70%'; 
     
-    // Attach listeners
+    // Attach volume listener (still useful for custom UI)
     document.getElementById('volume-bar').addEventListener('input', (e) => {
         const volume = parseInt(e.target.value);
         player.setVolume(volume);
         document.getElementById('volume-progress').style.width = volume + '%';
     });
 
-    const seekBar = document.getElementById('seek-bar');
-    seekBar.addEventListener('mousedown', () => { isSeeking = true; });
-    seekBar.addEventListener('mouseup', (e) => {
-        isSeeking = false;
-        const newTime = (player.getDuration() * e.target.value) / 100;
-        player.seekTo(newTime, true);
-        broadcastState('seek', newTime, currentVideoId, false); 
-    });
-    seekBar.addEventListener('input', (e) => {
-        const newTime = (player.getDuration() * e.target.value) / 100;
-        updateTimeDisplay(newTime, player.getDuration());
+    // We no longer need the custom seek bar listeners, as the native player handles seeking!
+    // The following blocks are removed:
+    // seekBar.addEventListener('mousedown', ...
+    // seekBar.addEventListener('mouseup', ...
+    // seekBar.addEventListener('input', ...
+    
+    // We no longer need to update time locally, as the native player shows it!
+    // clearInterval is unnecessary, but keeping a simplified interval for sync broadcast is still useful.
+    setInterval(broadcastTimeIfPlaying, 1000); 
+
+    // **********************************************
+    // 🔥 ON-DISCONNECT CLEANUP COMMANDS 🔥
+    // **********************************************
+    
+    queueRef.onDisconnect().remove().then(() => {
+        console.log("OnDisconnect handler set for queue cleanup.");
     });
     
-    setInterval(updateLocalTime, 1000);
-
+    syncRef.onDisconnect().remove().then(() => {
+        console.log("OnDisconnect handler set for sync state cleanup.");
+    });
+    
+    // **********************************************
+    
     loadInitialData(); 
+}
+
+// Replaced updateLocalTime with a simpler function for sync broadcast
+function broadcastTimeIfPlaying() {
+     if (player && player.getPlayerState && currentVideoId) {
+        const state = player.getPlayerState();
+        const currentTime = player.getCurrentTime();
+        const duration = player.getDuration();
+        
+        // This handles automatic playNextSong logic
+        if (state === YT.PlayerState.PLAYING && duration - currentTime < 1 && duration > 0) {
+            playNextSong();
+            return; 
+        }
+
+        // Only broadcast state if we are the last known broadcaster and currently playing
+        if (state === YT.PlayerState.PLAYING && lastBroadcaster === myName) {
+             broadcastState('play', currentTime, currentVideoId, false);
+        }
+     }
 }
 
 function onPlayerStateChange(event) {
@@ -108,6 +137,8 @@ function onPlayerStateChange(event) {
     const playIcon = '<i class="fa-solid fa-play"></i>';
     const pauseIcon = '<i class="fa-solid fa-pause"></i>';
     
+    // NOTE: The visual custom play/pause button is now largely redundant 
+    // but we keep it updated based on state.
     if (event.data === YT.PlayerState.PLAYING) {
         playPauseBtn.innerHTML = pauseIcon;
         isManualAction = false; 
@@ -117,6 +148,7 @@ function onPlayerStateChange(event) {
         playPauseBtn.innerHTML = playIcon;
 
         // CRITICAL AD/BUFFER LOGIC
+        // This is triggered by native player stalls (ads/buffering)
         if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.BUFFERING) {
             
             if (!isPartnerPlaying && !isManualAction && !ignoreTemporaryState) {
@@ -142,50 +174,29 @@ function onPlayerStateChange(event) {
     updateSyncStatus();
 }
 
-function updateLocalTime() {
-    if (player && player.getPlayerState && currentVideoId) {
-        const state = player.getPlayerState();
-        const currentTime = player.getCurrentTime();
-        const duration = player.getDuration();
-        
-        if (!isSeeking) {
-            updateTimeDisplay(currentTime, duration);
-            const seekPercentage = (currentTime / duration) * 100;
-            document.getElementById('seek-bar').value = seekPercentage;
-            document.getElementById('seek-progress').style.width = seekPercentage + '%';
-        }
-        
-        if (state === YT.PlayerState.PLAYING && duration - currentTime < 1 && duration > 0) {
-            playNextSong();
-            return; 
-        }
-
-        if (state === YT.PlayerState.PLAYING && lastBroadcaster === myName) {
-             broadcastState('play', currentTime, currentVideoId, false);
-        }
-    }
-}
-
 function togglePlayPause() {
     if (!player || !player.getPlayerState) return;
 
     const state = player.getPlayerState();
     
-    isManualAction = true; 
-    
+    // If the state is playing or buffering, pause it. Otherwise, play it.
     if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
         player.pauseVideo();
+        // Send a non-ad pause command
         document.getElementById('syncOverlay').classList.remove('active'); 
         broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
     } else {
+        // If nothing is loaded, load the first song if available
         if (!currentVideoId && currentQueue.length > 0) {
             loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title);
         } else if (currentVideoId) {
             player.playVideo();
+            // Send a play command
             document.getElementById('syncOverlay').classList.remove('active');
             broadcastState('play', player.getCurrentTime(), currentVideoId, false);
         }
     }
+    isManualAction = true; // Flag the action as local manual control
 }
 
 function loadAndPlayVideo(videoId, title) {
@@ -198,28 +209,16 @@ function loadAndPlayVideo(videoId, title) {
         
         broadcastState('play', player.getCurrentTime(), videoId, false); 
         
-        updateTimeDisplay(0, player.getDuration());
+        // Remove manual time display update functions
         renderQueue(currentQueue, currentVideoId);
     }
 }
 
-function updateTimeDisplay(currentTime, duration) {
-    const formatTime = (seconds) => {
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = Math.floor(seconds % 60);
-        
-        const pad = (num) => num.toString().padStart(2, '0');
-        
-        if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
-        return `${m}:${pad(s)}`;
-    };
-    
-    document.getElementById('current-time').textContent = formatTime(currentTime);
-    document.getElementById('duration').textContent = formatTime(duration);
-}
+// The manual time display function is no longer needed
+// function updateTimeDisplay(currentTime, duration) { ... } 
 
-// --- QUEUE MANAGEMENT (Unchanged for brevity) ---
+
+// --- QUEUE MANAGEMENT (No change in functionality, only removal of unused time functions) ---
 function playNextSong() {
     const currentIndex = currentQueue.findIndex(song => song.videoId === currentVideoId);
     const nextIndex = (currentIndex + 1) % currentQueue.length;
@@ -289,7 +288,7 @@ function removeFromQueue(videoId, event) {
 
 function clearQueue() {
     if (confirm("Are you sure you want to clear the entire queue?")) {
-        queueRef.remove()
+        queueRef.set(null) 
             .then(() => {
                 currentVideoId = null;
                 if (player.stopVideo) player.stopVideo();
@@ -299,7 +298,9 @@ function clearQueue() {
     }
 }
 
+
 // --- RENDERING VIEWS (Unchanged for brevity) ---
+
 function switchTab(tabName) {
     document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
     document.querySelectorAll('.list-view').forEach(list => list.classList.remove('active'));
@@ -365,7 +366,7 @@ function renderSearchResults(resultsArray) {
 }
 
 
-// --- YOUTUBE SEARCH & PLAYLIST PARSING (Updated) ---
+// --- YOUTUBE SEARCH & PLAYLIST PARSING (Unchanged for brevity) ---
 
 async function searchYouTube(query, maxResults = 10, type = 'video') {
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=${type}&maxResults=${maxResults}&key=${YOUTUBE_API_KEY}`;
@@ -447,7 +448,7 @@ async function fetchPlaylist(playlistId, pageToken = null, allSongs = []) {
     }
 }
 
-// --- NEW SPOTIFY WORKAROUND ---
+// --- SPOTIFY WORKAROUND (Unchanged for brevity) ---
 
 function extractSpotifyId(url) {
     const match = url.match(/(?:playlist|album|track)\/([a-zA-Z0-9]+)/);
@@ -458,15 +459,9 @@ function extractSpotifyId(url) {
 }
 
 async function fetchSpotifyData(link) {
-    // Note: Spotify API requires a backend server for OAuth. 
-    // We will use a public proxy/API to fetch playlist/album metadata.
-    // WARNING: These proxies can break or be unreliable.
-    
     const statusDiv = document.getElementById('results-list');
     statusDiv.innerHTML = '<p class="empty-state">Attempting to fetch Spotify data (This may take a moment)...</p>';
 
-    // This is a common public proxy endpoint structure for demonstration
-    // If this specific endpoint breaks, a different one must be used.
     const proxyUrl = `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`;
 
     try {
@@ -478,16 +473,14 @@ async function fetchSpotifyData(link) {
             return;
         }
         
-        // Use the first 50 songs to prevent API overload
         const tracksToSearch = data.tracks.slice(0, 50); 
         const foundSongs = [];
         
         statusDiv.innerHTML = `<p class="empty-state">Found ${tracksToSearch.length} tracks. Searching YouTube for matches...</p>`;
 
         for (const track of tracksToSearch) {
-            // Search YouTube for "Artist - Track Name"
             const query = `${track.artist} - ${track.title}`;
-            const results = await searchYouTube(query, 1); // Get only the top result
+            const results = await searchYouTube(query, 1); 
             
             if (results.length > 0) {
                 foundSongs.push(results[0]);
@@ -510,7 +503,7 @@ async function fetchSpotifyData(link) {
 }
 
 
-// --- MAIN SEARCH HANDLER (Updated to handle links/keywords) ---
+// --- MAIN SEARCH HANDLER (Unchanged for brevity) ---
 
 async function handleSearchAndLinks() {
     const inputElement = document.getElementById('searchInput');
@@ -551,7 +544,7 @@ document.getElementById('searchInput').addEventListener('keypress', function (e)
 });
 
 
-// --- FIREBASE SYNC (REALTIME DATABASE) (Unchanged for brevity) ---
+// --- FIREBASE SYNC (REALTIME DATABASE) (Sync logic adjusted for native controls) ---
 
 function loadInitialData() {
     // 1. Queue Listener
@@ -616,7 +609,10 @@ function applyRemoteCommand(state) {
     
     const partnerIsPlaying = state.action === 'play';
     isPartnerPlaying = true; 
-
+    
+    // We get the current player time locally to measure drift against the remote time
+    const localTime = player.getCurrentTime ? player.getCurrentTime() : 0; 
+    
     // CRITICAL AD STALL LOGIC ENFORCEMENT
     if (!partnerIsPlaying && state.isAdStall) {
          document.getElementById('syncOverlay').classList.add('active');
@@ -629,19 +625,23 @@ function applyRemoteCommand(state) {
 
 
     if (state.videoId !== currentVideoId) {
+        // NEW SONG OR DIFFERENT SONG IN SYNC
         const song = currentQueue.find(s => s.videoId === state.videoId);
         const title = song ? song.title : 'External Sync';
 
+        // Use loadVideoById to load the song and start at the remote time
         player.loadVideoById(state.videoId, state.time);
         currentVideoId = state.videoId;
         document.getElementById('current-song-title').textContent = title;
         renderQueue(currentQueue, currentVideoId);
         
     } else if (state.action === 'seek') {
+        // SEEK COMMAND
         player.seekTo(state.time, true);
 
     } else {
-        const timeDiff = Math.abs(player.getCurrentTime() - state.time);
+        // TIME CORRECTION
+        const timeDiff = Math.abs(localTime - state.time);
         if (timeDiff > 2) {
             player.seekTo(state.time, true);
         }
