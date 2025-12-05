@@ -32,7 +32,7 @@ let isPartnerPlaying = false;
 let lastBroadcaster = "System";
 let isManualAction = false; 
 let ignoreTemporaryState = false; 
-let lastSyncState = null; // NEW: Store the last received sync state for accurate status messaging
+let lastSyncState = null; // Store the last received sync state for accurate status messaging
 // ----------------------------
 
 // --- USER IDENTIFICATION ---
@@ -100,7 +100,7 @@ function onPlayerReady(event) {
     
     setInterval(updateLocalTime, 1000);
 
-    loadInitialData();
+    loadInitialData(); // Load Firebase listeners once player is ready
 }
 
 function onPlayerStateChange(event) {
@@ -128,6 +128,7 @@ function onPlayerStateChange(event) {
         
         if (event.data === YT.PlayerState.ENDED) {
             if (!isPartnerPlaying) {
+                 // Video ended locally, pause partner before playing next song
                  broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
             }
             playNextSong();
@@ -175,7 +176,7 @@ function togglePlayPause() {
 
     const state = player.getPlayerState();
     
-    isManualAction = true; // Mark action as manual
+    isManualAction = true; 
     
     if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
         player.pauseVideo();
@@ -225,7 +226,7 @@ function updateTimeDisplay(currentTime, duration) {
     document.getElementById('duration').textContent = formatTime(duration);
 }
 
-// --- QUEUE MANAGEMENT (Functions are unchanged, keeping them concise here) ---
+// --- QUEUE MANAGEMENT ---
 
 function playNextSong() {
     const currentIndex = currentQueue.findIndex(song => song.videoId === currentVideoId);
@@ -307,7 +308,7 @@ function clearQueue() {
 }
 
 
-// --- RENDERING VIEWS (Functions are unchanged) ---
+// --- RENDERING VIEWS ---
 
 function switchTab(tabName) {
     document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
@@ -374,7 +375,7 @@ function renderSearchResults(resultsArray) {
 }
 
 
-// --- YOUTUBE SEARCH & PLAYLIST PARSING (Functions are unchanged) ---
+// --- YOUTUBE SEARCH & PLAYLIST PARSING ---
 
 async function searchYouTube() {
     const inputElement = document.getElementById('searchInput');
@@ -474,7 +475,7 @@ async function fetchPlaylist(playlistId, pageToken = null, allSongs = []) {
 // --- FIREBASE SYNC (REALTIME DATABASE) ---
 
 function loadInitialData() {
-    // 1. Queue Listener (Unchanged)
+    // 1. Queue Listener (MUST be loaded first for data integrity)
     queueRef.on('value', (snapshot) => {
         const queueData = snapshot.val();
         currentQueue = [];
@@ -486,10 +487,10 @@ function loadInitialData() {
         renderQueue(currentQueue, currentVideoId);
     });
 
-    // 2. Sync Command Listener
+    // 2. Sync Command Listener (MUST be loaded for playback control)
     syncRef.on('value', (snapshot) => {
         const syncState = snapshot.val();
-        lastSyncState = syncState; // Store the state globally
+        lastSyncState = syncState; 
 
         if (syncState) {
             lastBroadcaster = syncState.lastUpdater; 
@@ -511,7 +512,7 @@ function loadInitialData() {
         updateSyncStatus();
     });
 
-    // 3. Chat Listener (Unchanged)
+    // 3. Chat Listener
     chatRef.limitToLast(20).on('child_added', (snapshot) => {
         const message = snapshot.val();
         displayChatMessage(message.user, message.text, message.timestamp);
@@ -526,7 +527,7 @@ function broadcastState(action, time, videoId = currentVideoId, isAdStall = fals
         time: time,
         videoId: videoId,
         lastUpdater: myName, 
-        isAdStall: isAdStall, // Flag to indicate if this is an ad/buffer forced pause
+        isAdStall: isAdStall, 
         timestamp: Date.now()
     }).catch(error => {
         console.error("Error broadcasting state:", error);
@@ -540,6 +541,7 @@ function applyRemoteCommand(state) {
     isPartnerPlaying = true; 
 
     if (state.videoId !== currentVideoId) {
+        // NEW SONG OR DIFFERENT SONG IN SYNC
         const song = currentQueue.find(s => s.videoId === state.videoId);
         const title = song ? song.title : 'External Sync';
 
@@ -552,6 +554,7 @@ function applyRemoteCommand(state) {
         player.seekTo(state.time, true);
 
     } else {
+        // TIME CORRECTION
         const timeDiff = Math.abs(player.getCurrentTime() - state.time);
         if (timeDiff > 2) {
             player.seekTo(state.time, true);
@@ -566,12 +569,12 @@ function applyRemoteCommand(state) {
             player.playVideo();
         }
     } else {
-        // Partner paused. Check the 'isAdStall' flag.
+        // Partner paused.
         if (state.isAdStall) {
              // This is an Ad/Buffer Stall - activate the strict lock screen
              document.getElementById('syncOverlay').classList.add('active');
         } else {
-             // This is a manual pause, seeking pause, or end of song pause - remove the lock screen
+             // Manual pause, seeking pause, or end of song pause - remove the lock screen
              document.getElementById('syncOverlay').classList.remove('active');
         }
         
@@ -585,7 +588,7 @@ function updateSyncStatus() {
     const msgEl = document.getElementById('sync-status-msg');
     
     if (document.getElementById('syncOverlay').classList.contains('active')) {
-         // Status when strict lock is active (only happens during Ad/Buffer stall from partner)
+         // Status when strict lock is active (Ad/Buffer stall)
          msgEl.innerHTML = `<i class="fa-solid fa-sync fa-spin"></i> **AWAITING PARTNER** (Halted by ${lastBroadcaster})`;
          msgEl.style.color = 'var(--accent)';
     } else if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
@@ -593,14 +596,15 @@ function updateSyncStatus() {
         msgEl.innerHTML = `<i class="fa-solid fa-satellite-dish"></i> **DEEP SYNC ACTIVE**`;
         msgEl.style.color = 'var(--primary)';
     } else {
-        // Status when paused (manual pause, end of song, or if no one is online)
+        // Status when paused
         
         // CHECK 1: If the last update was an ad stall (but the overlay is NOT active)
         if (lastSyncState && lastSyncState.action === 'pause' && lastSyncState.isAdStall === true) {
+            // This message displays when YOU click Play/Pause and break out of a stale remote Ad-Stall state
             msgEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> **WARNING: STALE AD STALL** (Last by ${lastBroadcaster})`;
             msgEl.style.color = 'var(--text-error)';
         } else {
-            // Default pause message
+            // Default pause message (manual pause or no music)
             msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> **PAUSED**`;
             msgEl.style.color = 'var(--text-dim)';
         }
@@ -608,7 +612,7 @@ function updateSyncStatus() {
 }
 
 
-// --- CHAT FUNCTIONS (Unchanged) ---
+// --- CHAT FUNCTIONS ---
 
 function sendChatMessage() {
     const input = document.getElementById('chatInput');
