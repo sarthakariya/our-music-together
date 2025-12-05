@@ -1,73 +1,113 @@
-/* ... (Keep existing styles for :root, body, ambient-light, etc.) ... */
+// ... (Keep existing CONFIGURATION and DOM setup) ...
 
-/* Carved Video Player */
-.video-wrapper {
-    /* ... (Keep existing styles) ... */
-    margin-bottom: 30px; 
-    position: relative;
-}
-/* THIS IS THE FIX: Block interaction with the raw iframe */
-.video-overlay {
-    position: absolute; inset: 0; 
-    background: transparent; 
-    z-index: 10; /* Ensure it's above the iframe */
-    /* THIS line prevents mouse events from reaching the iframe */
-    pointer-events: auto; 
-    border-radius: 30px; /* Match wrapper curve */
-}
-#player { width: 100%; height: 100%; }
+// Variables
+let player;
+// ... (keep queue, currentIndex, etc.)
+let myName = "Guest"; 
 
-/* INFO & PROGRESS */
-.info-area { text-align: center; margin-bottom: 25px; }
-#current-song-title { 
-    font-size: 1.8rem; font-weight: 700; margin: 0; 
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
-}
-.sync-status-msg { color: var(--accent); margin-top: 5px; font-weight: 500; font-size: 0.9rem; }
+// ... (onYouTubeIframeAPIReady remains the same) ...
 
-/* Controls (Ensuring consistent button sizes and spacing) */
-.controls { display: flex; justify-content: center; align-items: center; gap: 35px; }
-
-/* ... (Keep existing styles for .btn-sec, .btn-main) ... */
-
-/* LIBRARY & SEARCH (Ensuring padding and consistency) */
-.library-card { flex: 1; padding: 0; overflow: hidden; }
-
-.search-wrapper {
-    padding: 25px; border-bottom: 1px solid var(--glass-border);
-    display: flex; gap: 15px;
-}
-#searchInput {
-    flex: 1; 
-    padding: 15px 25px; 
-    border-radius: 20px; /* Consistency */
-}
-.search-wrapper button {
-    width: 60px; border-radius: 20px; /* Consistency */
+function identifyUser() {
+    let name = prompt("Welcome! Please enter your name for chat (Sarthak or Reechita):");
+    if (name) {
+        name = name.trim();
+        if (name.toLowerCase().includes('sarthak')) {
+            myName = "Sarthak";
+        } else if (name.toLowerCase().includes('reechita')) {
+            myName = "Reechita";
+        } else {
+            myName = name; 
+        }
+        // Ensure the chat section acknowledges the correct name
+        dom.chatBox.innerHTML += `<div class="chat-message system">You are logged in as **${myName}**.</div>`;
+    }
 }
 
-/* Song Item Consistency */
-.list-view { flex: 1; overflow-y: auto; padding: 0 20px; display: none; }
-.song-item {
-    display: flex; align-items: center; gap: 15px; padding: 12px;
-    border-radius: var(--curve-s); margin-bottom: 10px; 
-    /* ... (Keep existing styles) ... */
-}
-.thumb { width: 50px; height: 50px; border-radius: 10px; object-fit: cover; }
-.meta { flex: 1; overflow: hidden; }
-
-/* CHAT SECTION Consistency */
-.chat-card { 
-    flex: 1; padding: 25px; display: flex; flex-direction: column; 
-    border-radius: 40px; /* Carved Look */
+function onPlayerReady() {
+    identifyUser(); 
+    initSync();
+    initChatListener();
+    
+    // UI Loop
+    setInterval(updateUI, 500);
+    // Master Status Check Loop
+    setInterval(checkPlaybackStatus, 1000);
 }
 
-/* ... (Keep all existing chat message styles) ... */
+// ... (onPlayerStateChange remains the same) ...
 
-.chat-input-wrapper { display: flex; gap: 10px; margin-top: 10px; }
-#chatInput { flex: 1; padding: 15px; border-radius: 25px; }
-.chat-input-wrapper button { 
-    width: 50px; border-radius: 25px; /* Match input height/curve */
+// ================= V5: STRICT SYNCHRONIZATION PROTOCOL =================
+
+function initSync() {
+    db.on('value', snap => {
+        const data = snap.val();
+        if (!data) return;
+
+        queue = data.queue || [];
+        currentIndex = data.index || 0;
+        renderQueue();
+
+        if (queue.length > 0) {
+            const song = queue[currentIndex];
+            
+            if (player.getVideoData().video_id !== song.id) {
+                player.loadVideoById(song.id);
+                dom.title.innerText = song.title;
+            }
+
+            // CRITICAL AD LOCK VERIFICATION:
+            if (data.adDetected) {
+                // If ad is detected anywhere, everyone pauses and sees the wait screen
+                if(player.getPlayerState() !== 2) player.pauseVideo();
+                // THIS ENSURES THE OVERLAY IS ACTIVE FOR EVERYONE
+                if(!dom.overlay.classList.contains('active')) dom.overlay.classList.add('active'); 
+            } else {
+                
+                const serverStatus = data.status;
+                const serverTime = data.time || 0;
+                const skipCmd = data.skipCmd || 0;
+
+                dom.overlay.classList.remove('active');
+                
+                // ... (Rest of status and skip sync logic remains the same) ...
+            }
+        }
+    });
 }
 
-/* ... (Keep existing media queries for responsiveness) ... */
+// ... (Rest of checkPlaybackStatus, togglePlay, forceSyncResume, 
+// fetchPlaylist, searchYouTube, and UI Helpers remain the same, 
+// except for the corrected name handling in renderMessage) ...
+
+window.sendMessage = function() {
+    const text = dom.chatIn.value.trim();
+    if (text) {
+        chatRef.push({
+            user: myName, // Uses the correctly identified name
+            message: text,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
+        dom.chatIn.value = '';
+    }
+}
+
+function renderMessage(user, message, timestamp) {
+    const div = document.createElement('div');
+    const senderClass = (user === myName) ? 'me' : 'partner';
+    
+    // CORRECTED: Check for specific user names
+    const partnerName = (myName === "Sarthak") ? "Reechita" : "Sarthak";
+    const userIsKnown = (user === "Sarthak" || user === "Reechita");
+
+    div.className = `chat-message ${senderClass}`;
+
+    const date = new Date(timestamp);
+    const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+    div.innerHTML = `
+        <p><strong>${user}:</strong> ${message}</p>
+        <small>${timeStr}</small>
+    `;
+    dom.chatBox.appendChild(div);
+    dom.chatBox.scrollTop = dom.chatBox.scrollHeight;
+}
