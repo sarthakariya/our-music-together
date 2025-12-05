@@ -4,22 +4,22 @@
 
 :root {
     /* Color Palette: Deep Space Violet/Pink Theme */
-    --bg-dark: #070310;            /* Deep Space Black/Violet - Absolute background */
-    --primary: #c084fc;            /* Soft Violet Neon - Primary accent, used for active states */
-    --accent: #f472b6;             /* Pink - Secondary accent, used for gradients and pulses */
-    --glass: rgba(255, 255, 255, 0.05); /* Subtle glass base for panel backgrounds */
-    --glass-hover: rgba(255, 255, 255, 0.1); /* Slightly brighter glass on hover */
-    --glass-border: rgba(255, 255, 255, 0.15); /* Stronger border for separation */
-    --text-main: #ffffff;          /* Pure white text for high contrast */
-    --text-dim: #a1a1aa;           /* Dimmed gray text for secondary information */
-    --text-error: #f87171;         /* Light red for error states */
+    --bg-dark: #03000b;              /* Deeper Space Black/Violet - Absolute background */
+    --primary: #c084fc;              /* Soft Violet Neon - Primary accent, used for active states */
+    --accent: #f472b6;              /* Pink - Secondary accent, used for gradients and pulses */
+    --glass: rgba(255, 255, 255, 0.08); /* Increased transparency for glass base */
+    --glass-hover: rgba(255, 255, 255, 0.15); /* Brighter glass on hover */
+    --glass-border: rgba(255, 255, 255, 0.2); /* Stronger, clearer border */
+    --text-main: #ffffff;            /* Pure white text for high contrast */
+    --text-dim: #b3b3c2;            /* Slightly brighter dim text for better readability */
+    --text-error: #ff5252;          /* Light red for error states */
     
     /* Global Curves and Shadows */
-    --curve-l: 40px;               /* Large curve for main panels */
-    --curve-m: 25px;               /* Medium curve for wrappers */
-    --curve-s: 15px;               /* Small curve for list items and buttons */
-    --shadow-deep: 0 20px 60px rgba(0, 0, 0, 0.5); /* Deep shadow for 3D separation */
-    --shadow-neon: 0 0 30px rgba(192, 132, 252, 0.3); /* Soft neon glow for active elements */
+    --curve-l: 45px;                /* Large curve for main panels */
+    --curve-m: 30px;                /* Medium curve for wrappers */
+    --curve-s: 18px;                /* Small curve for list items and buttons */
+    --shadow-deep: 0 30px 90px rgba(0, 0, 0, 0.8); /* Deeper shadow for 3D separation */
+    --shadow-neon: 0 0 40px rgba(192, 132, 252, 0.4); /* Softer, wider neon glow */
 }
 
 /* Base Reset and Global Typography */
@@ -29,7 +29,8 @@
     margin: 0;
     padding: 0;
     -webkit-tap-highlight-color: transparent; /* Improves mobile experience */
-    transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.1s;
+    /* Smoother transitions for a more polished feel */
+    transition: background-color 0.3s ease-out, color 0.3s ease-out, border-color 0.3s ease-out, box-shadow 0.3s ease-out, transform 0.15s ease-out;
 }
 
 body {
@@ -50,19 +51,19 @@ body {
     text-overflow: ellipsis;
 }
 
-/* Scrollbar Styling (Minimalist, Dark Theme) */
+/* Scrollbar Styling (Themed and Minimalist) */
 .list-view, .chat-messages, .player-card {
     scrollbar-width: thin; /* Firefox */
     scrollbar-color: var(--primary) transparent; /* Firefox */
 }
 .list-view::-webkit-scrollbar, .chat-messages::-webkit-scrollbar, .player-card::-webkit-scrollbar {
-    width: 8px;
+    width: 10px; /* Slightly wider for visibility */
     background-color: transparent;
 }
 .list-view::-webkit-scrollbar-thumb, .chat-messages::-webkit-scrollbar-thumb, .player-card::-webkit-scrollbar-thumb {
-    background-color: rgba(192, 132, 252, 0.4);
+    background-color: rgba(192, 132, 252, 0.5); /* Primary accent with transparency */
     border-radius: 10px;
-    border: 2px solid transparent;
+    border: 3px solid var(--bg-dark); /* Creates a distinct, floating look */
 }
 .list-view::-webkit-scrollbar-thumb:hover, .chat-messages::-webkit-scrollbar-thumb:hover {
     background-color: var(--primary);
@@ -77,10 +78,11 @@ body {
 .ambient-light {
     position: absolute; inset: 0;
     /* Two subtle radial gradients for a deep space effect */
-    background: radial-gradient(circle at 10% 20%, rgba(192, 132, 252, 0.15), transparent 30%),
-                radial-gradient(circle at 90% 80%, rgba(244, 114, 182, 0.15), transparent 30%);
+    background: radial-gradient(circle at 15% 25%, rgba(192, 132, 252, 0.2), transparent 35%),
+                radial-gradient(circle at 85% 75%, rgba(244, 114, 182, 0.2), transparent 35%);
     background-size: 200% 200%;
-    animation: backgroundShift 30s infinite alternate cubic-bezier(0.4, 0, 0.2, 1);
+    /* Slower, smoother animation */
+    animation: backgroundShift 45s infinite alternate cubic-bezier(0.6, 0.2, 0.4, 0.8);
     z-index: -1;
 }
 
@@ -92,18 +94,18 @@ body {
 /* App Container and Grid Layout */
 .app-container {
     width: 95%; 
-    max-width: 1500px; 
+    max-width: 1600px; 
     height: 95vh;
     min-height: 600px;
     display: flex; 
     flex-direction: column; 
-    gap: 25px;
-    padding: 10px;
+    gap: 30px; /* Increased gap for breathing room */
+    padding: 15px;
 }
 
 .main-layout { 
     display: flex; 
-    gap: 25px; 
+    gap: 30px; 
     height: 100%; 
     overflow: hidden; 
 }
@@ -115,16 +117,17 @@ body {
 }
 .top-bar h1 { 
     font-weight: 900; 
-    font-size: clamp(1.8rem, 3vw, 2.5rem); 
-    letter-spacing: 2px; 
+    font-size: clamp(2rem, 3.5vw, 3rem); 
+    letter-spacing: 3px; 
     margin: 0; 
-    text-shadow: 0 0 10px rgba(192, 132, 252, 0.5);
+    /* Enhanced text neon glow */
+    text-shadow: 0 0 15px var(--primary), 0 0 5px var(--accent);
 }
 .app-tagline {
-    font-size: 0.85rem;
-    font-weight: 300;
+    font-size: 0.9rem;
+    font-weight: 500;
     color: var(--text-dim);
-    margin-top: 5px;
+    margin-top: 8px;
     letter-spacing: 1px;
 }
 /* Heart pulse animation */
@@ -135,7 +138,7 @@ body {
 }
 @keyframes heartbeat { 
     0%, 100% { transform: scale(1); } 
-    50% { transform: scale(1.15); } 
+    50% { transform: scale(1.1); } /* Slightly less aggressive pulse */
 }
 
 
@@ -146,32 +149,91 @@ body {
 .glass-panel {
     background: var(--glass);
     border: 1px solid var(--glass-border);
-    border-radius: var(--curve-l); /* 40px Curve */
+    border-radius: var(--curve-l); /* 45px Curve */
     box-shadow: var(--shadow-deep);
-    backdrop-filter: blur(30px);
+    backdrop-filter: blur(40px); /* Increased blur for better separation */
     display: flex; 
     flex-direction: column;
-    transition: box-shadow 0.3s ease, transform 0.2s ease;
+    transition: box-shadow 0.4s ease, transform 0.2s ease;
 }
-/* Subtle elevation on hover for panels */
+/* Subtle elevation and neon glow on hover */
 .glass-panel:hover {
-    box-shadow: 0 25px 80px rgba(0,0,0,0.6), var(--shadow-neon);
+    box-shadow: 0 35px 100px rgba(0,0,0,0.85), var(--shadow-neon);
 }
 
 .section-title {
-    font-size: 1.3rem;
+    font-size: 1.4rem;
     font-weight: 700;
     color: var(--primary);
     margin-bottom: 25px;
     padding-bottom: 5px;
-    border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.1); /* Brighter dash line */
 }
 .section-title-inline {
-    font-size: 1.2rem;
+    font-size: 1.3rem;
     font-weight: 700;
     color: var(--primary);
-    padding: 25px 25px 0;
+    padding: 30px 30px 0;
     margin-bottom: 15px;
+}
+
+/* Overlay for Sync Warning */
+.overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.85); /* Darker overlay */
+    backdrop-filter: blur(10px);
+    z-index: 1000;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+}
+.overlay.active {
+    display: flex;
+    opacity: 1;
+}
+.glass-modal {
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid var(--primary);
+    border-radius: var(--curve-m);
+    padding: 40px;
+    text-align: center;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.9), var(--shadow-neon);
+    max-width: 450px;
+    animation: fadeIn 0.5s ease-out;
+}
+.glass-modal h2 {
+    color: var(--accent);
+    margin-bottom: 15px;
+    font-size: 2rem;
+}
+.glass-modal p {
+    color: var(--text-dim);
+    margin-bottom: 30px;
+}
+.spinner {
+    border: 5px solid rgba(255, 255, 255, 0.3);
+    border-top: 5px solid var(--accent);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+#forceSyncBtn {
+    padding: 15px 30px;
+    background: linear-gradient(90deg, var(--accent), var(--primary));
+    color: white;
+    border: none;
+    border-radius: var(--curve-s);
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(244, 114, 182, 0.5);
+}
+#forceSyncBtn:hover {
+    box-shadow: 0 0 30px rgba(244, 114, 182, 0.8);
 }
 
 
@@ -181,23 +243,23 @@ body {
 
 .player-card { 
     flex: 2; 
-    padding: 30px; 
+    padding: 40px; /* Increased padding */
     position: relative; 
     overflow-y: auto; 
-    min-width: 450px;
+    min-width: 500px;
 }
 
 /* Carved Video Player Container */
 .video-wrapper {
     width: 100%; 
     aspect-ratio: 16/9;
-    border-radius: var(--curve-m); /* 25px Curve */
+    border-radius: var(--curve-m); /* 30px Curve */
     overflow: hidden;
-    /* Neumorphic/Carved Inner Shadow */
-    box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.9), 0 10px 30px rgba(0, 0, 0, 0.5);
+    /* Neumorphic/Carved Inner Shadow (Deeper effect) */
+    box-shadow: inset 0 0 50px rgba(0, 0, 0, 1), 0 15px 40px rgba(0, 0, 0, 0.7);
     margin-bottom: 30px; 
     position: relative;
-    border: 2px solid rgba(255, 255, 255, 0.1);
+    border: 3px solid rgba(255, 255, 255, 0.1);
 }
 
 /* The invisible overlay that allows ad skipping (pointer-events: none) */
@@ -217,16 +279,16 @@ body {
     padding: 0 10px;
 }
 #current-song-title { 
-    font-size: clamp(1.2rem, 2.5vw, 1.8rem); 
+    font-size: clamp(1.4rem, 2.8vw, 2.2rem); 
     font-weight: 900; 
     margin: 0; 
-    text-shadow: 0 0 5px rgba(255, 255, 255, 0.2);
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
 }
 .sync-status-msg { 
     color: var(--text-dim); 
-    margin-top: 5px; 
+    margin-top: 8px; 
     font-weight: 500; 
-    font-size: 0.9rem; 
+    font-size: 1rem; 
 }
 .sync-status-msg i { 
     color: var(--primary);
@@ -242,26 +304,26 @@ body {
     display: flex; 
     align-items: center; 
     gap: 15px; 
-    font-size: 0.85rem; 
+    font-size: 0.9rem; 
     color: var(--text-dim); 
-    margin: 15px 0 30px; 
+    margin: 15px 0 35px; /* Increased bottom margin */
 }
 
 /* Slider Wrapper */
 .slider-wrapper { 
     flex: 1; 
     position: relative; 
-    height: 8px; 
+    height: 10px; /* Thicker bar */
     background: rgba(255, 255, 255, 0.15); 
     border-radius: 10px; 
     cursor: pointer;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+    box-shadow: inset 0 1px 5px rgba(0,0,0,0.7);
 }
 
 /* Range Input (Hidden but Functional) */
 input[type=range] { 
     position: absolute; 
-    top: -6px; 
+    top: -5px; /* Adjust to center thumb over bar */
     left: 0; 
     width: 100%; 
     height: 20px; 
@@ -278,7 +340,7 @@ input[type=range] {
     border-radius: 10px; 
     width: 0%; 
     transition: width 0.1s linear; /* Smooth progress update */
-    box-shadow: 0 0 10px var(--primary);
+    box-shadow: 0 0 15px var(--primary);
 }
 
 /* Playback Control Buttons */
@@ -286,55 +348,56 @@ input[type=range] {
     display: flex; 
     justify-content: center; 
     align-items: center; 
-    gap: 40px; 
+    gap: 50px; /* Increased gap */
 }
 
 /* Secondary Button (Skip/Prev) */
 .btn-sec { 
-    background: var(--glass-hover); 
+    background: rgba(255, 255, 255, 0.1); /* Slightly more opaque glass */
     border: 1px solid var(--glass-border); 
     color: var(--text-main); 
-    width: 60px; 
-    height: 60px; 
+    width: 65px; /* Slightly larger */
+    height: 65px; 
     border-radius: 50%;
-    font-size: 1.2rem; 
+    font-size: 1.3rem; 
     cursor: pointer; 
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
-    transition: transform 0.2s, background 0.2s;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
 }
 .btn-sec:hover { 
     background: rgba(255, 255, 255, 0.25); 
     color: var(--primary);
+    transform: translateY(-2px); /* Subtle hover lift */
 }
 .btn-sec:active { 
-    transform: scale(0.9); 
+    transform: scale(0.92); 
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
 }
 
 /* Main Button (Play/Pause) */
 .btn-main {
-    width: 90px; 
-    height: 90px; 
+    width: 100px; /* Larger main button */
+    height: 100px; 
     border-radius: 50%;
     background: linear-gradient(135deg, var(--accent), var(--primary));
     color: white; 
     border: none; 
-    font-size: 2.2rem; 
+    font-size: 2.5rem; 
     cursor: pointer;
-    box-shadow: 0 0 40px var(--accent);
+    box-shadow: 0 0 50px var(--accent);
     display: flex; 
     justify-content: center; 
     align-items: center;
-    /* Primary Pulsing Animation */
-    animation: neonPulse 2.5s infinite alternate cubic-bezier(0.4, 0, 0.2, 1);
+    /* Primary Pulsing Animation (Slightly slower and smoother) */
+    animation: neonPulse 3s infinite alternate cubic-bezier(0.6, 0.2, 0.4, 0.8);
 }
 .btn-main:active { 
-    transform: scale(0.9); 
-    box-shadow: 0 0 10px var(--accent);
+    transform: scale(0.95); 
+    box-shadow: 0 0 15px var(--accent);
 }
 
 @keyframes neonPulse {
-    0% { transform: scale(1); box-shadow: 0 0 15px var(--accent), 0 0 30px var(--primary); }
-    100% { transform: scale(1.05); box-shadow: 0 0 25px var(--accent), 0 0 50px var(--primary); }
+    0% { transform: scale(1); box-shadow: 0 0 20px var(--accent), 0 0 40px var(--primary); }
+    100% { transform: scale(1.03); box-shadow: 0 0 30px var(--accent), 0 0 60px var(--primary); }
 }
 
 /* Volume Control */
@@ -342,14 +405,14 @@ input[type=range] {
     display: flex; 
     align-items: center; 
     gap: 15px; 
-    width: 70%; 
-    max-width: 400px;
-    margin: 30px auto 0; 
+    width: 80%; 
+    max-width: 450px;
+    margin: 40px auto 0; 
     color: var(--text-dim); 
-    font-size: 1.1rem;
+    font-size: 1.2rem;
 }
 .volume-slider-wrapper {
-    height: 6px; /* Slightly smaller for volume */
+    height: 8px; /* Slightly smaller for volume */
 }
 .volume-progress-fill {
     background: linear-gradient(to right, #4ade80, #10b981); /* Green for volume */
@@ -365,44 +428,44 @@ input[type=range] {
     flex: 1; 
     display: flex; 
     flex-direction: column; 
-    gap: 25px; 
-    min-width: 400px;
-    max-width: 500px;
+    gap: 30px; 
+    min-width: 450px;
+    max-width: 550px;
 }
 .top-panel { flex: 2; min-height: 400px; padding-bottom: 0; }
-.bottom-panel { flex: 1; min-height: 300px; }
+.bottom-panel { flex: 1; min-height: 350px; } /* Slightly larger chat area */
 
 
 /* Search Input and Button */
 .search-wrapper {
-    padding: 0 25px 25px; 
+    padding: 0 30px 30px; 
     border-bottom: 1px solid var(--glass-border);
     display: flex; 
     gap: 15px;
 }
 #searchInput {
     flex: 1; 
-    background: rgba(0, 0, 0, 0.3); 
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.4); /* Darker background */
+    border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 15px 20px; 
     border-radius: var(--curve-s);
     color: var(--text-main); 
     font-family: 'Outfit';
-    font-size: 1rem;
-    box-shadow: inset 0 1px 5px rgba(0,0,0,0.5);
+    font-size: 1.05rem;
+    box-shadow: inset 0 2px 7px rgba(0,0,0,0.8);
 }
 #searchInput::placeholder { color: var(--text-dim); }
-#searchInput:focus { border-color: var(--primary); background: rgba(0, 0, 0, 0.5); }
+#searchInput:focus { border-color: var(--accent); background: rgba(0, 0, 0, 0.6); }
 
 .search-btn {
     background: var(--primary); 
     border: none; 
     color: white;
-    width: 50px; 
-    height: 50px;
+    width: 55px; /* Slightly larger button */
+    height: 55px;
     border-radius: var(--curve-s); 
     cursor: pointer;
-    font-size: 1.1rem;
+    font-size: 1.2rem;
 }
 .search-btn:active { transform: scale(0.95); }
 
@@ -410,14 +473,14 @@ input[type=range] {
 /* Tabs */
 .tabs { 
     display: flex; 
-    padding: 10px 25px; 
-    gap: 10px; 
+    padding: 10px 30px; 
+    gap: 15px; 
     border-bottom: 1px solid var(--glass-border);
     margin-bottom: 10px;
 }
 .tab {
     flex: 1; 
-    padding: 10px 15px; 
+    padding: 12px 18px; 
     background: transparent; 
     border: none;
     color: var(--text-dim); 
@@ -425,76 +488,87 @@ input[type=range] {
     cursor: pointer;
     border-radius: var(--curve-s); 
     font-size: 1rem;
-    transition: 0.2s;
 }
-.tab:hover { color: var(--primary); }
+.tab:hover { color: var(--accent); }
 .tab.active { 
-    background: rgba(255, 255, 255, 0.15); 
-    color: white; 
-    box-shadow: 0 0 10px rgba(192, 132, 252, 0.2);
+    background: var(--primary); /* Solid highlight */
+    color: var(--bg-dark); /* Dark text on bright background for punch */
+    box-shadow: 0 0 15px rgba(192, 132, 252, 0.6);
+    transform: translateY(-1px);
 }
 #queue-count { color: var(--accent); font-weight: 900; }
+.tab.active #queue-count { color: var(--bg-dark); } /* Dark count on bright tab */
+
 
 /* List Views (Queue & Results) */
 .list-view { 
     flex: 1; 
     overflow-y: auto; 
-    padding: 0 25px 0 25px; 
+    padding: 0 30px 0 30px; 
     display: none; 
-    min-height: 200px; /* Ensure space when active */
+    min-height: 200px; 
 }
 .list-view.active { display: block; }
 .empty-state {
     text-align: center;
-    padding: 40px 20px;
+    padding: 50px 20px;
     color: var(--text-dim);
     font-style: italic;
     font-size: 1.1rem;
 }
 
-/* Individual Song Item Styling */
+/* Individual Song Item Styling (Polished Disc Look) */
 .song-item {
     display: flex; 
     align-items: center; 
     gap: 15px; 
-    padding: 12px;
+    padding: 15px; /* Increased padding */
     border-radius: var(--curve-s); 
-    margin-bottom: 10px; 
+    margin-bottom: 12px; 
     cursor: pointer;
-    background: rgba(255, 255, 255, 0.05); 
-    border: 1px solid transparent;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    background: rgba(255, 255, 255, 0.08); /* Stronger glass base */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+    position: relative;
+    overflow: hidden;
 }
-.song-item:hover { 
-    background: var(--glass-hover); 
-    border-color: var(--primary);
+.song-item:before { /* Subtle background animation on hover */
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(90deg, rgba(192, 132, 252, 0) 0%, rgba(192, 132, 252, 0.05) 50%, rgba(192, 132, 252, 0) 100%);
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+.song-item:hover:before {
+    opacity: 1;
 }
 .song-item.playing {
-    background: linear-gradient(90deg, rgba(192, 132, 252, 0.3), rgba(244, 114, 182, 0.1));
+    background: linear-gradient(90deg, rgba(192, 132, 252, 0.35), rgba(244, 114, 182, 0.15));
     border-color: var(--primary);
-    box-shadow: 0 0 15px rgba(192, 132, 252, 0.4), 0 4px 10px rgba(0, 0, 0, 0.5);
-    transform: translateY(-2px);
+    box-shadow: 0 0 20px rgba(192, 132, 252, 0.5), 0 5px 15px rgba(0, 0, 0, 0.7);
+    transform: translateY(-3px);
 }
 .thumb { 
-    width: 50px; 
-    height: 50px; 
-    border-radius: 8px; 
+    width: 60px; /* Larger thumbnail */
+    height: 60px; 
+    border-radius: 50%; /* Made the thumbnail circular like a vinyl record/disc */
     object-fit: cover; 
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 2px solid var(--accent); /* Accent border */
+    flex-shrink: 0;
 }
 .meta { flex: 1; overflow: hidden; }
-.meta h4 { margin: 0; font-size: 0.95rem; font-weight: 700; }
-.meta p { margin: 2px 0 0; font-size: 0.75rem; color: var(--text-dim); }
+.meta h4 { margin: 0; font-size: 1rem; font-weight: 700; color: white; }
+.meta p { margin: 3px 0 0; font-size: 0.8rem; color: var(--text-dim); }
 
 .add-btn, .del-btn {
     background: transparent; 
-    border: 1px solid var(--primary);
+    border: 2px solid var(--primary);
     color: var(--primary); 
-    width: 35px; 
-    height: 35px;
+    width: 40px; /* Larger buttons */
+    height: 40px;
     border-radius: 50%;
     cursor: pointer;
-    transition: 0.2s;
     flex-shrink: 0;
 }
 .add-btn:hover { background: var(--primary); color: white; }
@@ -503,12 +577,12 @@ input[type=range] {
 
 /* Library Footer */
 .library-footer {
-    padding: 15px 25px; 
+    padding: 15px 30px; 
     border-top: 1px solid var(--glass-border);
     display: flex; 
     justify-content: space-between; 
     align-items: center;
-    font-size: 0.85rem; 
+    font-size: 0.9rem; 
     color: var(--text-dim);
 }
 #total-queue-size { color: var(--primary); font-weight: 700; }
@@ -521,7 +595,7 @@ input[type=range] {
     padding: 5px 10px;
     border-radius: var(--curve-s);
 }
-.clear-btn:hover { background: rgba(255, 0, 0, 0.1); }
+.clear-btn:hover { background: rgba(255, 0, 0, 0.15); }
 
 
 /* ------------------------------------------------------------------------------------------------------ */
@@ -530,7 +604,7 @@ input[type=range] {
 
 .chat-card { 
     flex: 1; 
-    padding: 25px; 
+    padding: 30px; 
     display: flex; 
     flex-direction: column; 
     border-radius: var(--curve-l); 
@@ -538,9 +612,9 @@ input[type=range] {
 .chat-card h3 { 
     margin-top: 0; 
     color: var(--primary); 
-    font-size: 1.2rem; 
+    font-size: 1.3rem; 
     border-bottom: 1px solid var(--glass-border);
-    padding-bottom: 10px;
+    padding-bottom: 15px;
     margin-bottom: 15px;
 }
 .chat-messages { 
@@ -553,22 +627,22 @@ input[type=range] {
 }
 
 .chat-message {
-    padding: 10px 15px; 
-    max-width: 85%;
+    padding: 12px 18px; /* Slightly larger padding */
+    max-width: 90%;
     margin-bottom: 12px; 
-    font-size: 0.95rem; 
+    font-size: 1rem; 
     line-height: 1.4;
     animation: fadeIn 0.3s ease-out;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
 }
 
 /* System Messages */
 .chat-message.system { 
-    background: rgba(128, 0, 128, 0.3); 
+    background: rgba(128, 0, 128, 0.4); 
     color: var(--primary); 
-    border-radius: 15px; 
+    border-radius: 20px; 
     text-align: center;
-    max-width: 100%;
+    max-width: 80%;
     margin-left: auto;
     margin-right: auto;
     font-weight: 500;
@@ -579,48 +653,53 @@ input[type=range] {
     background: linear-gradient(135deg, var(--accent), #e34399); 
     color: white; 
     align-self: flex-end; 
-    border-radius: 18px 5px 18px 18px; 
+    border-radius: 20px 8px 20px 20px; 
     margin-left: auto; 
 }
 /* Partner's Message (The other user) */
 .chat-message.partner { 
-    background: rgba(255, 255, 255, 0.1); 
+    background: rgba(255, 255, 255, 0.12); /* Slightly brighter glass */
     color: var(--text-main); 
     align-self: flex-start; 
-    border-radius: 5px 18px 18px 18px;
+    border-radius: 8px 20px 20px 20px;
 }
 
 .chat-message strong { font-weight: 700; color: var(--primary); }
 .chat-message small { 
     display: block; 
-    font-size: 0.7rem; 
-    color: var(--text-dim); 
+    font-size: 0.75rem; 
+    color: var(--bg-dark); /* Dark time for 'me' messages */
     margin-top: 5px;
-    opacity: 0.7;
+    opacity: 0.8;
 }
+.chat-message.partner small {
+    color: var(--text-dim); /* Dim time for 'partner' messages */
+}
+
 
 .chat-input-wrapper { 
     display: flex; 
-    gap: 10px; 
+    gap: 15px; 
 }
 #chatInput { 
     flex: 1; 
-    padding: 15px 20px; 
-    border-radius: 25px; 
-    border: 1px solid rgba(255, 255, 255, 0.15); 
-    background: rgba(0, 0, 0, 0.5); 
+    padding: 15px 25px; 
+    border-radius: 30px; 
+    border: 1px solid rgba(255, 255, 255, 0.2); 
+    background: rgba(0, 0, 0, 0.6); /* Darker background */
     color: var(--text-main); 
     font-family: 'Outfit';
     font-size: 1rem;
+    box-shadow: inset 0 2px 5px rgba(0,0,0,0.8);
 }
 .send-btn { 
-    width: 50px; 
+    width: 60px; /* Larger button */
     background: var(--primary); 
     border: none; 
-    border-radius: 25px; 
+    border-radius: 30px; 
     color: white; 
     cursor: pointer; 
-    font-size: 1.1rem;
+    font-size: 1.2rem;
 }
 .send-btn:active { transform: scale(0.95); }
 
@@ -630,7 +709,7 @@ input[type=range] {
 /* ------------------------------------------------------------------------------------------------------ */
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
+    from { opacity: 0; transform: translateY(15px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
@@ -646,93 +725,95 @@ input[type=range] {
 /* Mobile (Up to 768px) */
 @media (max-width: 768px) {
     .app-container {
-        height: auto;
         padding: 15px;
-        gap: 15px;
+        gap: 20px;
     }
     body {
-        overflow-y: auto; /* Allow scrolling on mobile */
+        overflow-y: auto; 
         align-items: flex-start;
     }
     .main-layout { 
         flex-direction: column; 
-        gap: 15px; 
+        gap: 20px; 
         overflow: visible; 
         height: auto;
     }
     
     /* Panel Adjustments */
     .glass-panel {
-        border-radius: 30px;
-        padding: 20px;
+        border-radius: 35px;
+        padding: 25px;
         min-width: 0;
     }
     .player-card { min-width: 0; }
     .library-container { 
         min-width: 0; 
         max-width: 100%;
-        gap: 15px;
+        gap: 20px;
     }
     
     /* Header & Title */
-    .top-bar h1 { font-size: 1.8rem; letter-spacing: 1px; }
+    .top-bar h1 { font-size: 2rem; letter-spacing: 1px; }
 
     /* Player Controls */
-    .controls { gap: 20px; }
-    .btn-main { width: 75px; height: 75px; font-size: 1.8rem; }
-    .btn-sec { width: 50px; height: 50px; font-size: 1rem; }
+    .controls { gap: 25px; }
+    .btn-main { width: 80px; height: 80px; font-size: 2rem; }
+    .btn-sec { width: 55px; height: 55px; font-size: 1.1rem; }
     .info-area { margin-bottom: 20px; }
-    #current-song-title { font-size: 1.4rem; }
-    .time-control { margin: 10px 0 20px; }
+    #current-song-title { font-size: 1.6rem; }
+    .time-control { margin: 10px 0 25px; }
     
     /* Volume Area Hiding (Space Saving) */
     .volume-area { display: none; }
 
     /* Search and Tabs */
-    .search-wrapper { padding: 0 20px 20px; }
-    .tabs { padding: 5px 20px; }
-    .tab { font-size: 0.9rem; padding: 8px 10px; }
-    .list-view { padding: 0 20px 0 20px; }
+    .search-wrapper { padding: 0 25px 25px; }
+    .tabs { padding: 5px 25px; }
+    .tab { font-size: 0.95rem; padding: 10px 10px; }
+    .list-view { padding: 0 25px 0 25px; }
+    
+    /* Song Item */
+    .song-item { padding: 10px; }
+    .thumb { width: 45px; height: 45px; }
+    .meta h4 { font-size: 0.9rem; }
+    .add-btn, .del-btn { width: 35px; height: 35px; }
     
     /* Chat Adjustments */
-    .chat-card { padding: 20px; }
+    .chat-card { padding: 25px; }
     .chat-messages { padding-right: 10px; }
-    .chat-message { max-width: 90%; font-size: 0.9rem; }
-    #chatInput { padding: 12px 15px; font-size: 0.9rem; }
-    .send-btn { width: 45px; height: 45px; border-radius: 22px; font-size: 1rem; }
+    .chat-message { max-width: 100%; font-size: 0.95rem; }
+    #chatInput { padding: 12px 20px; font-size: 0.95rem; }
+    .send-btn { width: 50px; height: 50px; border-radius: 25px; font-size: 1.1rem; }
 }
 
 /* Tablet Portrait (768px - 1024px) */
 @media (min-width: 769px) and (max-width: 1024px) {
-    .app-container { max-width: 900px; }
-    .main-layout { gap: 15px; }
-    .player-card { min-width: 400px; }
-    .library-container { min-width: 300px; max-width: 400px; }
+    .app-container { max-width: 950px; }
+    .main-layout { gap: 20px; }
+    .player-card { min-width: 450px; }
+    .library-container { min-width: 350px; max-width: 450px; }
 
-    .controls { gap: 30px; }
-    .btn-main { width: 80px; height: 80px; font-size: 2rem; }
-    .btn-sec { width: 55px; height: 55px; font-size: 1.1rem; }
-    .volume-area { width: 85%; }
+    .controls { gap: 40px; }
+    .btn-main { width: 90px; height: 90px; font-size: 2.2rem; }
+    .btn-sec { width: 60px; height: 60px; font-size: 1.2rem; }
+    .volume-area { width: 90%; }
 }
 
-/* Desktop Wide (Above 1500px) - Optional Scaling */
-@media (min-width: 1501px) {
+/* Desktop Wide (Above 1600px) - Optional Scaling */
+@media (min-width: 1601px) {
     .app-container { 
-        max-width: 1700px;
+        max-width: 1920px;
     }
     .player-card {
-        padding: 40px;
-    }
-    .video-wrapper {
-        border-radius: 35px;
+        padding: 50px;
     }
     .controls {
-        gap: 50px;
+        gap: 60px;
     }
     .btn-main {
-        width: 100px;
-        height: 100px;
-        font-size: 2.5rem;
+        width: 110px;
+        height: 110px;
+        font-size: 2.8rem;
     }
 }
 
@@ -740,37 +821,28 @@ input[type=range] {
 /* ---------------------------------- SECTION 10: SPECIFIC COMPONENT STYLES ----------------------------- */
 /* ------------------------------------------------------------------------------------------------------ */
 
+/* Animation for the delete button appearing */
 .song-item .del-btn {
     opacity: 0;
-    transform: translateX(10px);
+    transform: scale(0.8) translateX(10px);
+    transition: opacity 0.3s, transform 0.3s;
 }
 .song-item:hover .del-btn {
     opacity: 1;
-    transform: translateX(0);
+    transform: scale(1) translateX(0);
 }
 
 .chat-messages .chat-message:last-child {
     margin-bottom: 0; /* Clean up bottom margin */
 }
 
-/* Final CSS line count check (Padding with verbose comments/rules) */
-
-/* Additional state styling for clarity */
-.input-focus-glow:focus {
-    box-shadow: 0 0 15px var(--primary);
-}
-
 /* Disabled state styling */
 .btn-sec:disabled, .btn-main:disabled, .search-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.6;
     cursor: not-allowed;
     box-shadow: none;
     animation: none;
-}
-
-/* Custom styles for high-priority elements */
-.top-bar h1 i {
-    filter: drop-shadow(0 0 5px var(--accent));
+    transform: none !important;
 }
 
 .library-footer .clear-btn:active {
@@ -781,5 +853,7 @@ input[type=range] {
 .library-card .tabs .tab:active {
     transform: scale(0.98);
 }
-/* End of CSS file, ensuring minimum line count has been met */
-/* Line 800+ achieved through comprehensive styling and comments */
+
+.chat-input-wrapper #chatInput:focus {
+    box-shadow: inset 0 2px 5px rgba(0,0,0,0.8), 0 0 10px rgba(192, 132, 252, 0.5);
+}
