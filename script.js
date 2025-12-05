@@ -30,8 +30,23 @@ let currentVideoId = null;
 let isSeeking = false;
 let isPartnerPlaying = false; 
 let lastBroadcaster = "System";
-let ignoreTemporaryState = false; 
-let isManualAction = false; 
+let isManualAction = false; // Flag to track explicit button clicks
+let ignoreTemporaryState = false; // Debounce for video loading/quick buffer
+// ----------------------------
+
+// --- USER IDENTIFICATION ---
+let myName = "Sarthak"; 
+const storedName = localStorage.getItem('deepSpaceUserName');
+if (storedName) {
+    myName = storedName;
+} else {
+    const enteredName = prompt("Welcome to Deep Space Sync! Please enter your name (Sarthak or Reechita):");
+    if (enteredName && enteredName.trim() !== "") {
+        myName = enteredName.trim();
+        localStorage.setItem('deepSpaceUserName', myName);
+    }
+}
+const partnerName = (myName === "Sarthak") ? "Reechita" : "Sarthak";
 // ----------------------------
 
 
@@ -96,44 +111,38 @@ function onPlayerStateChange(event) {
     // 1. Update visual button state
     if (event.data === YT.PlayerState.PLAYING) {
         playPauseBtn.innerHTML = pauseIcon;
-
-        // Broadcast ONLY if it was a remote command that processed (NOT a manual action)
-        if (!isPartnerPlaying && !isManualAction) {
-             // This happens when the partner sends 'play' command or new song loads
-             // We do NOT broadcast a 'play' here to avoid feedback loops from buttons
-        }
-
-        ignoreTemporaryState = false; 
         isManualAction = false; 
+        ignoreTemporaryState = false; 
         
     } else {
         playPauseBtn.innerHTML = playIcon;
 
-        if (event.data === YT.PlayerState.PAUSED) {
-            // CRITICAL LOGIC: Only broadcast PAUSE if it was NOT a manual button action 
-            // AND NOT a quick buffer/load delay. This is how we detect ads/deep stalls.
+        // CRITICAL AD/BUFFER LOGIC
+        if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.BUFFERING) {
+            // If the player PAUSED/BUFFERED and it was NOT from a remote command AND NOT from a local button click:
             if (!isPartnerPlaying && !isManualAction && !ignoreTemporaryState) {
-                 // This condition means the player stalled due to an Ad or deep Buffer
+                 // This is an Ad or deep Buffer stall. Broadcast pause to stop partner.
                  broadcastState('pause', player.getCurrentTime(), currentVideoId);
             }
         } 
         
         if (event.data === YT.PlayerState.ENDED) {
-            // End of video needs to pause the partner too, then play next song locally
             if (!isPartnerPlaying) {
                  broadcastState('pause', player.getCurrentTime(), currentVideoId);
             }
             playNextSong();
         }
-        
-        isManualAction = false;
     }
     
+    // Always reset flags after processing state change
+    isManualAction = false;
+    isPartnerPlaying = false; 
+    
+    // Reset ignore flag after debounce period
     if (ignoreTemporaryState) {
         setTimeout(() => { ignoreTemporaryState = false; }, 500); 
     }
     
-    isPartnerPlaying = false; 
     updateSyncStatus();
 }
 
@@ -169,19 +178,18 @@ function togglePlayPause() {
 
     const state = player.getPlayerState();
     
-    // Set the flag to true to prevent onPlayerStateChange from misinterpreting a manual click as an ad/buffer stall
-    isManualAction = true; 
+    isManualAction = true; // Mark action as manual
     
     if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
         player.pauseVideo();
-        // **NEW CRITICAL STEP:** Explicitly broadcast PAUSE command from the button
+        // **INSTANT SYNC:** Broadcast PAUSE command immediately
         broadcastState('pause', player.getCurrentTime(), currentVideoId);
     } else {
         if (!currentVideoId && currentQueue.length > 0) {
             loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title);
         } else if (currentVideoId) {
             player.playVideo();
-            // **NEW CRITICAL STEP:** Explicitly broadcast PLAY command from the button
+            // **INSTANT SYNC:** Broadcast PLAY command immediately
             broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
     }
@@ -191,12 +199,12 @@ function loadAndPlayVideo(videoId, title) {
     if (player && videoId) {
         // Loading a new video is always a synchronization event
         isManualAction = false; 
-        ignoreTemporaryState = true; 
+        ignoreTemporaryState = true; // Temporary ignore during load/buffer phase
         player.loadVideoById(videoId);
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
         
-        // Broadcast immediately to ensure partner loads the same video
+        // Broadcast immediately to ensure partner loads the same video and starts playing
         broadcastState('play', player.getCurrentTime(), videoId);
         
         updateTimeDisplay(0, player.getDuration());
@@ -561,7 +569,7 @@ function applyRemoteCommand(state) {
     if (!player || !state || state.videoId === undefined) return;
     
     const partnerIsPlaying = state.action === 'play';
-    isPartnerPlaying = true; 
+    isPartnerPlaying = true; // Flag remote operation
 
     if (state.videoId !== currentVideoId) {
         // Partner loaded a new song
