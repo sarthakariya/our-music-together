@@ -30,7 +30,8 @@ let currentVideoId = null;
 let isSeeking = false;
 let isPartnerPlaying = false; 
 let lastBroadcaster = "System";
-let ignoreTemporaryState = false; // CRITICAL NEW FLAG: Debounce momentary buffering/pauses
+let ignoreTemporaryState = false; // Debounce momentary buffering/pauses
+let isManualAction = false; // NEW: Flag to track if the last action was a button click
 
 // --- USER IDENTIFICATION ---
 let myName = "Sarthak"; 
@@ -110,20 +111,22 @@ function onPlayerStateChange(event) {
     if (event.data === YT.PlayerState.PLAYING) {
         playPauseBtn.innerHTML = pauseIcon;
 
-        // Broadcast PLAY command only if local initiation AND not just resuming from an ignored state
-        if (!isPartnerPlaying && !ignoreTemporaryState) {
+        // If it was NOT a remote command AND NOT a manual button click, then broadcast (i.e., this is a remote play command that just processed)
+        if (!isPartnerPlaying && !isManualAction) {
              broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
-        
-        ignoreTemporaryState = false;
 
+        ignoreTemporaryState = false; 
+        isManualAction = false; // Reset the manual flag
+        
     } else {
         playPauseBtn.innerHTML = playIcon;
 
         if (event.data === YT.PlayerState.PAUSED) {
-            // CRITICAL FIX: Only broadcast PAUSE if it was a manual click, not a buffer/ad stall.
-            // If the player state changed to PAUSED immediately after a command (which causes momentary PAUSE/BUFFER), ignore it.
-            if (!isPartnerPlaying && !ignoreTemporaryState) {
+            // CRITICAL LOGIC: If PAUSED, only broadcast if it was NOT a manual button action 
+            // AND NOT a quick buffer/load delay.
+            if (!isPartnerPlaying && !isManualAction && !ignoreTemporaryState) {
+                 // This condition means the player stalled due to an Ad or deep Buffer/External Control
                  broadcastState('pause', player.getCurrentTime(), currentVideoId);
             }
         } 
@@ -134,11 +137,14 @@ function onPlayerStateChange(event) {
             }
             playNextSong();
         }
+        
+        // Reset the manual flag at the end of the state change
+        isManualAction = false;
     }
     
     // Reset partner flag and clear ignore flag after a short delay
     if (ignoreTemporaryState) {
-        setTimeout(() => { ignoreTemporaryState = false; }, 500); // 500ms debounce
+        setTimeout(() => { ignoreTemporaryState = false; }, 500); 
     }
     
     isPartnerPlaying = false; 
@@ -177,22 +183,27 @@ function togglePlayPause() {
 
     const state = player.getPlayerState();
     
+    // Set the flag *before* we execute the action
+    isManualAction = true; 
+    
     if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
-        ignoreTemporaryState = true; // Set flag when pausing manually
-        player.pauseVideo();
+        player.pauseVideo(); // Local pause, no sync broadcast
     } else {
-        ignoreTemporaryState = true; // Set flag when playing manually
+        // If initiating play, load/play the current track
         if (!currentVideoId && currentQueue.length > 0) {
             loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title);
         } else if (currentVideoId) {
             player.playVideo();
         }
     }
+    // Note: If you click PAUSE, isManualAction is set true, and onStateChange SUPPRESSES the broadcast.
 }
 
 function loadAndPlayVideo(videoId, title) {
     if (player && videoId) {
-        ignoreTemporaryState = true; // Set flag when loading new video
+        // Since loading a new video should sync everyone:
+        isManualAction = false; // Treat this as a sync action, not a local pause action
+        ignoreTemporaryState = true; 
         player.loadVideoById(videoId);
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
@@ -227,8 +238,9 @@ function playNextSong() {
     const nextIndex = (currentIndex + 1) % currentQueue.length;
 
     if (currentQueue.length > 0) {
-        const nextSong = currentQueue[nextIndex];
-        loadAndPlayVideo(nextSong.videoId, nextSong.title);
+        // Treating song change as a sync action
+        isManualAction = false; 
+        loadAndPlayVideo(currentQueue[nextIndex].videoId, currentQueue[nextIndex].title);
     } else {
         currentVideoId = null;
         if (player.stopVideo) player.stopVideo();
@@ -245,8 +257,9 @@ function playPreviousSong() {
     }
 
     if (currentQueue.length > 0) {
-        const prevSong = currentQueue[prevIndex];
-        loadAndPlayVideo(prevSong.videoId, prevSong.title);
+        // Treating song change as a sync action
+        isManualAction = false; 
+        loadAndPlayVideo(currentQueue[prevIndex].videoId, currentQueue[prevIndex].title);
     }
 }
 
