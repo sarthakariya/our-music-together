@@ -1,15 +1,5 @@
-// ====================================================================================================
-// =================================== SECTION 1: CONFIGURATION AND INITIALIZATION ====================
-// ====================================================================================================
-
-/**
- * @fileoverview Main synchronization logic for the Sarthak & Reechita Deep Space Sync Music Player.
- * This script handles Firebase real-time database synchronization, YouTube player control,
- * queue management, and the live chat feature. The code is written verbosely with extensive
- * comments to meet the required line count while maintaining maximum clarity and stability.
- */
-
-// NOTE: Replace these with your actual Firebase configuration details.
+// --- CONFIGURATION ---
+// Your Firebase Configuration (Provided by Sarthak)
 const firebaseConfig = {
     apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co",
     authDomain: "our-music-player.firebaseapp.com",
@@ -17,888 +7,566 @@ const firebaseConfig = {
     projectId: "our-music-player",
     storageBucket: "our-music-player.firebasestorage.app",
     messagingSenderId: "444208622552",
-    appId: "1:444208622552:web:839ca00a5797f52d1660ad"
+    appId: "1:444208622552:web:839ca00a5797f52d1660ad",
+    measurementId: "G-B4GFLNFCLL"
 };
-// NOTE: Replace this with your actual YouTube Data API v3 Key.
-const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68"; 
+// Your YouTube API Key (Provided by Sarthak)
+const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
 
-// Initialize Firebase App
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database().ref('session_v6_sarthak_reechita'); // Unique path for new session
-const chatRef = firebase.database().ref('chat_log_sarthak_reechita'); // Unique path for chat log
-
-// Global State Variables
-let player;
-let queue = [];
-let currentIndex = 0;
-let lastKnownTime = 0;
-let lastSkipCmd = 0;
-let isDragging = false;
-let myName = "Guest"; // Will be set to Sarthak or Reechita
-let playerInitialized = false;
-let serverTimeOffset = 0; // Crucial for real-time clock synchronization
-let syncInProgress = false; // Flag to prevent command loops
-
-// DOM Element References (Cached for Performance)
-const dom = {
-    player: document.getElementById('player'),
-    playBtn: document.getElementById('play-pause-btn'),
-    title: document.getElementById('current-song-title'),
-    seek: document.getElementById('seek-bar'),
-    progress: document.getElementById('seek-progress'),
-    curr: document.getElementById('current-time'),
-    dur: document.getElementById('duration'),
-    overlay: document.getElementById('syncOverlay'),
-    overlayTitle: document.getElementById('overlayTitle'),
-    overlayText: document.getElementById('overlayText'),
-    syncStatus: document.getElementById('sync-status-msg'),
-    searchIn: document.getElementById('searchInput'),
-    resList: document.getElementById('results-list'),
-    qList: document.getElementById('queue-list'),
-    qCount: document.getElementById('queue-count'),
-    totalQSize: document.getElementById('total-queue-size'),
-    chatIn: document.getElementById('chatInput'),
-    chatBox: document.getElementById('chat-messages'),
-    volumeBar: document.getElementById('volume-bar'),
-    volumeProgress: document.getElementById('volume-progress'),
-    // Missing DOM elements required for the full experience:
-    prevBtn: document.getElementById('prev-btn'),
-    nextBtn: document.getElementById('next-btn'),
-    searchBtn: document.getElementById('search-btn'),
-    sendBtn: document.getElementById('send-chat-btn'),
-    clearQBtn: document.getElementById('clear-queue-btn'),
-    tabQueue: document.getElementById('tab-queue'),
-    tabResults: document.getElementById('tab-results')
-};
+// Initialize Firebase
+if (typeof firebase !== 'undefined' && !firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
+const db = firebase.database();
+const syncRef = db.ref('sync');
+const queueRef = db.ref('queue');
+const chatRef = db.ref('chat');
 
 
-// ====================================================================================================
-// =================================== SECTION 2: YOUTUBE PLAYER API SETUP ============================
-// ====================================================================================================
+// --- GLOBAL STATE ---
+let player; // Holds the YouTube Player object
+let currentQueue = [];
+let currentSearchResults = [];
+let currentVideoId = null;
+let isSeeking = false;
+let isPartnerPlaying = false;
+let myName = "Sarthak"; // Default user name
 
-/**
- * Loads the YouTube IFrame Player API asynchronously.
- */
-function loadYouTubeAPI() {
-    console.log("YouTube API: Attempting to load iframe_api script.");
-    const tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    const firstScriptTag = document.getElementsByTagName('script')[0];
-    if (firstScriptTag && firstScriptTag.parentNode) {
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-    } else {
-        document.body.appendChild(tag);
-    }
+
+// --- YOUTUBE PLAYER FUNCTIONS ---
+
+// Function called by the YouTube API once it's ready
+function onYouTubeIframeAPIReady() {
+    player = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: '', 
+        playerVars: {
+            'controls': 0, 
+            'disablekb': 1,
+            'rel': 0,
+            'showinfo': 0,
+            'modestbranding': 1,
+            'autoplay': 0,
+            'origin': window.location.origin
+        },
+        events: {
+            'onReady': onPlayerReady, 
+            'onStateChange': onPlayerStateChange
+        }
+    });
 }
 
-/**
- * This function is called by the YouTube API once it is fully loaded.
- * It initializes the main player instance.
- */
-window.onYouTubeIframeAPIReady = function() {
-    console.log("YouTube API: iframe_api is ready. Initializing YT.Player...");
-    try {
-        player = new YT.Player('player', {
-            height: '100%', 
-            width: '100%',
-            videoId: 'bTqVqk7FSmY', // Default starting video ID
-            playerVars: { 
-                'playsinline': 1, 
-                'controls': 0, 
-                'rel': 0, 
-                'fs': 0, 
-                'iv_load_policy': 3, 
-                'disablekb': 1 
-            },
-            events: { 
-                'onReady': onPlayerReady, 
-                'onStateChange': onPlayerStateChange,
-                'onError': onPlayerError 
-            }
-        });
-    } catch (error) {
-        console.error("YouTube Player Initialization Failed:", error);
-    }
-}
-loadYouTubeAPI(); // Start the API loading process
-
-/**
- * Executed once the YouTube Player is fully loaded and ready for commands.
- * This is the entry point for all synchronization logic.
- */
 function onPlayerReady(event) {
-    console.log("Player Ready: Starting synchronization and listeners.");
-    playerInitialized = true;
-    identifyUser();
-    
     // Set initial volume
-    const initialVolume = 70; // Hardcode a default since volumeBar DOM element might not exist yet
-    if (player.getVolume) {
-        player.setVolume(initialVolume);
-        if (dom.volumeProgress) {
-            dom.volumeProgress.style.width = `${initialVolume}%`;
-        }
-    }
-
-    // Initialize listeners for volume and seeking
-    initPlayerEventListeners();
-
-    // Start Firebase sync and chat listeners
-    initTimeSync(); // Initialize server time offset first
-    initSyncProtocolListener();
-    initChatListener();
+    player.setVolume(70); 
     
-    // Start continuous UI and status update loops
-    setInterval(updateUI, 500);
-    setInterval(checkPlaybackStatus, 1000);
+    // Attach listener to volume bar
+    document.getElementById('volume-bar').addEventListener('input', (e) => {
+        const volume = parseInt(e.target.value);
+        player.setVolume(volume);
+        document.getElementById('volume-progress').style.width = volume + '%';
+    });
+
+    // Attach listener to seek bar
+    const seekBar = document.getElementById('seek-bar');
+    seekBar.addEventListener('mousedown', () => { isSeeking = true; });
+    seekBar.addEventListener('mouseup', (e) => {
+        isSeeking = false;
+        const newTime = (player.getDuration() * e.target.value) / 100;
+        player.seekTo(newTime, true);
+        broadcastState('seek', newTime);
+    });
+    seekBar.addEventListener('input', (e) => {
+        const newTime = (player.getDuration() * e.target.value) / 100;
+        updateTimeDisplay(newTime, player.getDuration());
+    });
+    
+    // Start tracking playback time locally
+    setInterval(updateLocalTime, 1000);
+
+    // Initial data load after player is ready
+    loadInitialData();
 }
 
-/**
- * Handles errors reported by the YouTube Player.
- * @param {Object} event - The YouTube event object.
- */
-function onPlayerError(event) {
-    console.error("YouTube Player Error:", event.data);
-    if (dom.syncStatus) {
-        dom.syncStatus.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Player Error! Code: ${event.data}`;
-    }
-    
-    // Handle specific errors
-    if (event.data === 100 || event.data === 101 || event.data === 150) {
-        // Video not found, unavailable, or restricted
-        // Notify partner that video is restricted
-        db.update({
-            issue: 'restricted_video',
-            issueTime: Date.now()
-        });
-        
-        // Skip to next song in queue if available
-        if (queue.length > currentIndex + 1) {
-            console.warn("Error encountered, skipping to next track.");
-            playNext();
-        } else {
-            console.error("Queue empty or only one song, cannot skip.");
+function updateLocalTime() {
+    if (player && player.getPlayerState) {
+        const state = player.getPlayerState();
+        if (state === YT.PlayerState.PLAYING && !isSeeking) {
+            const currentTime = player.getCurrentTime();
+            const duration = player.getDuration();
+            updateTimeDisplay(currentTime, duration);
+            
+            // Update seek bar only if not currently seeking by user
+            const seekPercentage = (currentTime / duration) * 100;
+            const seekBar = document.getElementById('seek-bar');
+            seekBar.value = seekPercentage;
+            document.getElementById('seek-progress').style.width = seekPercentage + '%';
+            
+            // Check for near end of video to auto-play next song
+            if (duration - currentTime < 1 && duration > 0) {
+                playNextSong();
+            }
         }
-    }
-    // Error 5 is Ad Block or general playback issue (Ad interference)
-    else if (event.data === 5) {
-        console.warn("Possible Ad or Player Interference detected (Error 5). Triggering Sync Override.");
-        // Notify partner to halt playback for sync
-        db.update({
-            issue: 'ad_interference',
-            issueTime: Date.now()
-        });
     }
 }
 
-/**
- * Handles changes in the YouTube player state (Playing, Paused, Ended, etc.).
- * @param {Object} event - The YouTube event object.
- */
 function onPlayerStateChange(event) {
-    if (syncInProgress) return; // Ignore state changes triggered by remote sync commands
+    // 1: Playing, 2: Paused, 3: Buffering, 0: Ended
+    
+    const playPauseBtn = document.getElementById('play-pause-btn');
+    const playIcon = '<i class="fa-solid fa-play"></i>';
+    const pauseIcon = '<i class="fa-solid fa-pause"></i>';
 
-    // State 0: Ended
-    if (event.data === 0) {
-        console.log("Player State: Ended. Attempting to play next in queue.");
-        playNext();
-    } 
-    // State 1: Playing
-    else if (event.data === 1) {
-        if (dom.playBtn) dom.playBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-        console.log("Player State: Playing.");
-        if (!isDragging) {
-            // Only update Firebase if the play was initiated by the local user, not seeking/syncing
-            updateFirebaseState('playing');
+    if (event.data === YT.PlayerState.PLAYING) {
+        // Only broadcast if the change wasn't triggered by a remote partner sync
+        if (!isPartnerPlaying) {
+            broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
-    }
-    // State 2: Paused
-    else if (event.data === 2) {
-        if (dom.playBtn) dom.playBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
-        console.log("Player State: Paused.");
-        if (!isDragging) {
-            // Only update Firebase if the pause was initiated by the local user
-            updateFirebaseState('paused');
+        playPauseBtn.innerHTML = pauseIcon;
+        document.getElementById('syncOverlay').classList.remove('active');
+        isPartnerPlaying = false; 
+        
+    } else if (event.data === YT.PlayerState.PAUSED) {
+        if (!isPartnerPlaying) {
+            broadcastState('pause', player.getCurrentTime(), currentVideoId);
         }
+        playPauseBtn.innerHTML = playIcon;
+        isPartnerPlaying = false; 
+        
+    } else if (event.data === YT.PlayerState.BUFFERING) {
+        // Optionally show the sync overlay on buffering if it takes too long
+        // broadcastState('pause', player.getCurrentTime(), currentVideoId);
+        
+    } else if (event.data === YT.PlayerState.ENDED) {
+        playPauseBtn.innerHTML = playIcon;
+        playNextSong();
     }
-    // State 3: Buffering - crucial for Ad/Buffer Sync Logic
-    else if (event.data === 3) {
-        console.log("Player State: Buffering.");
-        // If buffering, check if it's due to poor connection or an ad
-        // Send a buffer alert to the partner
-        db.update({
-            issue: 'buffering',
-            issueTime: Date.now()
-        });
-    }
+
+    updateSyncStatus();
 }
 
+function togglePlayPause() {
+    if (!player || !player.getPlayerState) return;
 
-// ====================================================================================================
-// =================================== SECTION 3: CORE SYNCHRONIZATION LOGIC ==========================
-// ====================================================================================================
-
-/**
- * Prompts the user to identify themselves and displays a system message.
- */
-function identifyUser() {
-    let namePrompt = prompt("Who are you? (Type 'Sarthak' or 'Reechita')");
-    if (namePrompt) {
-        namePrompt = namePrompt.toLowerCase();
-        if (namePrompt === 'sarthak' || namePrompt === 'reechita') {
-            myName = namePrompt.charAt(0).toUpperCase() + namePrompt.slice(1);
-        }
-    }
-    // System message
-    addChatMessage(`System`, `${myName} has entered the Deep Space Sync Room. Synchronization is initializing...`, true);
-    console.log(`User identified as: ${myName}`);
-}
-
-/**
- * Periodically calculates and updates the server time offset for precise sync.
- * This compensates for network latency between the client and Firebase.
- */
-function initTimeSync() {
-    // We send a timestamp and let Firebase write its own server timestamp.
-    // The difference helps determine our clock offset.
-    db.child('time_sync').set(firebase.database.ServerValue.TIMESTAMP).then(() => {
-        db.child('time_sync').once('value', snapshot => {
-            const serverTime = snapshot.val();
-            const clientTime = Date.now();
-            serverTimeOffset = serverTime - clientTime;
-            console.log(`Time Sync: Server Time Offset calculated: ${serverTimeOffset}ms.`);
-            if (dom.syncStatus) {
-                dom.syncStatus.innerHTML = `<i class="fa-solid fa-cloud-bolt"></i> **SYNC: LOCK** | Offset: ${serverTimeOffset}ms`;
-            }
-        });
-    });
-    // Repeat every 60 seconds
-    setInterval(initTimeSync, 60000); 
-}
-
-/**
- * Listens for changes in the master state on Firebase and executes commands.
- */
-function initSyncProtocolListener() {
-    db.on('value', (snapshot) => {
-        if (!playerInitialized) return; // Wait for player to be ready
-
-        const state = snapshot.val();
-        if (!state) return;
-
-        // 1. Update Queue and Index
-        queue = state.queue || [];
-        currentIndex = state.currentIndex || 0;
-        updateQueueUI();
-
-        // 2. Check for Master State Change (New Song)
-        const currentQueueItem = queue[currentIndex] || {};
-        if (player.getVideoData().video_id !== currentQueueItem.id) {
-            console.log(`SYNC: New song ID detected. Loading: ${currentQueueItem.title}`);
-            loadNewTrack(currentQueueItem.id, currentQueueItem.title);
-        }
-
-        // 3. Handle Playback Status (Play/Pause/Seek)
-        synchronizePlayback(state);
-
-        // 4. Handle Ad/Buffer Interference Logic
-        handleInterference(state);
-    });
-}
-
-/**
- * Synchronizes the player state (play/pause/seek) based on the Firebase master state.
- * @param {Object} state - The master state from Firebase.
- */
-function synchronizePlayback(state) {
-    const currentState = player.getPlayerState();
-    const isPaused = currentState === YT.PlayerState.PAUSED || currentState === YT.PlayerState.CUED;
-    const isPlaying = currentState === YT.PlayerState.PLAYING;
-
-    // A flag to ignore local state changes caused by the remote command
-    syncInProgress = true; 
-
-    if (state.status === 'playing') {
-        const serverTime = Date.now() + serverTimeOffset;
-        // Calculate the expected synchronized media time
-        const expectedTimeSeconds = state.position + ((serverTime - state.lastCommandTime) / 1000);
-
-        // Define a tolerance window (e.g., 1.5 seconds)
-        const diff = Math.abs(player.getCurrentTime() - expectedTimeSeconds);
-        const tolerance = 1.5; 
-
-        // If the player is paused OR the time difference is too large, SEEK and PLAY
-        if (isPaused || diff > tolerance) {
-            console.log(`SYNC: Resync needed. Diff: ${diff.toFixed(2)}s. Seeking to ${expectedTimeSeconds.toFixed(2)}s.`);
-            player.seekTo(expectedTimeSeconds, true);
+    const state = player.getPlayerState();
+    
+    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
+        player.pauseVideo();
+        broadcastState('pause', player.getCurrentTime(), currentVideoId);
+    } else if (state === YT.PlayerState.PAUSED || state === YT.PlayerState.ENDED || state === -1) {
+        // Load the first song if nothing is playing
+        if (!currentVideoId && currentQueue.length > 0) {
+            loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title);
+        } else if (currentVideoId) {
             player.playVideo();
-            // Store this as the new last known time
-            lastKnownTime = expectedTimeSeconds;
+            broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
-    } 
-    else if (state.status === 'paused' && isPlaying) {
-        // If the server says PAUSED, but we are playing, pause and seek to the master position
-        player.pauseVideo();
-        if (Math.abs(player.getCurrentTime() - state.position) > 0.5) {
-             player.seekTo(state.position, true);
-        }
-        lastKnownTime = state.position;
     }
-    
-    // Clear the flag after the sync command is executed
-    setTimeout(() => { syncInProgress = false; }, 200);
 }
 
-/**
- * Handles the logic for the Ad/Buffer warning overlay.
- * @param {Object} state - The master state from Firebase.
- */
-function handleInterference(state) {
-    if (state.issue) {
-        const issueTime = state.issueTime || 0;
-        const now = Date.now();
-        // Ignore old issues (e.g., more than 10 seconds ago)
-        if (now - issueTime > 10000) return; 
-
-        // Ad Interference (or Error 5)
-        if (state.issue === 'ad_interference') {
-            if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-                player.pauseVideo();
-            }
-            dom.overlayTitle.textContent = "Ad Detected! Synchronization Halted 🛑";
-            dom.overlayText.innerHTML = `**WARNING:** Your partner has encountered an Ad or Player Error. Waiting for Universal Skip/Resume...`;
-            dom.overlay.classList.add('active');
-        } 
-        // Buffering Issue
-        else if (state.issue === 'buffering') {
-            // Only pause if we are also not buffering, to wait for the partner
-            if (player.getPlayerState() !== YT.PlayerState.BUFFERING) {
-                if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-                    player.pauseVideo();
-                }
-            }
-            dom.overlayTitle.textContent = "Buffering Sync Lock ⏳";
-            dom.overlayText.innerHTML = `**WARNING:** One device is buffering. Waiting for a stable connection...`;
-            dom.overlay.classList.add('active');
-        }
+// Function to load and play a video by ID, called when a song is clicked
+function loadAndPlayVideo(videoId, title) {
+    if (player && videoId) {
+        player.loadVideoById(videoId);
+        currentVideoId = videoId;
+        document.getElementById('current-song-title').textContent = title;
         
-    } else {
-        // No current issue, hide overlay and ensure the player follows the master state
-        dom.overlay.classList.remove('active');
-        if (state.status === 'playing' && player.getPlayerState() !== YT.PlayerState.PLAYING) {
-            synchronizePlayback(state);
-        }
-    }
-}
-
-/**
- * Command executed when the user clicks 'FORCE SKIP AD / SYNC' button.
- * It clears the issue flag and forces the global play state.
- */
-window.forceSyncResume = function() {
-    console.log("Force Sync Resume executed.");
-    // 1. Clear the issue flag on the server
-    db.update({ issue: null, issueTime: null });
-    
-    // 2. Force a PLAY command to the master state
-    const currentTime = player.getCurrentTime();
-    updateFirebaseState('playing', currentTime);
-
-    dom.overlay.classList.remove('active');
-}
-
-// ====================================================================================================
-// =================================== SECTION 4: PLAYER CONTROLS AND UI ==============================
-// ====================================================================================================
-
-/**
- * Handles local play/pause button clicks and updates Firebase.
- */
-window.togglePlayPause = function() {
-    if (!playerInitialized || !queue.length) return;
-
-    if (player.getPlayerState() === YT.PlayerState.PLAYING) {
-        player.pauseVideo();
-        updateFirebaseState('paused', player.getCurrentTime());
-    } else {
-        player.playVideo();
-        updateFirebaseState('playing', player.getCurrentTime());
-    }
-}
-
-/**
- * Updates the Firebase master state (status and position).
- * @param {string} status - 'playing' or 'paused'.
- * @param {number} [position] - Current time in seconds.
- */
-function updateFirebaseState(status, position = player.getCurrentTime()) {
-    const serverTime = Date.now() + serverTimeOffset;
-    db.update({
-        status: status,
-        position: position,
-        lastCommandTime: serverTime,
-        lastCommander: myName
-    }).catch(e => console.error("Firebase Update Failed:", e));
-}
-
-/**
- * Loads a new track into the YouTube player and updates the master state.
- * @param {string} videoId - The YouTube video ID.
- * @param {string} title - The video title.
- */
-function loadNewTrack(videoId, title) {
-    if (!playerInitialized) return;
-    
-    player.loadVideoById(videoId, 0); // Load and start from 0 seconds
-    
-    // Update master state only if this client initiated the change (e.g., via playNext)
-    if (dom.title) dom.title.textContent = title;
-    
-    // Update the master state to the new song, paused at 0
-    // This is typically called by playNext/playTrack, which handles the status update
-}
-
-/**
- * Checks for and attempts to correct minor sync drifts every second.
- */
-function checkPlaybackStatus() {
-    if (!playerInitialized || player.getPlayerState() !== YT.PlayerState.PLAYING || isDragging || syncInProgress) return;
-
-    db.once('value', snapshot => {
-        const state = snapshot.val();
-        if (!state || state.status !== 'playing') return;
-
-        const serverTime = Date.now() + serverTimeOffset;
-        const expectedTimeSeconds = state.position + ((serverTime - state.lastCommandTime) / 1000);
-        const actualTime = player.getCurrentTime();
+        // Broadcast the new song to the partner
+        broadcastState('play', player.getCurrentTime(), videoId);
         
-        const diff = Math.abs(actualTime - expectedTimeSeconds);
-        const tolerance = 1.0; // 1 second tolerance
-
-        // If drift exceeds tolerance, silently resync to the master time
-        if (diff > tolerance) {
-            console.log(`MINOR DRIFT: ${diff.toFixed(2)}s. Resyncing.`);
-            // A more aggressive seek to ensure synchronization
-            player.seekTo(expectedTimeSeconds, true); 
-        }
-    });
-}
-
-/**
- * Sets up all local player event listeners (Seek, Volume, Buttons).
- */
-function initPlayerEventListeners() {
-    // 1. Play/Pause Button
-    if (dom.playBtn) dom.playBtn.onclick = togglePlayPause;
-    
-    // 2. Next/Previous Buttons
-    if (dom.nextBtn) dom.nextBtn.onclick = playNext;
-    if (dom.prevBtn) dom.prevBtn.onclick = playPrevious;
-
-    // 3. Seeking (Input Range)
-    if (dom.seek) {
-        dom.seek.onmousedown = () => { isDragging = true; };
-        dom.seek.onmouseup = () => { 
-            isDragging = false;
-            // Seek on the player and update Firebase with the new position
-            const newTime = parseFloat(dom.seek.value) * player.getDuration() / 100;
-            player.seekTo(newTime, true);
-            updateFirebaseState(player.getPlayerState() === YT.PlayerState.PLAYING ? 'playing' : 'paused', newTime);
-        };
-        dom.seek.oninput = () => { 
-            // Update UI while dragging
-            const newTime = parseFloat(dom.seek.value) * player.getDuration() / 100;
-            if (dom.curr) dom.curr.textContent = formatTime(newTime);
-            if (dom.progress) dom.progress.style.width = `${dom.seek.value}%`;
-        };
-    }
-    
-    // 4. Volume Control
-    if (dom.volumeBar) {
-        dom.volumeBar.oninput = () => {
-            const volume = parseInt(dom.volumeBar.value, 10);
-            player.setVolume(volume);
-            if (dom.volumeProgress) {
-                dom.volumeProgress.style.width = `${volume}%`;
-            }
-        };
+        // Update current time display immediately (0:00)
+        updateTimeDisplay(0, player.getDuration());
+        
+        // Re-render queue to highlight the playing song
+        renderQueue(currentQueue, currentVideoId);
     }
 }
 
-/**
- * Updates the local UI (Time displays, Progress bar, Title) continuously.
- */
-function updateUI() {
-    if (!playerInitialized || !player.getCurrentTime || !player.getDuration) return;
-
-    const currentTime = player.getCurrentTime();
-    const duration = player.getDuration();
+function updateTimeDisplay(currentTime, duration) {
+    const formatTime = (seconds) => {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        
+        const pad = (num) => num.toString().padStart(2, '0');
+        
+        if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
+        return `${m}:${pad(s)}`;
+    };
     
-    if (duration > 0) {
-        const progressPercent = (currentTime / duration) * 100;
+    document.getElementById('current-time').textContent = formatTime(currentTime);
+    document.getElementById('duration').textContent = formatTime(duration);
+}
 
-        if (!isDragging) {
-            if (dom.progress) dom.progress.style.width = `${progressPercent}%`;
-            if (dom.seek) dom.seek.value = progressPercent.toFixed(2);
-        }
+// --- QUEUE MANAGEMENT ---
 
-        if (dom.curr) dom.curr.textContent = formatTime(currentTime);
-        if (dom.dur) dom.dur.textContent = formatTime(duration);
+function playNextSong() {
+    const currentIndex = currentQueue.findIndex(song => song.videoId === currentVideoId);
+    const nextIndex = (currentIndex + 1) % currentQueue.length;
+
+    if (currentQueue.length > 0) {
+        const nextSong = currentQueue[nextIndex];
+        loadAndPlayVideo(nextSong.videoId, nextSong.title);
+    } else {
+        // Stop playback if queue is empty
+        currentVideoId = null;
+        if (player.stopVideo) player.stopVideo();
+        document.getElementById('current-song-title').textContent = "Queue Ended";
     }
 }
 
-/**
- * Utility function to convert seconds to MM:SS format.
- * @param {number} seconds - Time in seconds.
- * @returns {string} Formatted time string.
- */
-function formatTime(seconds) {
-    const min = Math.floor(seconds / 60);
-    const sec = Math.floor(seconds % 60);
-    return `${min}:${sec < 10 ? '0' : ''}${sec}`;
-}
-
-// ====================================================================================================
-// =================================== SECTION 5: QUEUE AND SEARCH MANAGEMENT =========================
-// ====================================================================================================
-
-/**
- * Loads the currently selected track from the queue and updates Firebase master state.
- * @param {number} index - Index of the song in the local queue array.
- */
-window.playTrack = function(index) {
-    if (index < 0 || index >= queue.length || !playerInitialized) return;
-
-    currentIndex = index;
-    const track = queue[currentIndex];
-    
-    // 1. Update master state in Firebase to load the new track
-    db.update({
-        videoId: track.id,
-        currentIndex: currentIndex,
-        title: track.title,
-        status: 'playing',
-        position: 0,
-        lastCommandTime: Date.now() + serverTimeOffset
-    }).then(() => {
-        // 2. Load the track locally (will also be triggered by initSyncProtocolListener)
-        loadNewTrack(track.id, track.title);
-        updateQueueUI();
-        console.log(`Queue: Playing track ${currentIndex + 1}: ${track.title}`);
-    }).catch(e => console.error("Failed to play track:", e));
-}
-
-/**
- * Moves to the next track in the queue.
- */
-window.playNext = function() {
-    if (queue.length === 0) return;
-    const nextIndex = (currentIndex + 1) % queue.length; // Loop back to start if at end
-    playTrack(nextIndex);
-}
-
-/**
- * Moves to the previous track in the queue.
- */
-window.playPrevious = function() {
-    if (queue.length === 0) return;
+function playPreviousSong() {
+    const currentIndex = currentQueue.findIndex(song => song.videoId === currentVideoId);
     let prevIndex = currentIndex - 1;
+
     if (prevIndex < 0) {
-        prevIndex = queue.length - 1; // Loop back to end if at start
+        prevIndex = currentQueue.length - 1; // Loop to the end
     }
-    playTrack(prevIndex);
+
+    if (currentQueue.length > 0) {
+        const prevSong = currentQueue[prevIndex];
+        loadAndPlayVideo(prevSong.videoId, prevSong.title);
+    }
 }
 
-/**
- * Adds a track to the end of the queue in Firebase.
- * @param {Object} track - The song object (id, title, thumbnail).
- */
-function addTrackToQueue(track) {
-    // Check for duplicates before pushing
-    if (queue.some(item => item.id === track.id)) {
-        addChatMessage('System', `**${track.title}** is already in the queue!`, true);
-        return;
-    }
+// Attach prev/next button listeners
+document.getElementById('prev-btn').onclick = playPreviousSong;
+document.getElementById('next-btn').onclick = playNextSong;
+
+function addToQueue(videoId, title, uploader, thumbnail, event) {
+    // Prevent the song-item click handler from firing if the button is clicked
+    if (event) event.stopPropagation();
     
-    queue.push(track);
-    db.update({ queue: queue }).then(() => {
-        addChatMessage('System', `**${track.title}** added to queue by ${myName}.`, true);
-        if (queue.length === 1 && !player.getVideoData().video_id) {
-            playTrack(0); // Auto-play if it's the first song
-        }
-    }).catch(e => console.error("Failed to add track to queue:", e));
-}
-
-/**
- * Removes a track from the queue in Firebase.
- * @param {string} videoId - The ID of the video to remove.
- */
-window.removeTrackFromQueue = function(videoId) {
-    const indexToRemove = queue.findIndex(item => item.id === videoId);
-    if (indexToRemove > -1) {
-        const removedTitle = queue[indexToRemove].title;
-        queue.splice(indexToRemove, 1);
-        
-        // Adjust index if the currently playing song was removed
-        if (indexToRemove === currentIndex) {
-            currentIndex = Math.min(currentIndex, queue.length - 1);
-            if (queue.length === 0) {
-                // Stop playback if queue is empty
-                db.update({ 
-                    queue: queue, 
-                    currentIndex: 0, 
-                    status: 'paused', 
-                    videoId: '', 
-                    title: 'Queue Empty' 
-                });
-            } else {
-                // Auto-play the next song if one exists
-                playTrack(currentIndex); 
-            }
-        } else if (indexToRemove < currentIndex) {
-            currentIndex--; // Shift the index back if a song before the current one was removed
-        }
-
-        db.update({ queue: queue, currentIndex: currentIndex }).then(() => {
-            addChatMessage('System', `**${removedTitle}** removed from queue by ${myName}.`, true);
-        }).catch(e => console.error("Failed to remove track:", e));
-    }
-}
-
-/**
- * Clears the entire queue.
- */
-window.clearQueue = function() {
-    if (confirm("Are you sure you want to clear the entire queue?")) {
-        queue = [];
-        db.update({ 
-            queue: [], 
-            currentIndex: 0, 
-            status: 'paused', 
-            videoId: '', 
-            title: 'Queue Cleared'
+    const newSong = { videoId, title, uploader, thumbnail };
+    
+    // Push to the Firebase list (this will trigger the queueRef listener)
+    queueRef.push(newSong)
+        .then(() => {
+            console.log("Song added to queue successfully.");
+            // Switch back to queue tab after adding
+            switchTab('queue');
+        })
+        .catch(error => {
+            console.error("Error adding song to queue:", error);
         });
-        addChatMessage('System', `The entire queue was cleared by ${myName}.`, true);
+}
+
+function removeFromQueue(videoId, event) {
+    if (event) event.stopPropagation(); // Stop propagation for the button
+
+    // Find the Firebase key for the song to remove
+    const songToRemove = currentQueue.find(song => song.videoId === videoId);
+
+    if (songToRemove && songToRemove.key) {
+        queueRef.child(songToRemove.key).remove()
+            .then(() => {
+                console.log("Song removed from queue.");
+                // If the removed song was the currently playing one, play next
+                if (videoId === currentVideoId) {
+                    playNextSong();
+                }
+            })
+            .catch(error => {
+                console.error("Error removing song:", error);
+            });
     }
 }
 
-/**
- * Renders the queue list based on the local queue array.
- */
-function updateQueueUI() {
-    if (!dom.qList || !dom.qCount) return;
+function clearQueue() {
+    if (confirm("Are you sure you want to clear the entire queue?")) {
+        queueRef.remove()
+            .then(() => {
+                currentVideoId = null;
+                if (player.stopVideo) player.stopVideo();
+                document.getElementById('current-song-title').textContent = "Queue Cleared";
+                console.log("Queue cleared successfully.");
+            })
+            .catch(error => {
+                console.error("Error clearing queue:", error);
+            });
+    }
+}
 
-    dom.qList.innerHTML = '';
-    dom.qCount.textContent = queue.length;
-    if (dom.totalQSize) dom.totalQSize.textContent = queue.length;
 
-    if (queue.length === 0) {
-        dom.qList.innerHTML = '<p class="empty-state">Queue is empty. Find a song to get the party started!</p>';
+// --- RENDERING VIEWS ---
+
+function switchTab(tabName) {
+    document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.list-view').forEach(list => list.classList.remove('active'));
+
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+    document.getElementById(`${tabName}-list`).classList.add('active');
+}
+
+// Renders the Queue List from the currentQueue array
+function renderQueue(queueArray, currentVideoId) {
+    const queueList = document.getElementById('queue-list');
+    queueList.innerHTML = '';
+    
+    if (queueArray.length === 0) {
+        queueList.innerHTML = '<p class="empty-state">Queue is empty. Find a song to get the party started!</p>';
         return;
     }
 
-    queue.forEach((track, index) => {
+    queueArray.forEach((song, index) => {
         const item = document.createElement('div');
-        item.className = `song-item ${index === currentIndex ? 'playing' : ''}`;
-        item.setAttribute('data-video-id', track.id);
+        item.className = `song-item ${song.videoId === currentVideoId ? 'playing' : ''}`;
+        
+        // Add ONCLICK HANDLER to the item to make it playable
+        // We use the 'key' property that we added during the Firebase load to ensure uniqueness
+        item.setAttribute('onclick', `loadAndPlayVideo('${song.videoId}', '${song.title.replace(/'/g, "\\'")}')`);
+        
         item.innerHTML = `
-            <img src="${track.thumbnail}" alt="Thumbnail" class="thumb">
-            <div class="meta truncate-text" onclick="playTrack(${index})">
-                <h4>${track.title}</h4>
-                <p>${track.channelTitle}</p>
+            <img src="${song.thumbnail}" class="thumb" alt="Thumbnail">
+            <div class="meta">
+                <h4>${index + 1}. ${song.title}</h4>
+                <p>Uploader: ${song.uploader}</p>
             </div>
-            <button class="del-btn" onclick="event.stopPropagation(); removeTrackFromQueue('${track.id}')">
+            <button class="del-btn" title="Remove from Queue" onclick="removeFromQueue('${song.videoId}', event)">
                 <i class="fa-solid fa-trash-can"></i>
             </button>
         `;
-        dom.qList.appendChild(item);
+        queueList.appendChild(item);
     });
-}
 
-/**
- * Executes a YouTube Data API search based on input value.
- */
-window.searchYouTube = async function() {
-    const query = dom.searchIn.value.trim();
-    if (query.length < 3) return;
-
-    // Switch to results tab automatically
-    window.switchTab('results'); 
-    dom.resList.innerHTML = '<p class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i> Searching deep space...</p>';
-
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
-
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`YouTube API returned status: ${response.status}`);
-        }
-        const data = await response.json();
-        renderSearchResults(data.items);
-    } catch (error) {
-        console.error("YouTube Search Failed:", error);
-        dom.resList.innerHTML = `<p class="empty-state" style="color:var(--text-error);"><i class="fa-solid fa-circle-exclamation"></i> Search Failed. Check API Key/Network.</p>`;
+    document.getElementById('queue-count').textContent = queueArray.length;
+    document.getElementById('total-queue-size').textContent = queueArray.length;
+    // Scroll to the playing item if it exists
+    const playingItem = queueList.querySelector('.song-item.playing');
+    if (playingItem) {
+        playingItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 }
 
-/**
- * Renders search results into the dedicated list.
- * @param {Array} items - Array of video search results.
- */
-function renderSearchResults(items) {
-    if (!dom.resList) return;
-    dom.resList.innerHTML = '';
+// Renders the Search Results List
+function renderSearchResults(resultsArray) {
+    const resultsList = document.getElementById('results-list');
+    resultsList.innerHTML = ''; 
 
-    if (items.length === 0) {
-        dom.resList.innerHTML = '<p class="empty-state">No stars found matching your query.</p>';
+    if (resultsArray.length === 0) {
+        resultsList.innerHTML = '<p class="empty-state">No search results found. Try a different query!</p>';
         return;
     }
 
-    items.forEach(item => {
-        if (item.id.videoId) {
-            const track = {
-                id: item.id.videoId,
-                title: item.snippet.title,
-                thumbnail: item.snippet.thumbnails.default.url,
-                channelTitle: item.snippet.channelTitle
-            };
-
-            const itemEl = document.createElement('div');
-            itemEl.className = 'song-item';
-            itemEl.setAttribute('data-video-id', track.id);
-            itemEl.innerHTML = `
-                <img src="${track.thumbnail}" alt="Thumbnail" class="thumb">
-                <div class="meta truncate-text">
-                    <h4>${track.title}</h4>
-                    <p>${track.channelTitle}</p>
-                </div>
-                <button class="add-btn" onclick="addTrackToQueue(${JSON.stringify(track).replace(/"/g, "'")})">
-                    <i class="fa-solid fa-plus"></i>
-                </button>
-            `;
-            dom.resList.appendChild(itemEl);
-        }
+    resultsArray.forEach(song => {
+        const item = document.createElement('div');
+        item.className = 'song-item';
+        
+        // Add button uses the addToQueue function
+        item.innerHTML = `
+            <img src="${song.thumbnail}" class="thumb" alt="Thumbnail">
+            <div class="meta">
+                <h4>${song.title}</h4>
+                <p>Uploader: ${song.uploader}</p>
+            </div>
+            <button class="add-btn" title="Add to Queue" onclick="addToQueue('${song.videoId}', '${song.title.replace(/'/g, "\\'")}', '${song.uploader.replace(/'/g, "\\'")}', '${song.thumbnail}', event)">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+        `;
+        resultsList.appendChild(item);
     });
 }
 
-/**
- * Handles switching between the search results and queue tabs.
- * @param {string} tabName - 'queue' or 'results'.
- */
-window.switchTab = function(tabName) {
-    // Deactivate all tabs and lists
-    if (dom.tabQueue) dom.tabQueue.classList.remove('active');
-    if (dom.tabResults) dom.tabResults.classList.remove('active');
-    if (dom.qList) dom.qList.classList.remove('active');
-    if (dom.resList) dom.resList.classList.remove('active');
 
-    // Activate selected tab and list
-    if (tabName === 'queue' && dom.tabQueue && dom.qList) {
-        dom.tabQueue.classList.add('active');
-        dom.qList.classList.add('active');
-        updateQueueUI(); // Ensure queue is refreshed when viewing
-    } else if (tabName === 'results' && dom.tabResults && dom.resList) {
-        dom.tabResults.classList.add('active');
-        dom.resList.classList.add('active');
+// --- YOUTUBE SEARCH ---
+
+async function searchYouTube() {
+    const query = document.getElementById('searchInput').value.trim();
+    if (!query) return;
+
+    // Show results tab and clearing previous results
+    switchTab('results');
+    document.getElementById('results-list').innerHTML = '<p class="empty-state">Searching...</p>';
+
+    // NOTE: YOUTUBE_API_KEY is now correctly configured above.
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
+    
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.error) {
+             document.getElementById('results-list').innerHTML = `<p class="empty-state" style="color: var(--text-error);">Error: ${data.error.message}. Check API quota or key permissions.</p>`;
+             return;
+        }
+
+        currentSearchResults = data.items
+            .filter(item => item.id.kind === 'youtube#video')
+            .map(item => ({
+                videoId: item.id.videoId,
+                title: item.snippet.title,
+                uploader: item.snippet.channelTitle,
+                thumbnail: item.snippet.thumbnails.default.url
+            }));
+        
+        renderSearchResults(currentSearchResults);
+
+    } catch (error) {
+        console.error("YouTube Search Error:", error);
+        document.getElementById('results-list').innerHTML = '<p class="empty-state" style="color: var(--text-error);">Failed to fetch search results. Check API Key/Network.</p>';
     }
 }
 
-// Initial tab setup
-window.onload = () => {
-    // Ensure all elements are set up before adding listeners
-    // This is a placeholder since the full HTML wasn't provided, but necessary:
-    if (dom.searchBtn) dom.searchBtn.onclick = searchYouTube;
-    if (dom.tabQueue) dom.tabQueue.onclick = () => switchTab('queue');
-    if (dom.tabResults) dom.tabResults.onclick = () => switchTab('results');
-    if (dom.clearQBtn) dom.clearQBtn.onclick = clearQueue;
-    if (dom.sendBtn) dom.sendBtn.onclick = sendChatMessage;
 
-    // Set default tab on load (assuming 'queue' is default)
-    switchTab('queue'); 
-};
+// --- FIREBASE SYNC (REALTIME DATABASE) ---
 
+function loadInitialData() {
+    // 1. Queue Listener
+    queueRef.on('value', (snapshot) => {
+        const queueData = snapshot.val();
+        currentQueue = [];
+        if (queueData) {
+            // Convert Firebase object to an array, storing the Firebase key
+            Object.keys(queueData).forEach(key => {
+                currentQueue.push({ ...queueData[key], key: key });
+            });
+        }
+        renderQueue(currentQueue, currentVideoId);
+    });
 
-// ====================================================================================================
-// =================================== SECTION 6: REAL-TIME CHAT ======================================
-// ====================================================================================================
+    // 2. Sync State Listener
+    syncRef.on('value', (snapshot) => {
+        const syncState = snapshot.val();
+        if (syncState && syncState.lastUpdater !== myName) {
+            applyRemoteState(syncState);
+        }
+        updateSyncStatus();
+    });
 
-/**
- * Sends a chat message to Firebase.
- */
-window.sendChatMessage = function() {
-    const message = dom.chatIn.value.trim();
-    if (message.length === 0) return;
+    // 3. Chat Listener
+    chatRef.limitToLast(20).on('child_added', (snapshot) => {
+        const message = snapshot.val();
+        displayChatMessage(message.user, message.text, message.timestamp);
+    });
+}
+
+function broadcastState(action, time, videoId = currentVideoId) {
+    if (!videoId) return;
+
+    syncRef.set({
+        action: action, 
+        time: time,
+        videoId: videoId,
+        lastUpdater: myName,
+        timestamp: Date.now()
+    }).catch(error => {
+        console.error("Error broadcasting state:", error);
+    });
+}
+
+function applyRemoteState(state) {
+    if (!player || !state || state.videoId === undefined) return;
+    
+    const partnerIsPlaying = state.action === 'play';
+    isPartnerPlaying = true; // Flag to prevent local player from re-broadcasting the received state
+    
+    if (state.videoId !== currentVideoId) {
+        // Find the video title in the queue to update display
+        const song = currentQueue.find(s => s.videoId === state.videoId);
+        const title = song ? song.title : 'External Sync';
+
+        // Load new video and seek
+        player.loadVideoById(state.videoId, state.time);
+        currentVideoId = state.videoId;
+        document.getElementById('current-song-title').textContent = title;
+        
+        // Ensure the correct song is highlighted in the queue
+        renderQueue(currentQueue, currentVideoId);
+
+    } else {
+        // Same video, just seeking/pausing
+        if (player.getCurrentTime() < state.time - 2 || player.getCurrentTime() > state.time + 2) {
+            player.seekTo(state.time, true);
+        }
+    }
+
+    if (partnerIsPlaying) {
+        if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
+            player.playVideo();
+        }
+    } else {
+        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+            player.pauseVideo();
+        }
+    }
+}
+
+function updateSyncStatus() {
+    // Check connection quality, current state, etc., and update the header message
+    // Simplified status update:
+    const msgEl = document.getElementById('sync-status-msg');
+    
+    if (player && player.getPlayerState) {
+        const state = player.getPlayerState();
+        if (state === YT.PlayerState.PLAYING) {
+            msgEl.innerHTML = `<i class="fa-solid fa-satellite-dish"></i> **DEEP SYNC ACTIVE**`;
+            msgEl.style.color = 'var(--primary)';
+        } else if (state === YT.PlayerState.PAUSED) {
+            msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> **PAUSED** (Sync Ready)`;
+            msgEl.style.color = 'var(--text-dim)';
+        } else if (state === YT.PlayerState.BUFFERING) {
+            msgEl.innerHTML = `<i class="fa-solid fa-sync fa-spin"></i> **BUFFERING** (Awaiting Data)`;
+            msgEl.style.color = 'var(--accent)';
+        } else {
+            msgEl.innerHTML = `<i class="fa-solid fa-satellite-dish"></i> Initializing Deep Space Connection...`;
+            msgEl.style.color = 'var(--text-dim)';
+        }
+    }
+}
+
+// --- CHAT FUNCTIONS ---
+
+function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
 
     chatRef.push({
-        name: myName,
-        message: message,
-        timestamp: firebase.database.ServerValue.TIMESTAMP
+        user: myName,
+        text: text,
+        timestamp: Date.now()
     }).then(() => {
-        dom.chatIn.value = ''; // Clear input field
-        console.log("Chat Message Sent.");
-    }).catch(e => console.error("Chat Send Failed:", e));
-}
-
-/**
- * Listens for new messages on Firebase and adds them to the chat window.
- */
-function initChatListener() {
-    chatRef.limitToLast(50).on('child_added', (snapshot) => {
-        const msg = snapshot.val();
-        addChatMessage(msg.name, msg.message, false, msg.timestamp);
+        input.value = ''; // Clear input
+    }).catch(error => {
+        console.error("Error sending message:", error);
     });
-    
-    // Allow 'Enter' key to send message
-    if (dom.chatIn) {
-        dom.chatIn.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                sendChatMessage();
-            }
-        });
-    }
 }
 
-/**
- * Adds a chat message element to the chat box.
- * @param {string} sender - The name of the sender.
- * @param {string} text - The message content.
- * @param {boolean} isSystem - True if it's a system message.
- * @param {number} [timestamp] - Server timestamp of the message.
- */
-function addChatMessage(sender, text, isSystem = false, timestamp = Date.now()) {
-    if (!dom.chatBox) return;
+function displayChatMessage(user, text, timestamp) {
+    const chatMessages = document.getElementById('chat-messages');
+    const isMe = user === myName;
+    const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `chat-message ${isMe ? 'me' : 'partner'}`;
+    
+    // Simple sanitization, though for real deployment, server-side is needed
+    const safeText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-    const messageEl = document.createElement('div');
-    messageEl.className = 'chat-message';
+    msgDiv.innerHTML = `
+        <strong>${user}:</strong> ${safeText}
+        <small>${time}</small>
+    `;
     
-    if (isSystem) {
-        messageEl.classList.add('system');
-        messageEl.innerHTML = text;
-    } else {
-        const date = new Date(timestamp);
-        const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        
-        if (sender === myName) {
-            messageEl.classList.add('me');
-            messageEl.innerHTML = `${text} <small>${timeString}</small>`;
-        } else {
-            messageEl.classList.add('partner');
-            messageEl.innerHTML = `<strong>${sender}:</strong> ${text} <small>${timeString}</small>`;
-        }
-    }
+    chatMessages.appendChild(msgDiv);
     
-    dom.chatBox.appendChild(messageEl);
-    
-    // Auto-scroll to the bottom of the chat box
-    dom.chatBox.scrollTop = dom.chatBox.scrollHeight;
+    // Auto-scroll to the bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
 }
-// ====================================================================================================
-// =================================== SECTION 7: FINALIZATION AND PLUGINS ============================
-// ====================================================================================================
-// Finalization: Ensure all listeners are active when the script loads (handled by onPlayerReady)
 
-// NOTE: Since the full HTML was not provided, we must assume all necessary DOM elements 
-// referenced in the `dom` object (like `play-pause-btn`, `seek-bar`, `chatInput`, etc.) 
-// are correctly included in the full `index.html` structure (which would be required 
-// for the provided CSS to work correctly).
+// Allow sending message with Enter key
+document.getElementById('chatInput').addEventListener('keypress', function (e) {
+    if (e.key === 'Enter') {
+        sendChatMessage();
+    }
+});
+
+function forceSyncResume() {
+    // Force play and broadcast current state to overwrite partner's potential ad/buffer pause
+    if (player) {
+        player.playVideo();
+        broadcastState('play', player.getCurrentTime(), currentVideoId);
+    }
+    document.getElementById('syncOverlay').classList.remove('active');
+}
