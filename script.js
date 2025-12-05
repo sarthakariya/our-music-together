@@ -12,8 +12,8 @@ const firebaseConfig = {
 const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
 
 firebase.initializeApp(firebaseConfig);
-const db = firebase.database().ref('session_v5'); // New V5 node for strict sync
-const chatRef = firebase.database().ref('chat_log'); // Dedicated chat node
+const db = firebase.database().ref('session_v5');
+const chatRef = firebase.database().ref('chat_log');
 
 // Variables
 let player;
@@ -22,7 +22,7 @@ let currentIndex = 0;
 let lastKnownTime = 0;
 let lastSkipCmd = 0;
 let isDragging = false;
-let myName = "Sarthak"; // Personalized name used for chat
+let myName = "Guest"; // Default, will be set by identifyUser()
 
 // DOM Elements
 const dom = {
@@ -42,7 +42,8 @@ const dom = {
     chatBox: document.getElementById('chat-messages')
 };
 
-// YouTube API boilerplate
+// ================= YOUTUBE API & INIT =================
+
 function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
         height: '100%', width: '100%',
@@ -56,7 +57,23 @@ function onYouTubeIframeAPIReady() {
 var tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api";
 document.body.appendChild(tag);
 
+function identifyUser() {
+    let name = prompt("Please enter your name for chat: Sarthak or Reechita/Mammam");
+    if (name) {
+        name = name.trim();
+        if (name.toLowerCase().includes('sarthak')) {
+            myName = "Sarthak";
+        } else if (name.toLowerCase().includes('reechita') || name.toLowerCase().includes('mammam')) {
+            myName = "Mammam";
+        } else {
+            myName = name; // Allows for any name if they don't use the standard two
+        }
+        dom.chatBox.innerHTML += `<div class="chat-message system">You are logged in as **${myName}**.</div>`;
+    }
+}
+
 function onPlayerReady() {
+    identifyUser(); // NEW: Ask for name first
     initSync();
     initChatListener();
     
@@ -67,18 +84,18 @@ function onPlayerReady() {
 }
 
 function onPlayerStateChange(e) {
-    if (e.data === 0) playNext(); // Song ended
+    if (e.data === 0) playNext();
 }
 
+
 // ================= V5: STRICT SYNCHRONIZATION PROTOCOL =================
+// (Logic remains the same, ensuring strict enforcement)
 
 function initSync() {
-    // 1. Listen for changes
     db.on('value', snap => {
         const data = snap.val();
         if (!data) return;
 
-        // Queue Sync (Crucial for reload fix)
         queue = data.queue || [];
         currentIndex = data.index || 0;
         renderQueue();
@@ -86,19 +103,15 @@ function initSync() {
         if (queue.length > 0) {
             const song = queue[currentIndex];
             
-            // ID Sync
             if (player.getVideoData().video_id !== song.id) {
                 player.loadVideoById(song.id);
                 dom.title.innerText = song.title;
             }
 
-            // AD LOCK HANDLING (Priority 1)
             if (data.adDetected) {
-                // If ad is detected anywhere, everyone pauses and sees the wait screen
                 if(player.getPlayerState() !== 2) player.pauseVideo();
                 if(!dom.overlay.classList.contains('active')) dom.overlay.classList.add('active');
             } else {
-                // Normal Playback Sync (Priority 2)
                 
                 const serverStatus = data.status;
                 const serverTime = data.time || 0;
@@ -106,7 +119,6 @@ function initSync() {
 
                 dom.overlay.classList.remove('active');
                 
-                // Status Sync
                 if (serverStatus === 'playing') {
                     if (player.getPlayerState() !== 1) player.playVideo();
                     dom.playBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
@@ -115,12 +127,10 @@ function initSync() {
                     dom.playBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
                 }
 
-                // Skip Command Execution (Tells viewers to skip/seek)
                 if (skipCmd > lastSkipCmd) {
                     player.seekTo(serverTime, true);
                     lastSkipCmd = skipCmd;
                 }
-                // Standard Drift Correction
                 else if (Math.abs(player.getCurrentTime() - serverTime) > 3) {
                     player.seekTo(serverTime, true);
                 }
@@ -129,42 +139,63 @@ function initSync() {
     });
 }
 
-// AD DETECTION & TIME BROADCAST
 function checkPlaybackStatus() {
     if (!player || queue.length === 0) return;
     
     const state = player.getPlayerState();
     const curr = player.getCurrentTime();
 
-    if (state === 1) { // If playing
-        // If time hasn't moved in 1 sec, IT IS AN AD/BUFFER
+    if (state === 1) {
         if (Math.abs(curr - lastKnownTime) < 0.1) {
-            // My player is stuck, I'm issuing the lock
             db.update({ adDetected: true, status: 'paused' });
         } else {
-            // Time is moving, I'm the time authority
             lastKnownTime = curr;
             db.update({ time: curr, adDetected: false });
         }
     }
 }
 
-// UNIVERSAL SKIP BUTTON
-function forceSyncResume() {
-    // Increment skipCmd (acts as an atomic command for viewers)
-    // and force state back to playing
+window.togglePlay = function() {
+    if (queue.length === 0) return;
+    db.once('value', snap => {
+        const status = snap.val()?.status;
+        db.update({ status: status === 'playing' ? 'paused' : 'playing' });
+    });
+}
+
+window.forceSyncResume = function() {
     db.update({ 
         skipCmd: Date.now(),
         adDetected: false,
-        time: player.getCurrentTime() + 1, // Jump forward 1 second
+        time: player.getCurrentTime() + 1,
         status: 'playing'
     });
 }
 
 // ================= QUEUE & PAGINATED PLAYLIST LOGIC =================
+// (This ensures search works and playlist loading is robust)
+
+window.manualSearch = function() { // Made global for button click
+    const q = dom.searchIn.value;
+    if (!q) return;
+
+    if (q.includes('list=')) {
+        const listId = q.split('list=')[1].split('&')[0];
+        fetchPlaylist(listId);
+        return;
+    }
+
+    if (q.includes('v=')) {
+        const id = q.split('v=')[1].split('&')[0];
+        addToQueue(id, "Shared Link", `https://img.youtube.com/vi/${id}/default.jpg`);
+        return;
+    }
+
+    searchYouTube(q);
+    switchTab('results');
+}
 
 async function fetchPlaylist(listId, pageToken = null) {
-    // Initial fetch or subsequent page fetch
     const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${listId}&key=${YOUTUBE_API_KEY}` +
                 (pageToken ? `&pageToken=${pageToken}` : '');
     
@@ -179,16 +210,14 @@ async function fetchPlaylist(listId, pageToken = null) {
                 thumb: item.snippet.thumbnails.default.url
             }));
             
-            queue = [...queue, ...newSongs]; // Append songs to local queue
+            queue = [...queue, ...newSongs];
             
-            // PAGINATION: If there is a next page token, fetch the next page!
             if (data.nextPageToken) {
                 dom.title.innerText = `Loading... ${queue.length} songs so far.`;
                 await fetchPlaylist(listId, data.nextPageToken);
-                return; // Exit after successful recursive call
+                return;
             }
             
-            // FINISHED LOADING ALL PAGES
             db.update({ queue: queue });
             if (currentIndex === 0) {
                  db.update({ index: 0, status: 'playing' });
@@ -199,6 +228,36 @@ async function fetchPlaylist(listId, pageToken = null) {
     } catch(e) {
         alert("Could not load playlist. API Quota might be exceeded or link invalid.");
     }
+}
+
+async function searchYouTube(q) {
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${q}&type=video&key=${YOUTUBE_API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    
+    dom.resList.innerHTML = '';
+    data.items.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'song-item';
+        div.innerHTML = `
+            <img src="${item.snippet.thumbnails.default.url}" class="thumb">
+            <div class="meta"><h4>${item.snippet.title}</h4></div>
+            <button class="add-btn"><i class="fa-solid fa-plus"></i></button>
+        `;
+        div.onclick = () => addToQueue(item.id.videoId, item.snippet.title, item.snippet.thumbnails.default.url);
+        dom.resList.appendChild(div);
+    });
+}
+
+function addToQueue(id, title, thumb) {
+    const newQueue = [...queue, { id, title, thumb }];
+    if (queue.length === 0) {
+        db.update({ queue: newQueue, index: 0, status: 'playing', time: 0 });
+    } else {
+        db.update({ queue: newQueue });
+    }
+    dom.searchIn.value = '';
+    switchTab('queue');
 }
 
 // ================= LIVE CHAT =================
@@ -224,7 +283,17 @@ window.sendMessage = function() {
 
 function renderMessage(user, message, timestamp) {
     const div = document.createElement('div');
-    div.className = `chat-message ${user === myName ? 'me' : 'partner'}`;
+    const senderClass = (user === myName) ? 'me' : 'partner';
+    
+    // Ensure 'Mammam' is identified as the partner correctly by Sarthak
+    const partnerIsMammam = myName === "Sarthak" && user === "Mammam";
+
+    div.className = `chat-message ${senderClass}`;
+    if(user === "Sarthak" || partnerIsMammam) {
+        // Use bold for the name if it's Sarthak or Mammam
+        div.className += ' known-user'; 
+    }
+    
     const date = new Date(timestamp);
     const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
@@ -233,18 +302,51 @@ function renderMessage(user, message, timestamp) {
         <small>${timeStr}</small>
     `;
     dom.chatBox.appendChild(div);
-    // Scroll to bottom
     dom.chatBox.scrollTop = dom.chatBox.scrollHeight;
 }
 
-// ================= UI HELPERS (Unchanged but important) =================
+// ================= UI HELPERS =================
+// (Other helper functions like renderQueue, switchTab, formatTime remain the same)
 
-// Volume (Local Only)
-document.getElementById('volume-bar').addEventListener('input', (e) => {
-    player.setVolume(e.target.value);
-});
+window.syncSeek = function(seconds) {
+    const newTime = player.getCurrentTime() + seconds;
+    player.seekTo(newTime, true);
+    db.update({ time: newTime });
+}
 
-// Other functions (togglePlay, playNext, playPrev, syncSeek, manualSearch, searchYouTube, 
-// addToQueue, renderQueue, deleteSong, clearQueue, updateUI, switchTab, formatTime) 
-// remain largely the same as the previous version, ensuring they call the 'db' reference 
-// for synchronization actions.
+window.playNext = function() {
+    if (currentIndex < queue.length - 1) {
+        db.update({ index: currentIndex + 1, time: 0, status: 'playing' });
+    }
+}
+
+window.playPrev = function() {
+    if (currentIndex > 0) {
+        db.update({ index: currentIndex - 1, time: 0, status: 'playing' });
+    }
+}
+
+window.addToQueue = addToQueue;
+
+window.renderQueue = function() {
+    dom.qCount.innerText = `${queue.length} Songs`;
+    dom.qList.innerHTML = '';
+    if(queue.length === 0) dom.qList.innerHTML = '<div class="empty-state">Queue is empty</div>';
+    
+    queue.forEach((song, idx) => {
+        const div = document.createElement('div');
+        div.className = `song-item ${idx === currentIndex ? 'playing' : ''}`;
+        div.innerHTML = `
+            <img src="${song.thumb}" class="thumb">
+            <div class="meta">
+                <h4>${song.title}</h4>
+                <p>${idx === currentIndex ? 'NOW PLAYING' : ''}</p>
+            </div>
+            <button onclick="deleteSong(event, ${idx})" class="del-btn"><i class="fa-solid fa-xmark"></i></button>
+        `;
+        div.onclick = (e) => {
+            if(!e.target.closest('.del-btn')) db.update({ index: idx, status: 'playing', time: 0 });
+        }
+        dom.qList.appendChild(div);
+    });
+}
