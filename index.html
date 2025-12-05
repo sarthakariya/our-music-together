@@ -17,7 +17,7 @@
         <div class="glass-modal">
             <div class="spinner"></div>
             <h2 id="overlayTitle">Synchronization Locked 🔒</h2>
-            <p id="overlayText">Your partner is experiencing an ad or buffer. Waiting for Universal Skip/Resume...</p>
+            <p id="overlayText">**WARNING:** Your partner has encountered an Ad or Buffer. Waiting for Universal Skip/Resume...</p>
             
             <button id="forceSyncBtn" onclick="forceSyncResume()">
                 <i class="fa-solid fa-bolt"></i> FORCE SKIP AD / SYNC
@@ -28,7 +28,7 @@
     <div class="app-container">
         
         <header class="top-bar">
-            <h1>Sarthak <i class="fa-solid fa-heart pulse"></i> Mammam</h1>
+            <h1>Sarthak <i class="fa-solid fa-heart pulse"></i> Reechita</h1>
         </header>
 
         <div class="main-layout">
@@ -37,79 +37,12 @@
                 
                 <div class="video-wrapper">
                     <div id="player"></div>
-                    <div class="video-overlay"></div>
-                </div>
-
-                <div class="info-area">
-                    <h2 id="current-song-title">Ready to Vibe...</h2>
-                    <p class="sync-status-msg">Our synced Music just like our hearts</p>
-                    
-                    <div class="time-control">
-                        <span id="current-time">0:00</span>
-                        <div class="slider-wrapper">
-                            <input type="range" id="seek-bar" value="0" min="0" max="100">
-                            <div class="slider-progress" id="seek-progress"></div>
-                        </div>
-                        <span id="duration">0:00</span>
-                    </div>
-                </div>
-
-                <div class="controls">
-                    <button class="btn-sec" onclick="playPrev()"><i class="fa-solid fa-backward-step"></i></button>
-                    <button class="btn-sec" onclick="syncSeek(-10)"><i class="fa-solid fa-rotate-left"></i></button>
-                    
-                    <button class="btn-main" id="play-pause-btn" onclick="togglePlay()">
-                        <i class="fa-solid fa-play"></i>
-                    </button>
-                    
-                    <button class="btn-sec" onclick="syncSeek(10)"><i class="fa-solid fa-rotate-right"></i></button>
-                    <button class="btn-sec" onclick="playNext()"><i class="fa-solid fa-forward-step"></i></button>
-                </div>
-
-                 <div class="volume-area">
-                    <i class="fa-solid fa-volume-low"></i>
-                    <input type="range" id="volume-bar" min="0" max="100" value="100">
-                </div>
-            </section>
-
-            <aside class="library-container">
-                <div class="library-card glass-panel top-panel">
-                    <div class="search-wrapper">
-                        <input type="text" id="searchInput" placeholder="Search Song, Paste Link, or Playlist URL...">
-                        <button onclick="manualSearch()"><i class="fa-solid fa-search"></i></button>
-                    </div>
-
-                    <div class="tabs">
-                        <button class="tab active" onclick="switchTab('queue')">Queue</button>
-                        <button class="tab" onclick="switchTab('results')">Results</button>
-                    </div>
-
-                    <div id="queue-list" class="list-view active">
-                        <div class="empty-state">Queue is empty</div>
-                    </div>
-                    
-                    <div id="results-list" class="list-view">
-                        <div class="empty-state">Results will appear here</div>
-                    </div>
-
-                    <div class="library-footer">
-                        <span id="queue-count">0 Songs</span>
-                        <button class="clear-btn" onclick="clearQueue()">Clear All</button>
-                    </div>
+                    <div class="video-overlay" style="pointer-events: none;"></div>
                 </div>
                 
-                <div class="chat-card glass-panel bottom-panel">
-                    <h3><i class="fa-solid fa-comment-dots"></i> Live Chat</h3>
-                    <div id="chat-messages" class="chat-messages">
-                        <div class="chat-message system">Welcome to the synced chat!</div>
-                    </div>
-                    <div class="chat-input-wrapper">
-                        <input type="text" id="chatInput" placeholder="Send a message (e.g., 'Play the next song!')">
-                        <button onclick="sendMessage()"><i class="fa-solid fa-paper-plane"></i></button>
-                    </div>
-                </div>
-            </aside>
-        </div>
+                </section>
+
+            </div>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
