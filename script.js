@@ -1,350 +1,349 @@
-// --- CONFIGURATION & INITIALIZATION ---
-// Note: Firebase configuration is loaded from index.html
-const FIREBASE_REF = firebase.database().ref('room_state');
-let player;
-let isMaster = false;
-let lastKnownContentTime = 0; 
-let lastSkipCommandTime = 0; 
-let queue = [];
-let queueIndex = 0;
-let myState = -1; 
+// ================= CONFIGURATION =================
+const firebaseConfig = {
+    apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co",
+    authDomain: "our-music-player.firebaseapp.com",
+    databaseURL: "https://our-music-player-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "our-music-player",
+    storageBucket: "our-music-player.firebasestorage.app",
+    messagingSenderId: "444208622552",
+    appId: "1:444208622552:web:839ca00a5797f52d1660ad"
+};
+const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68"; // Replace if quota limit hit
 
-// --- DOM ELEMENTS (UPDATED FOR NEW UI) ---
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database().ref('session_v2'); // Using new node for clean start
+
+// Global State
+let player;
+let queue = [];
+let currentIndex = 0;
+let lastKnownTime = 0;
+let lastSkipTime = 0;
+let isDragging = false;
+
+// DOM Elements
 const dom = {
-    // Player Components
+    playBtn: document.getElementById('play-pause-btn'),
     disc: document.getElementById('music-disc'),
     art: document.getElementById('album-art'),
     title: document.getElementById('current-song-title'),
-    playBtn: document.getElementById('play-pause-btn'),
-    seekBar: document.getElementById('seek-bar'),
+    seek: document.getElementById('seek-bar'),
     curr: document.getElementById('current-time'),
     dur: document.getElementById('duration'),
-    masterStatus: document.getElementById('master-status'),
-
-    // Search and Queue
-    searchInput: document.getElementById('searchInput'),
-    resultsList: document.getElementById('results-list'),
-    queueList: document.getElementById('queue-list'),
-    queueCount: document.getElementById('queue-count'),
-
-    // Overlays and Controls
     overlay: document.getElementById('syncOverlay'),
-    syncStatusText: document.getElementById('syncStatusText'),
-    sharedSkipButton: document.getElementById('sharedSkipButton'),
-    masterToggle: document.getElementById('masterToggle'),
-    volumeBar: document.getElementById('volume-bar')
+    skipBtn: document.getElementById('sharedSkipButton'),
+    searchIn: document.getElementById('searchInput'),
+    resList: document.getElementById('results-list'),
+    qList: document.getElementById('queue-list'),
+    qCount: document.getElementById('queue-count'),
+    vol: document.getElementById('volume-bar')
 };
 
-// --- YOUTUBE API SETUP ---
+// ================= YOUTUBE API =================
 function onYouTubeIframeAPIReady() {
-    // Player is still loaded, but its container is hidden
     player = new YT.Player('player', {
-        height: '0', // Minimal size as it's hidden
-        width: '0', 
-        videoId: 'bTqVqk7FSmY', 
-        playerVars: {
-            'playsinline': 1,
-            'controls': 0, // No default controls since we use custom ones
-            'rel': 0 
+        height: '1', width: '1', videoId: 'bTqVqk7FSmY', // Default init
+        playerVars: { 
+            'playsinline': 1, 'controls': 0, 'rel': 0, 'fs': 0, 'iv_load_policy': 3, 'disablekb': 1 
         },
-        events: {
-            'onReady': onPlayerReady,
-            'onStateChange': onPlayerStateChange
-        }
+        events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
     });
 }
+// Load API
+var tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api";
+document.body.appendChild(tag);
 
-function onPlayerReady(event) {
-    console.log("Player ready for Sarthak and Reechita!");
+function onPlayerReady() {
+    console.log("Connected to Love Player!");
+    startSyncListener();
     
-    // Initial setup
-    player.setVolume(100);
-    dom.volumeBar.value = 100;
-
-    // Start sync listeners
-    startFirebaseListener();
-    
-    // Start updating UI controls
-    setInterval(updateProgress, 500);
+    // UI Update Loop (Local smoothness)
+    setInterval(updateUI, 500);
+    // Ad Detection Loop
+    setInterval(checkAdStatus, 1000);
 }
 
-function onPlayerStateChange(event) {
-    myState = event.data;
-    
-    // If the song ends (State 0), move to the next one
-    if (event.data === YT.PlayerState.ENDED && isMaster) { 
-        playNext(); 
-    }
-    
-    // If the Master player changes state, update Firebase
-    if (isMaster) {
-        FIREBASE_REF.child('status').set(event.data);
-    }
+function onPlayerStateChange(e) {
+    // If song ends, try to play next
+    if (e.data === 0) playNext();
 }
 
+// ================= CORE SYNC LOGIC (The Heart) =================
 
-// --- CORE SYNC AND AD SKIP LOGIC (Similar to before, adapted for new UI) ---
+function startSyncListener() {
+    db.on('value', snap => {
+        const data = snap.val();
+        if (!data) return; // No data yet
 
-function toggleMasterStatus() {
-    isMaster = !isMaster;
-    if (isMaster) {
-        dom.masterToggle.innerHTML = '<i class="fas fa-crown"></i> I AM THE MUSIC LEADER 👑';
-        dom.masterToggle.style.backgroundColor = '#ff4d4d';
-        sendMasterStatus(); 
-        console.log("Sarthak is the Master! Sending the true timeline to Reechita.");
-    } else {
-        dom.masterToggle.innerHTML = '<i class="fas fa-crown"></i> Be The Music Leader';
-        dom.masterToggle.style.backgroundColor = 'var(--accent-color)';
-        console.log("Switched to Viewer mode. Following the music leader.");
-    }
-}
-
-function sendMasterStatus() {
-    if (!isMaster) return;
-
-    const playerState = player.getPlayerState();
-    const currentTime = player.getCurrentTime();
-    
-    // --- ZERO PROGRESS AD DETECTION ---
-    if (playerState === YT.PlayerState.PLAYING) {
-        if (Math.abs(currentTime - lastKnownContentTime) < 0.1) {
-            FIREBASE_REF.child('ad_detected').set(true);
-        } else {
-            lastKnownContentTime = currentTime;
-            FIREBASE_REF.child('ad_detected').set(false); 
-        }
-    } else if (playerState !== YT.PlayerState.PLAYING) {
-        FIREBASE_REF.child('ad_detected').set(false);
-    }
-
-    FIREBASE_REF.update({
-        playbackTime: currentTime,
-        status: playerState,
-    });
-
-    setTimeout(sendMasterStatus, 500); 
-}
-
-let lastSkipCommandTime = 0; 
-let currentVideoId = null;
-
-function startFirebaseListener() {
-    FIREBASE_REF.on('value', (snapshot) => {
-        const data = snapshot.val();
-        if (!data) return; 
-
-        // Update local state from Firebase
+        // 1. Queue Sync
         queue = data.queue || [];
-        queueIndex = data.queueIndex || 0;
-        const serverTime = data.playbackTime || 0;
-        const serverStatus = data.status;
-        const serverSkipCommand = data.skip_command_timestamp || 0;
-        const adIsDetected = data.ad_detected || false;
-        
-        renderQueueUI();
+        currentIndex = data.index || 0;
+        renderQueue();
 
-        // Load correct video if needed
         if (queue.length > 0) {
-            const song = queue[queueIndex];
-            if (currentVideoId !== song.videoId) {
-                player.loadVideoById(song.videoId);
-                currentVideoId = song.videoId;
-                dom.title.textContent = song.title;
-                dom.art.style.backgroundImage = `url('${song.thumbnail}')`;
+            const song = queue[currentIndex];
+            
+            // Video ID Sync
+            if (player.getVideoData().video_id !== song.id) {
+                player.loadVideoById(song.id);
+                dom.title.innerText = song.title;
+                dom.art.style.backgroundImage = `url('${song.thumb}')`;
             }
-        }
-        
-        // --- 1. HANDLE AD DETECTION UI ---
-        if (adIsDetected) {
-            dom.overlay.classList.add('active');
-            dom.syncStatusText.textContent = "Oops! An interruption. Click the button to skip it together.";
-            dom.sharedSkipButton.style.display = 'block';
-        } else {
-            dom.overlay.classList.remove('active');
-            dom.sharedSkipButton.style.display = 'none';
-        }
 
-        // --- 2. HANDLE SHARED SKIP COMMAND ---
-        if (serverSkipCommand > lastSkipCommandTime) {
-            player.seekTo(serverTime + 1, true); 
-            lastSkipCommandTime = serverSkipCommand; 
-            FIREBASE_REF.child('ad_detected').set(false);
-            dom.syncStatusText.textContent = "Perfectly synchronized! Back to the music. ❤️";
-            return; 
-        }
-        
-        // --- 3. HANDLE REGULAR PLAYBACK SYNC ---
-        if (!isMaster) {
-             // Sync play/pause state
-            if (player.getPlayerState() !== serverStatus) {
-                if (serverStatus === YT.PlayerState.PLAYING) {
-                    player.playVideo();
-                } else if (serverStatus === YT.PlayerState.PAUSED) {
-                    player.pauseVideo();
+            // 2. Playback Status Sync
+            // We use the server status to dictate play/pause
+            if (data.status === 'playing') {
+                if (player.getPlayerState() !== 1) player.playVideo();
+                dom.disc.classList.remove('paused');
+                dom.playBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+            } else {
+                if (player.getPlayerState() === 1) player.pauseVideo();
+                dom.disc.classList.add('paused');
+                dom.playBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+            }
+
+            // 3. Time Sync & Skip Logic
+            const serverTime = data.time || 0;
+            const skipCmd = data.skipCmd || 0;
+
+            // If a skip command is newer than what we last processed
+            if (skipCmd > lastSkipTime) {
+                player.seekTo(serverTime + 1, true); // Jump forward
+                lastSkipTime = skipCmd;
+                dom.overlay.classList.remove('active'); // Hide shield
+            } 
+            // Normal drift correction (if off by > 4s and not overlay active)
+            else if (!dom.overlay.classList.contains('active')) {
+                if (Math.abs(player.getCurrentTime() - serverTime) > 4) {
+                    player.seekTo(serverTime, true);
                 }
             }
-
-            // Sync rotating disc animation
-            if (serverStatus === YT.PlayerState.PLAYING) {
-                dom.playBtn.innerHTML = '<i class="fas fa-pause"></i>';
-                dom.disc.classList.remove('paused');
-            } else {
-                dom.playBtn.innerHTML = '<i class="fas fa-play"></i>';
-                dom.disc.classList.add('paused');
-            }
-
-            // Correct time drift for viewers
-            const currentTime = player.getCurrentTime();
-            if (Math.abs(currentTime - serverTime) > 3) {
-                player.seekTo(serverTime, true);
+            
+            // 4. Ad/Overlay Sync
+            if (data.adDetected && !dom.overlay.classList.contains('active')) {
+                // Show button if Firebase says someone is stuck
+                dom.overlay.classList.add('active');
+                dom.sharedSkipButton.style.display = 'block';
+            } else if (!data.adDetected) {
+                dom.overlay.classList.remove('active');
             }
         }
     });
 }
 
-function skipAdSynchronized() {
-    FIREBASE_REF.child('skip_command_timestamp').set(Date.now());
-    dom.syncStatusText.textContent = "🚀 Skip command sent! Synchronizing...";
-    dom.overlay.classList.remove('active');
-    dom.sharedSkipButton.style.display = 'none';
+// ================= AD DETECTION (Zero Progress) =================
+function checkAdStatus() {
+    if (!player || queue.length === 0) return;
+    
+    const state = player.getPlayerState();
+    const curr = player.getCurrentTime();
+
+    // If Playing (1) but time hasn't moved in 1 sec -> Stuck/Ad
+    if (state === 1) {
+        if (Math.abs(curr - lastKnownTime) < 0.1) {
+            // Signal Ad to everyone
+            db.update({ adDetected: true });
+        } else {
+            // Time is moving, update 'time' for others to sync to
+            // This acts as the "Master" clock - anyone playing updates the clock
+            lastKnownTime = curr;
+            db.update({ time: curr, adDetected: false });
+        }
+    }
 }
 
-
-// --- PLAYER CONTROLS (Full Control for everyone) ---
+// ================= SHARED CONTROLS =================
 
 function togglePlay() {
-    if(queue.length === 0) return;
-    const isPlaying = player.getPlayerState() === YT.PlayerState.PLAYING;
-
-    // Local action provides smooth UX
-    if (isPlaying) {
-        player.pauseVideo();
-    } else {
-        player.playVideo();
-    }
-
-    // Network action syncs all players
-    FIREBASE_REF.update({ 
-        status: isPlaying ? YT.PlayerState.PAUSED : YT.PlayerState.PLAYING, 
-        playbackTime: player.getCurrentTime(),
-    });
+    if (queue.length === 0) return;
+    const isPlaying = player.getPlayerState() === 1;
+    // Immediate Local Feedback
+    if (isPlaying) player.pauseVideo(); else player.playVideo();
+    // Network Update
+    db.update({ status: isPlaying ? 'paused' : 'playing' });
 }
 
 function syncSeek(seconds) {
     const newTime = player.getCurrentTime() + seconds;
     player.seekTo(newTime, true);
-    FIREBASE_REF.update({ playbackTime: newTime });
+    db.update({ time: newTime });
 }
 
 function playNext() {
-    if (queueIndex < queue.length - 1) {
-        FIREBASE_REF.update({ queueIndex: queueIndex + 1, status: YT.PlayerState.PLAYING, playbackTime: 0 });
+    if (currentIndex < queue.length - 1) {
+        db.update({ index: currentIndex + 1, time: 0, status: 'playing' });
     } else {
-        FIREBASE_REF.update({ status: YT.PlayerState.PAUSED, playbackTime: 0 });
+        db.update({ status: 'paused', time: 0 }); // End of playlist
     }
 }
 
 function playPrev() {
-    if (queueIndex > 0) {
-        FIREBASE_REF.update({ queueIndex: queueIndex - 1, status: YT.PlayerState.PLAYING, playbackTime: 0 });
+    if (currentIndex > 0) {
+        db.update({ index: currentIndex - 1, time: 0, status: 'playing' });
     } else {
-        FIREBASE_REF.update({ status: YT.PlayerState.PLAYING, playbackTime: 0 }); // Restart current song
+        db.update({ time: 0 }); // Restart song
     }
 }
 
-function setVolume(volume) {
-    player.setVolume(volume);
-}
-
-
-// --- QUEUE AND SEARCH ---
-
-dom.searchInput.addEventListener('input', (e) => {
-    const q = e.target.value;
-    // NOTE: YOUTUBE API KEY is needed for this search function!
-    // Since we are fixing the quota issue later, this remains conceptual for now.
-    
-    if (q.length > 2) {
-        // Placeholder for future searchYouTube(q) implementation
-        dom.resultsList.innerHTML = '<p class="empty-state">Searching... (API Key needed here)</p>';
-    }
-});
-
-function addToQueue(id, title, thumb) {
-    const newQueue = [...queue, { videoId: id, title: title, thumbnail: thumb }];
-    const updates = { queue: newQueue };
-    if (queue.length === 0) {
-        updates.queueIndex = 0;
-        updates.status = YT.PlayerState.PLAYING;
-        updates.playbackTime = 0;
-    }
-    FIREBASE_REF.update(updates);
-    dom.searchInput.value = '';
-}
-
-function renderQueueUI() {
-    dom.queueCount.textContent = `${queue.length} Songs`;
-    dom.queueList.innerHTML = '';
-    if (queue.length === 0) { dom.queueList.innerHTML = '<p class="empty-state">Queue is empty. Find a song!</p>'; return; }
-    
-    queue.forEach((song, idx) => {
-        const div = document.createElement('div');
-        div.className = 'song-item';
-        if (idx === queueIndex) div.style.background = 'rgba(255, 153, 204, 0.15)'; // Highlight playing song
-        
-        div.innerHTML = `
-            <img src="${song.thumbnail}" class="song-thumb">
-            <div class="song-meta">
-                <h4>${song.title}</h4>
-                <p style="font-size:11px; color:var(--primary-color)">${idx === queueIndex ? 'PLAYING NOW' : 'QUEUED'}</p>
-            </div>
-            <i class="fas fa-times" style="padding:10px; color:#ff4d4d" onclick="deleteSong(event, ${idx})"></i>
-        `;
-        
-        div.onclick = (e) => { 
-            // Click to change song
-            if(!e.target.classList.contains('fa-times')) {
-                FIREBASE_REF.update({ queueIndex: idx, status: YT.PlayerState.PLAYING, playbackTime: 0 });
-            }
-        };
-        dom.queueList.appendChild(div);
+// THE SHARED SKIP BUTTON
+function skipAdSynchronized() {
+    // Force everyone to jump to where my player currently is (or +1s)
+    // Send a unique timestamp
+    db.update({ 
+        skipCmd: Date.now(),
+        adDetected: false, // Hide button
+        time: player.getCurrentTime() + 1
     });
 }
 
+// ================= QUEUE & SEARCH & PLAYLIST =================
+
+function manualSearch() {
+    const q = dom.searchIn.value;
+    if (!q) return;
+
+    // 1. Check for Playlist Link
+    if (q.includes('list=')) {
+        alert("Playlist detected! Note: Adding playlists requires extra API quota. For now, please add songs individually to be safe.");
+        return;
+    }
+
+    // 2. Check for Video Link
+    if (q.includes('v=')) {
+        const id = q.split('v=')[1].split('&')[0];
+        addToQueue(id, "Shared Link", "https://img.youtube.com/vi/"+id+"/default.jpg");
+        return;
+    }
+
+    // 3. Regular Search
+    searchYouTube(q);
+    switchTab('results');
+}
+
+async function searchYouTube(q) {
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${q}&type=video&key=${YOUTUBE_API_KEY}`;
+    
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (data.error) {
+            dom.resList.innerHTML = `<div class="empty-state">⚠️ Error: ${data.error.message}</div>`;
+            return;
+        }
+
+        dom.resList.innerHTML = '';
+        data.items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'song-item';
+            div.innerHTML = `
+                <img src="${item.snippet.thumbnails.default.url}" class="thumb">
+                <div class="info">
+                    <h4>${item.snippet.title}</h4>
+                </div>
+                <button class="action-btn"><i class="fa-solid fa-plus"></i></button>
+            `;
+            div.onclick = () => addToQueue(item.id.videoId, item.snippet.title, item.snippet.thumbnails.default.url);
+            dom.resList.appendChild(div);
+        });
+    } catch (e) {
+        dom.resList.innerHTML = `<div class="empty-state">Network Error. Try again.</div>`;
+    }
+}
+
+function addToQueue(id, title, thumb) {
+    const newQueue = [...queue, { id, title, thumb }];
+    // If first song, play immediately
+    if (queue.length === 0) {
+        db.update({ queue: newQueue, index: 0, status: 'playing', time: 0 });
+    } else {
+        db.update({ queue: newQueue });
+    }
+    dom.searchIn.value = '';
+    switchTab('queue');
+}
+
+function renderQueue() {
+    dom.qCount.innerText = `${queue.length} Songs`;
+    dom.qList.innerHTML = '';
+    
+    if (queue.length === 0) {
+        dom.qList.innerHTML = '<div class="empty-state">Queue is empty 🎵</div>';
+        return;
+    }
+
+    queue.forEach((song, idx) => {
+        const div = document.createElement('div');
+        div.className = `song-item ${idx === currentIndex ? 'active-song' : ''}`;
+        if (idx === currentIndex) div.style.background = 'rgba(255, 0, 127, 0.2)';
+        
+        div.innerHTML = `
+            <img src="${song.thumb}" class="thumb">
+            <div class="info">
+                <h4>${song.title}</h4>
+                <small>${idx === currentIndex ? 'Now Playing' : ''}</small>
+            </div>
+            <button class="action-btn" onclick="deleteSong(event, ${idx})"><i class="fa-solid fa-trash"></i></button>
+        `;
+        // Click to jump to song
+        div.onclick = (e) => {
+            if (!e.target.closest('.action-btn')) {
+                db.update({ index: idx, status: 'playing', time: 0 });
+            }
+        };
+        dom.qList.appendChild(div);
+    });
+}
+
+// Global functions for HTML access
 window.deleteSong = function(e, idx) {
     e.stopPropagation();
     const newQueue = [...queue];
     newQueue.splice(idx, 1);
-    let newIdx = queueIndex;
-    if (idx < queueIndex) newIdx--;
-    FIREBASE_REF.update({ queue: newQueue, queueIndex: newIdx < 0 ? 0 : newIdx });
+    let newIdx = currentIndex;
+    if (idx < currentIndex) newIdx--;
+    db.update({ queue: newQueue, index: Math.max(0, newIdx) });
 }
 
 window.clearQueue = function() {
-    if(confirm("Clear the entire queue?")) FIREBASE_REF.update({ queue: [], queueIndex: 0, status: YT.PlayerState.PAUSED });
+    if(confirm("Clear All?")) db.set(null);
 }
 
-
-// --- UI HELPERS ---
-
-dom.seekBar.addEventListener('change', () => {
-    if (!player) return;
-    const d = player.getDuration();
-    if (!d) return;
-    const time = (dom.seekBar.value / 100) * d;
-    
-    player.seekTo(time, true);
-    FIREBASE_REF.update({ playbackTime: time });
+// ================= UI HELPERS =================
+dom.seek.addEventListener('input', () => { isDragging = true; });
+dom.seek.addEventListener('change', () => {
+    isDragging = false;
+    const newTime = (dom.seek.value / 100) * player.getDuration();
+    player.seekTo(newTime, true);
+    db.update({ time: newTime });
 });
 
-function updateProgress() {
-    if (!player) return;
+dom.vol.addEventListener('input', (e) => {
+    if(player) player.setVolume(e.target.value);
+});
+
+function updateUI() {
+    if (!player || isDragging) return;
     const c = player.getCurrentTime();
     const d = player.getDuration();
-    if(d) {
-        dom.seekBar.value = (c / d) * 100;
-        dom.curr.textContent = formatTime(c);
-        dom.dur.textContent = formatTime(d);
+    if (d) {
+        dom.seek.value = (c / d) * 100;
+        dom.curr.innerText = formatTime(c);
+        dom.dur.innerText = formatTime(d);
+    }
+}
+
+function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.scroll-list').forEach(l => l.classList.remove('active'));
+    
+    if (tab === 'queue') {
+        dom.qList.classList.add('active');
+        document.querySelector('.tab-btn:first-child').classList.add('active');
+    } else {
+        dom.resList.classList.add('active');
+        document.querySelector('.tab-btn:last-child').classList.add('active');
     }
 }
 
