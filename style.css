@@ -1,143 +1,36 @@
-:root {
-    --bg-dark: #070310; /* Deeper violet black */
-    --primary: #c084fc; /* Soft Violet Neon */
-    --accent: #f472b6;  /* Pink */
-    --glass: rgba(255, 255, 255, 0.04);
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --text-main: #ffffff;
-    --text-dim: #a1a1aa;
-    --curve-l: 30px; /* Large Curve */
-    --curve-s: 15px; /* Small Curve */
-}
-
-* { box-sizing: border-box; outline: none; -webkit-tap-highlight-color: transparent; }
-
-body {
-    margin: 0;
-    font-family: 'Outfit', sans-serif;
-    background-color: var(--bg-dark);
-    color: var(--text-main);
-    height: 100vh;
-    overflow: hidden;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-.ambient-light {
-    position: absolute; inset: 0;
-    background: radial-gradient(circle at 10% 20%, rgba(192, 132, 252, 0.1), transparent 30%),
-                radial-gradient(circle at 90% 80%, rgba(244, 114, 182, 0.1), transparent 30%);
-    animation: backgroundShift 30s infinite alternate;
-    z-index: -1;
-}
-
-/* OVERLAY / AD SHIELD */
-.overlay {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.95);
-    backdrop-filter: blur(25px);
-    z-index: 1000;
-    display: none; justify-content: center; align-items: center;
-    opacity: 0; transition: opacity 0.4s ease;
-}
-.overlay.active { display: flex; opacity: 1; }
-
-.glass-modal {
-    background: rgba(10, 5, 20, 0.9);
-    border: 1px solid var(--primary);
-    padding: 50px; border-radius: 40px;
-    text-align: center; max-width: 400px;
-    box-shadow: 0 0 80px rgba(192, 132, 252, 0.3);
-}
-
-.spinner {
-    width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.1);
-    border-top: 5px solid var(--primary); border-radius: 50%;
-    animation: spin 1s linear infinite; margin: 0 auto 30px;
-}
-
-#forceSyncBtn {
-    margin-top: 30px; padding: 18px 35px;
-    background: linear-gradient(135deg, var(--primary), var(--accent));
-    color: white; border: none; border-radius: 50px;
-    font-weight: 700; font-size: 16px; cursor: pointer;
-    box-shadow: 0 15px 40px rgba(192, 132, 252, 0.3);
-    transition: transform 0.2s, box-shadow 0.3s;
-}
-#forceSyncBtn:hover { box-shadow: 0 15px 50px rgba(192, 132, 252, 0.5); }
-#forceSyncBtn:active { transform: scale(0.95); }
-
-/* LAYOUT */
-.app-container {
-    width: 95%; max-width: 1500px; height: 95vh;
-    display: flex; flex-direction: column; gap: 20px;
-}
-.main-layout { display: flex; gap: 25px; height: 100%; overflow: hidden; }
-.library-container { flex: 1; display: flex; flex-direction: column; gap: 25px; min-width: 350px; }
-.top-panel, .bottom-panel { min-height: 50%; }
-
-/* GLASS PANELS - CARVED */
-.glass-panel {
-    background: var(--glass);
-    border: 1px solid var(--glass-border);
-    border-radius: 40px; /* Increased curve */
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-    backdrop-filter: blur(30px);
-    display: flex; flex-direction: column;
-}
-
-/* LEFT: PLAYER */
-.player-card { flex: 2; padding: 30px; position: relative; overflow-y: auto; }
+/* ... (Keep existing styles for :root, body, ambient-light, etc.) ... */
 
 /* Carved Video Player */
 .video-wrapper {
-    width: 100%; aspect-ratio: 16/9;
-    border-radius: 30px; /* Carved Look */
-    overflow: hidden;
-    box-shadow: inset 0 0 30px rgba(0,0,0,0.9), 0 15px 40px rgba(0,0,0,0.6);
-    margin-bottom: 30px; position: relative;
-    border: 2px solid rgba(255,255,255,0.1);
-    transition: transform 0.3s ease-out;
+    /* ... (Keep existing styles) ... */
+    margin-bottom: 30px; 
+    position: relative;
 }
+/* THIS IS THE FIX: Block interaction with the raw iframe */
+.video-overlay {
+    position: absolute; inset: 0; 
+    background: transparent; 
+    z-index: 10; /* Ensure it's above the iframe */
+    /* THIS line prevents mouse events from reaching the iframe */
+    pointer-events: auto; 
+    border-radius: 30px; /* Match wrapper curve */
+}
+#player { width: 100%; height: 100%; }
 
+/* INFO & PROGRESS */
 .info-area { text-align: center; margin-bottom: 25px; }
-#current-song-title { font-size: 1.8rem; font-weight: 700; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#current-song-title { 
+    font-size: 1.8rem; font-weight: 700; margin: 0; 
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
+}
 .sync-status-msg { color: var(--accent); margin-top: 5px; font-weight: 500; font-size: 0.9rem; }
 
-/* Progress Bar */
-.time-control { display: flex; align-items: center; gap: 15px; font-size: 0.85rem; color: var(--text-dim); margin: 15px 0; }
-.slider-wrapper { flex: 1; position: relative; height: 8px; background: rgba(255,255,255,0.1); border-radius: 10px; }
-input[type=range] { position: absolute; top: -6px; left: 0; width: 100%; height: 20px; opacity: 0; cursor: pointer; z-index: 2; margin: 0; }
-.slider-progress {
-    height: 100%; background: linear-gradient(to right, var(--primary), var(--accent));
-    border-radius: 10px; width: 0%; transition: width 0.1s linear;
-    box-shadow: 0 0 15px var(--primary);
-}
-
-/* Controls */
+/* Controls (Ensuring consistent button sizes and spacing) */
 .controls { display: flex; justify-content: center; align-items: center; gap: 35px; }
-.btn-sec { 
-    background: var(--glass); border: 1px solid var(--glass-border); 
-    color: white; width: 55px; height: 55px; border-radius: 50%;
-    font-size: 1.1rem; cursor: pointer; transition: 0.2s;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.4);
-}
-.btn-sec:hover { background: rgba(255,255,255,0.1); }
 
-.btn-main {
-    width: 85px; height: 85px; border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent), var(--primary));
-    color: white; border: none; font-size: 2rem; cursor: pointer;
-    box-shadow: 0 0 40px var(--accent);
-    transition: transform 0.2s, box-shadow 0.3s;
-    display: flex; justify-content: center; align-items: center;
-}
-.btn-main:active { transform: scale(0.9); }
+/* ... (Keep existing styles for .btn-sec, .btn-main) ... */
 
-.volume-area { display: flex; align-items: center; gap: 15px; width: 60%; margin: 20px auto 0; color: var(--text-dim); }
-
-/* LIBRARY & SEARCH */
+/* LIBRARY & SEARCH (Ensuring padding and consistency) */
 .library-card { flex: 1; padding: 0; overflow: hidden; }
 
 .search-wrapper {
@@ -145,57 +38,36 @@ input[type=range] { position: absolute; top: -6px; left: 0; width: 100%; height:
     display: flex; gap: 15px;
 }
 #searchInput {
-    flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
-    padding: 15px 25px; border-radius: 20px; color: white; font-family: 'Outfit';
-    transition: border-color 0.2s;
+    flex: 1; 
+    padding: 15px 25px; 
+    border-radius: 20px; /* Consistency */
 }
-#searchInput:focus { border-color: var(--primary); }
 .search-wrapper button {
-    background: var(--primary); border: none; color: white;
-    width: 60px; border-radius: 20px; cursor: pointer;
+    width: 60px; border-radius: 20px; /* Consistency */
 }
 
-.tabs { display: flex; padding: 10px 20px; gap: 10px; }
-.tab { padding: 10px; border-radius: var(--curve-s); }
-.tab.active { background: rgba(255,255,255,0.1); color: white; }
-
+/* Song Item Consistency */
 .list-view { flex: 1; overflow-y: auto; padding: 0 20px; display: none; }
 .song-item {
-    border-radius: var(--curve-s); margin-bottom: 10px; transition: 0.2s;
-    border: 1px solid transparent; background: rgba(255,255,255,0.05);
+    display: flex; align-items: center; gap: 15px; padding: 12px;
+    border-radius: var(--curve-s); margin-bottom: 10px; 
+    /* ... (Keep existing styles) ... */
 }
-.song-item:hover { background: rgba(255,255,255,0.12); border-color: var(--primary); }
-.thumb { border-radius: 10px; }
+.thumb { width: 50px; height: 50px; border-radius: 10px; object-fit: cover; }
+.meta { flex: 1; overflow: hidden; }
 
-/* CHAT SECTION */
-.chat-card { flex: 1; padding: 25px; display: flex; flex-direction: column; border-radius: 40px; }
-.chat-card h3 { margin-top: 0; color: var(--primary); font-size: 1.2rem; }
-.chat-messages { flex: 1; overflow-y: auto; padding-right: 10px; margin-bottom: 15px; }
+/* CHAT SECTION Consistency */
+.chat-card { 
+    flex: 1; padding: 25px; display: flex; flex-direction: column; 
+    border-radius: 40px; /* Carved Look */
+}
 
-.chat-message {
-    padding: 8px 12px; border-radius: 18px 18px 18px 5px; max-width: 80%;
-    margin-bottom: 10px; font-size: 0.9rem; line-height: 1.3;
-    animation: fadeIn 0.3s ease-out;
-}
-.chat-message.system { background: rgba(128, 0, 128, 0.3); color: var(--primary); }
-.chat-message.me { 
-    background: var(--accent); color: white; align-self: flex-end; 
-    border-radius: 18px 5px 18px 18px; margin-left: auto; 
-}
-.chat-message.partner { 
-    background: rgba(255, 255, 255, 0.1); color: var(--text-main); 
-    align-self: flex-start; 
-}
-.chat-message p { margin: 0; }
-.chat-message small { display: block; font-size: 0.65rem; color: var(--text-dim); text-align: right; }
+/* ... (Keep all existing chat message styles) ... */
 
-.chat-input-wrapper { display: flex; gap: 10px; }
-#chatInput { flex: 1; padding: 15px; border-radius: 25px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.5); color: white; }
+.chat-input-wrapper { display: flex; gap: 10px; margin-top: 10px; }
+#chatInput { flex: 1; padding: 15px; border-radius: 25px; }
 .chat-input-wrapper button { 
-    width: 50px; background: var(--primary); border: none; border-radius: 50%; color: white; cursor: pointer; 
+    width: 50px; border-radius: 25px; /* Match input height/curve */
 }
 
-@keyframes backgroundShift {
-    0% { background-position: 0% 0%, 100% 100%; }
-    100% { background-position: 100% 100%, 0% 0%; }
-}
+/* ... (Keep existing media queries for responsiveness) ... */
