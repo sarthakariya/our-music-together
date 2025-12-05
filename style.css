@@ -1,113 +1,94 @@
-// ... (Keep existing CONFIGURATION and DOM setup) ...
-
-// Variables
-let player;
-// ... (keep queue, currentIndex, etc.)
-let myName = "Guest"; 
-
-// ... (onYouTubeIframeAPIReady remains the same) ...
-
-function identifyUser() {
-    let name = prompt("Welcome! Please enter your name for chat (Sarthak or Reechita):");
-    if (name) {
-        name = name.trim();
-        if (name.toLowerCase().includes('sarthak')) {
-            myName = "Sarthak";
-        } else if (name.toLowerCase().includes('reechita')) {
-            myName = "Reechita";
-        } else {
-            myName = name; 
-        }
-        // Ensure the chat section acknowledges the correct name
-        dom.chatBox.innerHTML += `<div class="chat-message system">You are logged in as **${myName}**.</div>`;
-    }
+:root {
+    --bg-dark: #070310; /* Deep Space Black/Violet */
+    --primary: #c084fc; /* Soft Violet Neon */
+    --accent: #f472b6;  /* Pink */
+    --glass: rgba(255, 255, 255, 0.04);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --text-main: #ffffff;
+    --text-dim: #a1a1aa;
+    --curve-l: 40px; /* Large Curve */
+    --curve-s: 20px; /* Small Curve (Increased from 15px) */
 }
 
-function onPlayerReady() {
-    identifyUser(); 
-    initSync();
-    initChatListener();
-    
-    // UI Loop
-    setInterval(updateUI, 500);
-    // Master Status Check Loop
-    setInterval(checkPlaybackStatus, 1000);
+/* ... (Keep existing styles for *, body) ... */
+
+body {
+    /* ... */
+    background-color: var(--bg-dark); /* RESTORED COLOR */
+    color: var(--text-main);
+    /* ... */
 }
 
-// ... (onPlayerStateChange remains the same) ...
-
-// ================= V5: STRICT SYNCHRONIZATION PROTOCOL =================
-
-function initSync() {
-    db.on('value', snap => {
-        const data = snap.val();
-        if (!data) return;
-
-        queue = data.queue || [];
-        currentIndex = data.index || 0;
-        renderQueue();
-
-        if (queue.length > 0) {
-            const song = queue[currentIndex];
-            
-            if (player.getVideoData().video_id !== song.id) {
-                player.loadVideoById(song.id);
-                dom.title.innerText = song.title;
-            }
-
-            // CRITICAL AD LOCK VERIFICATION:
-            if (data.adDetected) {
-                // If ad is detected anywhere, everyone pauses and sees the wait screen
-                if(player.getPlayerState() !== 2) player.pauseVideo();
-                // THIS ENSURES THE OVERLAY IS ACTIVE FOR EVERYONE
-                if(!dom.overlay.classList.contains('active')) dom.overlay.classList.add('active'); 
-            } else {
-                
-                const serverStatus = data.status;
-                const serverTime = data.time || 0;
-                const skipCmd = data.skipCmd || 0;
-
-                dom.overlay.classList.remove('active');
-                
-                // ... (Rest of status and skip sync logic remains the same) ...
-            }
-        }
-    });
+/* Ambient Background - Enhanced Gradient */
+.ambient-light {
+    /* ... (Keep existing styles) ... */
+    animation: backgroundShift 30s infinite alternate;
 }
 
-// ... (Rest of checkPlaybackStatus, togglePlay, forceSyncResume, 
-// fetchPlaylist, searchYouTube, and UI Helpers remain the same, 
-// except for the corrected name handling in renderMessage) ...
-
-window.sendMessage = function() {
-    const text = dom.chatIn.value.trim();
-    if (text) {
-        chatRef.push({
-            user: myName, // Uses the correctly identified name
-            message: text,
-            timestamp: firebase.database.ServerValue.TIMESTAMP
-        });
-        dom.chatIn.value = '';
-    }
+/* OVERLAY / AD SHIELD */
+.overlay {
+    /* ... (Keep existing styles) ... */
+    background: rgba(0,0,0,0.95);
+    backdrop-filter: blur(25px);
+}
+.glass-modal {
+    background: rgba(10, 5, 20, 0.9); /* Dark background for modal */
+    border: 1px solid var(--primary);
+    /* ... */
 }
 
-function renderMessage(user, message, timestamp) {
-    const div = document.createElement('div');
-    const senderClass = (user === myName) ? 'me' : 'partner';
-    
-    // CORRECTED: Check for specific user names
-    const partnerName = (myName === "Sarthak") ? "Reechita" : "Sarthak";
-    const userIsKnown = (user === "Sarthak" || user === "Reechita");
-
-    div.className = `chat-message ${senderClass}`;
-
-    const date = new Date(timestamp);
-    const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-    div.innerHTML = `
-        <p><strong>${user}:</strong> ${message}</p>
-        <small>${timeStr}</small>
-    `;
-    dom.chatBox.appendChild(div);
-    dom.chatBox.scrollTop = dom.chatBox.scrollHeight;
+/* GLASS PANELS - CARVED */
+.glass-panel {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--curve-l); /* 40px Curve */
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    backdrop-filter: blur(30px);
+    transition: box-shadow 0.3s ease; /* Fluid transition */
 }
+.glass-panel:hover {
+    box-shadow: 0 20px 70px rgba(192, 132, 252, 0.1);
+}
+
+/* Carved Video Player */
+.video-wrapper {
+    /* ... */
+    border-radius: 30px; /* Carved Look */
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.9), 0 15px 40px rgba(0,0,0,0.6);
+}
+.video-overlay {
+    position: absolute; inset: 0; 
+    background: transparent; 
+    z-index: 10; 
+    pointer-events: none; /* REVERSED FIX: Allows native iframe clicks */
+    border-radius: 30px;
+}
+
+/* Controls (Added pulse animation) */
+.btn-main {
+    /* ... (Keep existing styles) ... */
+    box-shadow: 0 0 40px var(--accent);
+    animation: neonPulse 2s infinite alternate; /* NEW ANIMATION */
+}
+
+.btn-sec:hover {
+    background: rgba(255,255,255,0.15); /* Slightly brighter hover */
+}
+
+/* Song Item Polish */
+.song-item {
+    padding: 15px; /* Slightly larger padding */
+    border-radius: var(--curve-s); /* 20px Curve */
+    background: rgba(255,255,255,0.05);
+}
+.song-item:hover { 
+    background: rgba(255,255,255,0.15); 
+    border-color: var(--primary);
+}
+
+@keyframes neonPulse {
+    0% { transform: scale(1); box-shadow: 0 0 10px var(--accent), 0 0 20px var(--primary); }
+    100% { transform: scale(1.03); box-shadow: 0 0 20px var(--accent), 0 0 40px var(--primary); }
+}
+
+/* ... (Keep other existing styles) ... */
