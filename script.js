@@ -90,7 +90,7 @@ function onPlayerReady(event) {
         isSeeking = false;
         const newTime = (player.getDuration() * e.target.value) / 100;
         player.seekTo(newTime, true);
-        broadcastState('seek', newTime); // Immediate seek broadcast
+        broadcastState('seek', newTime, currentVideoId, false); // Seek sync should not trigger ad mode
     });
     seekBar.addEventListener('input', (e) => {
         const newTime = (player.getDuration() * e.target.value) / 100;
@@ -122,13 +122,14 @@ function onPlayerStateChange(event) {
             // If the player PAUSED/BUFFERED and it was NOT from a remote command AND NOT from a local button click:
             if (!isPartnerPlaying && !isManualAction && !ignoreTemporaryState) {
                  // This is an Ad or deep Buffer stall. Broadcast pause to stop partner.
-                 broadcastState('pause', player.getCurrentTime(), currentVideoId);
+                 broadcastState('pause', player.getCurrentTime(), currentVideoId, true); // Set isAd/Buffer flag to true
             }
         } 
         
         if (event.data === YT.PlayerState.ENDED) {
             if (!isPartnerPlaying) {
-                 broadcastState('pause', player.getCurrentTime(), currentVideoId);
+                 // Video ended locally, pause partner before playing next song
+                 broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
             }
             playNextSong();
         }
@@ -168,7 +169,7 @@ function updateLocalTime() {
 
         // AGGRESSIVE 1-SECOND SYNC BROADCAST: Leader sends time updates
         if (state === YT.PlayerState.PLAYING && lastBroadcaster === myName) {
-             broadcastState('play', currentTime, currentVideoId);
+             broadcastState('play', currentTime, currentVideoId, false);
         }
     }
 }
@@ -182,15 +183,15 @@ function togglePlayPause() {
     
     if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
         player.pauseVideo();
-        // **INSTANT SYNC:** Broadcast PAUSE command immediately
-        broadcastState('pause', player.getCurrentTime(), currentVideoId);
+        // INSTANT SYNC: Broadcast PAUSE command, NOT an ad/buffer stall
+        broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
     } else {
         if (!currentVideoId && currentQueue.length > 0) {
             loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title);
         } else if (currentVideoId) {
             player.playVideo();
-            // **INSTANT SYNC:** Broadcast PLAY command immediately
-            broadcastState('play', player.getCurrentTime(), currentVideoId);
+            // INSTANT SYNC: Broadcast PLAY command, NOT an ad/buffer stall
+            broadcastState('play', player.getCurrentTime(), currentVideoId, false);
         }
     }
 }
@@ -205,28 +206,79 @@ function loadAndPlayVideo(videoId, title) {
         document.getElementById('current-song-title').textContent = title;
         
         // Broadcast immediately to ensure partner loads the same video and starts playing
-        broadcastState('play', player.getCurrentTime(), videoId);
+        broadcastState('play', player.getCurrentTime(), videoId, false); // Not an ad
         
         updateTimeDisplay(0, player.getDuration());
         renderQueue(currentQueue, currentVideoId);
     }
 }
 
-function updateTimeDisplay(currentTime, duration) {
-    const formatTime = (seconds) => {
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = Math.floor(seconds % 60);
-        
-        const pad = (num) => num.toString().padStart(2, '0');
-        
-        if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
-        return `${m}:${pad(s)}`;
-    };
-    
-    document.getElementById('current-time').textContent = formatTime(currentTime);
-    document.getElementById('duration').textContent = formatTime(duration);
+// --- FIREBASE SYNC (REALTIME DATABASE) ---
+
+function broadcastState(action, time, videoId = currentVideoId, isAdStall = false) {
+    if (!videoId) return;
+
+    syncRef.set({
+        action: action, 
+        time: time,
+        videoId: videoId,
+        lastUpdater: myName, 
+        isAdStall: isAdStall, // NEW: Flag to indicate if this is an ad/buffer forced pause
+        timestamp: Date.now()
+    }).catch(error => {
+        console.error("Error broadcasting state:", error);
+    });
 }
+
+function applyRemoteCommand(state) {
+    if (!player || !state || state.videoId === undefined) return;
+    
+    const partnerIsPlaying = state.action === 'play';
+    isPartnerPlaying = true; // Flag remote operation
+
+    if (state.videoId !== currentVideoId) {
+        const song = currentQueue.find(s => s.videoId === state.videoId);
+        const title = song ? song.title : 'External Sync';
+
+        player.loadVideoById(state.videoId, state.time);
+        currentVideoId = state.videoId;
+        document.getElementById('current-song-title').textContent = title;
+        renderQueue(currentQueue, currentVideoId);
+        
+    } else if (state.action === 'seek') {
+        player.seekTo(state.time, true);
+
+    } else {
+        const timeDiff = Math.abs(player.getCurrentTime() - state.time);
+        if (timeDiff > 2) {
+            player.seekTo(state.time, true);
+        }
+    }
+    
+    // Play/Pause Command Logic
+    if (partnerIsPlaying) {
+        // Always resume play
+        document.getElementById('syncOverlay').classList.remove('active');
+        if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
+            player.playVideo();
+        }
+    } else {
+        // Partner paused. Check the 'isAdStall' flag.
+        if (state.isAdStall) {
+             // If it's an ad stall, strictly lock the player until the partner resumes.
+             document.getElementById('syncOverlay').classList.add('active');
+        } else {
+             // If it's a manual pause, just show the normal pause state (no lock)
+             document.getElementById('syncOverlay').classList.remove('active');
+        }
+        
+        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+            player.pauseVideo();
+        }
+    }
+}
+
+// ... (Rest of the functions: updateTimeDisplay, playNextSong, playPreviousSong, addToQueue, addBatchToQueue, removeFromQueue, clearQueue, renderQueue, renderSearchResults, switchTab, searchYouTube, extractPlaylistId, fetchPlaylist, updateSyncStatus, sendChatMessage, displayChatMessage)
 
 // --- QUEUE MANAGEMENT ---
 
@@ -537,8 +589,8 @@ function loadInitialData() {
         
         // Update overlay text if it's currently showing
         if (document.getElementById('syncOverlay').classList.contains('active')) {
-             document.getElementById('overlayTitle').textContent = `Waiting for ${lastBroadcaster} to resume...`;
-             document.getElementById('overlayText').innerHTML = `Playback paused by **${lastBroadcaster}** (Ad/Buffer/Manual Pause). We will resume automatically when they continue playing.`;
+             document.getElementById('overlayTitle').textContent = `Awaiting ${lastBroadcaster} to resume...`;
+             document.getElementById('overlayText').innerHTML = `Playback paused due to a **${lastBroadcaster}** Ad/Buffer stall. You cannot resume playback until they do.`;
         }
         
         updateSyncStatus();
@@ -551,64 +603,6 @@ function loadInitialData() {
     });
 }
 
-function broadcastState(action, time, videoId = currentVideoId) {
-    if (!videoId) return;
-
-    syncRef.set({
-        action: action, 
-        time: time,
-        videoId: videoId,
-        lastUpdater: myName, // Ensure my name is sent with every command
-        timestamp: Date.now()
-    }).catch(error => {
-        console.error("Error broadcasting state:", error);
-    });
-}
-
-function applyRemoteCommand(state) {
-    if (!player || !state || state.videoId === undefined) return;
-    
-    const partnerIsPlaying = state.action === 'play';
-    isPartnerPlaying = true; // Flag remote operation
-
-    if (state.videoId !== currentVideoId) {
-        // Partner loaded a new song
-        const song = currentQueue.find(s => s.videoId === state.videoId);
-        const title = song ? song.title : 'External Sync';
-
-        player.loadVideoById(state.videoId, state.time);
-        currentVideoId = state.videoId;
-        document.getElementById('current-song-title').textContent = title;
-        renderQueue(currentQueue, currentVideoId);
-        
-    } else if (state.action === 'seek') {
-        // Partner manually sought to a new time
-        player.seekTo(state.time, true);
-
-    } else {
-        // Time Correction: Only adjust if difference is significant
-        const timeDiff = Math.abs(player.getCurrentTime() - state.time);
-        if (timeDiff > 2) {
-            player.seekTo(state.time, true);
-        }
-    }
-    
-    // Play/Pause Command Logic
-    if (partnerIsPlaying) {
-        // Partner is playing, so hide the overlay and ensure we play
-        document.getElementById('syncOverlay').classList.remove('active');
-        if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
-            player.playVideo();
-        }
-    } else {
-        // Partner is paused (due to ad, buffer, or manual click)
-        // Show overlay and ensure we pause
-        document.getElementById('syncOverlay').classList.add('active');
-        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-            player.pauseVideo();
-        }
-    }
-}
 
 function updateSyncStatus() {
     const msgEl = document.getElementById('sync-status-msg');
