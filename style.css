@@ -28,17 +28,16 @@
     outline: none; 
     margin: 0;
     padding: 0;
-    -webkit-tap-highlight-color: transparent; /* Improves mobile experience */
-    /* Smoother transitions for a more polished feel */
+    -webkit-tap-highlight-color: transparent; 
     transition: background-color 0.3s ease-out, color 0.3s ease-out, border-color 0.3s ease-out, box-shadow 0.3s ease-out, transform 0.15s ease-out;
 }
 
 body {
     font-family: 'Outfit', sans-serif;
-    background-color: var(--bg-dark); /* ESSENTIAL: Ensures the background is dark */
+    background-color: var(--bg-dark); 
     color: var(--text-main);
     min-height: 100vh;
-    overflow: hidden; /* Prevents body scrolling */
+    overflow: hidden; 
     display: flex;
     justify-content: center;
     align-items: center;
@@ -53,17 +52,17 @@ body {
 
 /* Scrollbar Styling (Themed and Minimalist) */
 .list-view, .chat-messages, .player-card {
-    scrollbar-width: thin; /* Firefox */
-    scrollbar-color: var(--primary) transparent; /* Firefox */
+    scrollbar-width: thin; 
+    scrollbar-color: var(--primary) transparent; 
 }
 .list-view::-webkit-scrollbar, .chat-messages::-webkit-scrollbar, .player-card::-webkit-scrollbar {
-    width: 10px; /* Slightly wider for visibility */
+    width: 10px; 
     background-color: transparent;
 }
 .list-view::-webkit-scrollbar-thumb, .chat-messages::-webkit-scrollbar-thumb, .player-card::-webkit-scrollbar-thumb {
-    background-color: rgba(192, 132, 252, 0.5); /* Primary accent with transparency */
+    background-color: rgba(192, 132, 252, 0.5); 
     border-radius: 10px;
-    border: 3px solid var(--bg-dark); /* Creates a distinct, floating look */
+    border: 3px solid var(--bg-dark); 
 }
 .list-view::-webkit-scrollbar-thumb:hover, .chat-messages::-webkit-scrollbar-thumb:hover {
     background-color: var(--primary);
@@ -77,11 +76,9 @@ body {
 /* Ambient Background Light and Animation */
 .ambient-light {
     position: absolute; inset: 0;
-    /* Two subtle radial gradients for a deep space effect */
     background: radial-gradient(circle at 15% 25%, rgba(192, 132, 252, 0.2), transparent 35%),
                 radial-gradient(circle at 85% 75%, rgba(244, 114, 182, 0.2), transparent 35%);
     background-size: 200% 200%;
-    /* Slower, smoother animation */
     animation: backgroundShift 45s infinite alternate cubic-bezier(0.6, 0.2, 0.4, 0.8);
     z-index: -1;
 }
@@ -99,7 +96,7 @@ body {
     min-height: 600px;
     display: flex; 
     flex-direction: column; 
-    gap: 30px; /* Increased gap for breathing room */
+    gap: 30px; 
     padding: 15px;
 }
 
@@ -120,15 +117,7 @@ body {
     font-size: clamp(2rem, 3.5vw, 3rem); 
     letter-spacing: 3px; 
     margin: 0; 
-    /* Enhanced text neon glow */
     text-shadow: 0 0 15px var(--primary), 0 0 5px var(--accent);
-}
-.app-tagline {
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: var(--text-dim);
-    margin-top: 8px;
-    letter-spacing: 1px;
 }
 /* Heart pulse animation */
 .pulse { 
@@ -138,7 +127,7 @@ body {
 }
 @keyframes heartbeat { 
     0%, 100% { transform: scale(1); } 
-    50% { transform: scale(1.1); } /* Slightly less aggressive pulse */
+    50% { transform: scale(1.1); } 
 }
 
 
@@ -149,26 +138,17 @@ body {
 .glass-panel {
     background: var(--glass);
     border: 1px solid var(--glass-border);
-    border-radius: var(--curve-l); /* 45px Curve */
+    border-radius: var(--curve-l); 
     box-shadow: var(--shadow-deep);
-    backdrop-filter: blur(40px); /* Increased blur for better separation */
+    backdrop-filter: blur(40px); 
     display: flex; 
     flex-direction: column;
     transition: box-shadow 0.4s ease, transform 0.2s ease;
 }
-/* Subtle elevation and neon glow on hover */
 .glass-panel:hover {
     box-shadow: 0 35px 100px rgba(0,0,0,0.85), var(--shadow-neon);
 }
 
-.section-title {
-    font-size: 1.4rem;
-    font-weight: 700;
-    color: var(--primary);
-    margin-bottom: 25px;
-    padding-bottom: 5px;
-    border-bottom: 1px dashed rgba(255, 255, 255, 0.1); /* Brighter dash line */
-}
 .section-title-inline {
     font-size: 1.3rem;
     font-weight: 700;
@@ -181,7 +161,7 @@ body {
 .overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.85); /* Darker overlay */
+    background: rgba(0, 0, 0, 0.85); 
     backdrop-filter: blur(10px);
     z-index: 1000;
     display: none;
@@ -204,15 +184,6 @@ body {
     max-width: 450px;
     animation: fadeIn 0.5s ease-out;
 }
-.glass-modal h2 {
-    color: var(--accent);
-    margin-bottom: 15px;
-    font-size: 2rem;
-}
-.glass-modal p {
-    color: var(--text-dim);
-    margin-bottom: 30px;
-}
 .spinner {
     border: 5px solid rgba(255, 255, 255, 0.3);
     border-top: 5px solid var(--accent);
@@ -232,9 +203,6 @@ body {
     cursor: pointer;
     box-shadow: 0 0 20px rgba(244, 114, 182, 0.5);
 }
-#forceSyncBtn:hover {
-    box-shadow: 0 0 30px rgba(244, 114, 182, 0.8);
-}
 
 
 /* ------------------------------------------------------------------------------------------------------ */
@@ -243,7 +211,7 @@ body {
 
 .player-card { 
     flex: 2; 
-    padding: 40px; /* Increased padding */
+    padding: 40px; 
     position: relative; 
     overflow-y: auto; 
     min-width: 500px;
@@ -253,23 +221,12 @@ body {
 .video-wrapper {
     width: 100%; 
     aspect-ratio: 16/9;
-    border-radius: var(--curve-m); /* 30px Curve */
+    border-radius: var(--curve-m); 
     overflow: hidden;
-    /* Neumorphic/Carved Inner Shadow (Deeper effect) */
     box-shadow: inset 0 0 50px rgba(0, 0, 0, 1), 0 15px 40px rgba(0, 0, 0, 0.7);
     margin-bottom: 30px; 
     position: relative;
     border: 3px solid rgba(255, 255, 255, 0.1);
-}
-
-/* The invisible overlay that allows ad skipping (pointer-events: none) */
-.video-overlay {
-    position: absolute; 
-    inset: 0; 
-    background: transparent; 
-    z-index: 10; 
-    pointer-events: none; 
-    border-radius: var(--curve-m);
 }
 
 /* Info Area */
@@ -306,14 +263,14 @@ body {
     gap: 15px; 
     font-size: 0.9rem; 
     color: var(--text-dim); 
-    margin: 15px 0 35px; /* Increased bottom margin */
+    margin: 15px 0 35px; 
 }
 
 /* Slider Wrapper */
 .slider-wrapper { 
     flex: 1; 
     position: relative; 
-    height: 10px; /* Thicker bar */
+    height: 10px; 
     background: rgba(255, 255, 255, 0.15); 
     border-radius: 10px; 
     cursor: pointer;
@@ -323,7 +280,7 @@ body {
 /* Range Input (Hidden but Functional) */
 input[type=range] { 
     position: absolute; 
-    top: -5px; /* Adjust to center thumb over bar */
+    top: -5px; 
     left: 0; 
     width: 100%; 
     height: 20px; 
@@ -339,7 +296,7 @@ input[type=range] {
     background: linear-gradient(to right, var(--primary), var(--accent));
     border-radius: 10px; 
     width: 0%; 
-    transition: width 0.1s linear; /* Smooth progress update */
+    transition: width 0.1s linear; 
     box-shadow: 0 0 15px var(--primary);
 }
 
@@ -348,15 +305,15 @@ input[type=range] {
     display: flex; 
     justify-content: center; 
     align-items: center; 
-    gap: 50px; /* Increased gap */
+    gap: 50px; 
 }
 
 /* Secondary Button (Skip/Prev) */
 .btn-sec { 
-    background: rgba(255, 255, 255, 0.1); /* Slightly more opaque glass */
+    background: rgba(255, 255, 255, 0.1); 
     border: 1px solid var(--glass-border); 
     color: var(--text-main); 
-    width: 65px; /* Slightly larger */
+    width: 65px; 
     height: 65px; 
     border-radius: 50%;
     font-size: 1.3rem; 
@@ -366,16 +323,15 @@ input[type=range] {
 .btn-sec:hover { 
     background: rgba(255, 255, 255, 0.25); 
     color: var(--primary);
-    transform: translateY(-2px); /* Subtle hover lift */
+    transform: translateY(-2px); 
 }
 .btn-sec:active { 
     transform: scale(0.92); 
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
 }
 
 /* Main Button (Play/Pause) */
 .btn-main {
-    width: 100px; /* Larger main button */
+    width: 100px; 
     height: 100px; 
     border-radius: 50%;
     background: linear-gradient(135deg, var(--accent), var(--primary));
@@ -387,14 +343,8 @@ input[type=range] {
     display: flex; 
     justify-content: center; 
     align-items: center;
-    /* Primary Pulsing Animation (Slightly slower and smoother) */
     animation: neonPulse 3s infinite alternate cubic-bezier(0.6, 0.2, 0.4, 0.8);
 }
-.btn-main:active { 
-    transform: scale(0.95); 
-    box-shadow: 0 0 15px var(--accent);
-}
-
 @keyframes neonPulse {
     0% { transform: scale(1); box-shadow: 0 0 20px var(--accent), 0 0 40px var(--primary); }
     100% { transform: scale(1.03); box-shadow: 0 0 30px var(--accent), 0 0 60px var(--primary); }
@@ -412,10 +362,10 @@ input[type=range] {
     font-size: 1.2rem;
 }
 .volume-slider-wrapper {
-    height: 8px; /* Slightly smaller for volume */
+    height: 8px; 
 }
 .volume-progress-fill {
-    background: linear-gradient(to right, #4ade80, #10b981); /* Green for volume */
+    background: linear-gradient(to right, #4ade80, #10b981); 
     box-shadow: 0 0 10px #10b981;
 }
 
@@ -433,7 +383,7 @@ input[type=range] {
     max-width: 550px;
 }
 .top-panel { flex: 2; min-height: 400px; padding-bottom: 0; }
-.bottom-panel { flex: 1; min-height: 350px; } /* Slightly larger chat area */
+.bottom-panel { flex: 1; min-height: 350px; } 
 
 
 /* Search Input and Button */
@@ -445,7 +395,7 @@ input[type=range] {
 }
 #searchInput {
     flex: 1; 
-    background: rgba(0, 0, 0, 0.4); /* Darker background */
+    background: rgba(0, 0, 0, 0.4); 
     border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 15px 20px; 
     border-radius: var(--curve-s);
@@ -454,20 +404,17 @@ input[type=range] {
     font-size: 1.05rem;
     box-shadow: inset 0 2px 7px rgba(0,0,0,0.8);
 }
-#searchInput::placeholder { color: var(--text-dim); }
-#searchInput:focus { border-color: var(--accent); background: rgba(0, 0, 0, 0.6); }
 
 .search-btn {
     background: var(--primary); 
     border: none; 
     color: white;
-    width: 55px; /* Slightly larger button */
+    width: 55px; 
     height: 55px;
     border-radius: var(--curve-s); 
     cursor: pointer;
     font-size: 1.2rem;
 }
-.search-btn:active { transform: scale(0.95); }
 
 
 /* Tabs */
@@ -489,15 +436,14 @@ input[type=range] {
     border-radius: var(--curve-s); 
     font-size: 1rem;
 }
-.tab:hover { color: var(--accent); }
 .tab.active { 
-    background: var(--primary); /* Solid highlight */
-    color: var(--bg-dark); /* Dark text on bright background for punch */
+    background: var(--primary); 
+    color: var(--bg-dark); 
     box-shadow: 0 0 15px rgba(192, 132, 252, 0.6);
     transform: translateY(-1px);
 }
 #queue-count { color: var(--accent); font-weight: 900; }
-.tab.active #queue-count { color: var(--bg-dark); } /* Dark count on bright tab */
+.tab.active #queue-count { color: var(--bg-dark); } 
 
 
 /* List Views (Queue & Results) */
@@ -522,26 +468,15 @@ input[type=range] {
     display: flex; 
     align-items: center; 
     gap: 15px; 
-    padding: 15px; /* Increased padding */
+    padding: 15px; 
     border-radius: var(--curve-s); 
     margin-bottom: 12px; 
     cursor: pointer;
-    background: rgba(255, 255, 255, 0.08); /* Stronger glass base */
+    background: rgba(255, 255, 255, 0.08); 
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
     position: relative;
     overflow: hidden;
-}
-.song-item:before { /* Subtle background animation on hover */
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: linear-gradient(90deg, rgba(192, 132, 252, 0) 0%, rgba(192, 132, 252, 0.05) 50%, rgba(192, 132, 252, 0) 100%);
-    opacity: 0;
-    transition: opacity 0.3s;
-}
-.song-item:hover:before {
-    opacity: 1;
 }
 .song-item.playing {
     background: linear-gradient(90deg, rgba(192, 132, 252, 0.35), rgba(244, 114, 182, 0.15));
@@ -550,11 +485,11 @@ input[type=range] {
     transform: translateY(-3px);
 }
 .thumb { 
-    width: 60px; /* Larger thumbnail */
+    width: 60px; 
     height: 60px; 
-    border-radius: 50%; /* Made the thumbnail circular like a vinyl record/disc */
+    border-radius: 50%; 
     object-fit: cover; 
-    border: 2px solid var(--accent); /* Accent border */
+    border: 2px solid var(--accent); 
     flex-shrink: 0;
 }
 .meta { flex: 1; overflow: hidden; }
@@ -565,57 +500,21 @@ input[type=range] {
     background: transparent; 
     border: 2px solid var(--primary);
     color: var(--primary); 
-    width: 40px; /* Larger buttons */
+    width: 40px; 
     height: 40px;
     border-radius: 50%;
     cursor: pointer;
     flex-shrink: 0;
 }
-.add-btn:hover { background: var(--primary); color: white; }
 .del-btn { border-color: var(--text-error); color: var(--text-error); }
-.del-btn:hover { background: var(--text-error); color: white; }
 
-/* Library Footer */
-.library-footer {
-    padding: 15px 30px; 
-    border-top: 1px solid var(--glass-border);
-    display: flex; 
-    justify-content: space-between; 
-    align-items: center;
-    font-size: 0.9rem; 
-    color: var(--text-dim);
-}
-#total-queue-size { color: var(--primary); font-weight: 700; }
-.clear-btn { 
-    color: var(--text-error); 
-    background: none; 
-    border: none; 
-    cursor: pointer; 
-    font-weight: 700; 
-    padding: 5px 10px;
-    border-radius: var(--curve-s);
-}
-.clear-btn:hover { background: rgba(255, 0, 0, 0.15); }
-
-
-/* ------------------------------------------------------------------------------------------------------ */
-/* ---------------------------------- SECTION 7: CHAT STYLING ------------------------------------------- */
-/* ------------------------------------------------------------------------------------------------------ */
-
+/* Chat Styling */
 .chat-card { 
     flex: 1; 
     padding: 30px; 
     display: flex; 
     flex-direction: column; 
     border-radius: var(--curve-l); 
-}
-.chat-card h3 { 
-    margin-top: 0; 
-    color: var(--primary); 
-    font-size: 1.3rem; 
-    border-bottom: 1px solid var(--glass-border);
-    padding-bottom: 15px;
-    margin-bottom: 15px;
 }
 .chat-messages { 
     flex: 1; 
@@ -625,30 +524,14 @@ input[type=range] {
     display: flex; 
     flex-direction: column; 
 }
-
 .chat-message {
-    padding: 12px 18px; /* Slightly larger padding */
+    padding: 12px 18px; 
     max-width: 90%;
     margin-bottom: 12px; 
     font-size: 1rem; 
     line-height: 1.4;
-    animation: fadeIn 0.3s ease-out;
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
 }
-
-/* System Messages */
-.chat-message.system { 
-    background: rgba(128, 0, 128, 0.4); 
-    color: var(--primary); 
-    border-radius: 20px; 
-    text-align: center;
-    max-width: 80%;
-    margin-left: auto;
-    margin-right: auto;
-    font-weight: 500;
-}
-
-/* User's Message (Sarthak or Reechita depending on logged-in name) */
 .chat-message.me { 
     background: linear-gradient(135deg, var(--accent), #e34399); 
     color: white; 
@@ -656,26 +539,12 @@ input[type=range] {
     border-radius: 20px 8px 20px 20px; 
     margin-left: auto; 
 }
-/* Partner's Message (The other user) */
 .chat-message.partner { 
-    background: rgba(255, 255, 255, 0.12); /* Slightly brighter glass */
+    background: rgba(255, 255, 255, 0.12); 
     color: var(--text-main); 
     align-self: flex-start; 
     border-radius: 8px 20px 20px 20px;
 }
-
-.chat-message strong { font-weight: 700; color: var(--primary); }
-.chat-message small { 
-    display: block; 
-    font-size: 0.75rem; 
-    color: var(--bg-dark); /* Dark time for 'me' messages */
-    margin-top: 5px;
-    opacity: 0.8;
-}
-.chat-message.partner small {
-    color: var(--text-dim); /* Dim time for 'partner' messages */
-}
-
 
 .chat-input-wrapper { 
     display: flex; 
@@ -686,14 +555,13 @@ input[type=range] {
     padding: 15px 25px; 
     border-radius: 30px; 
     border: 1px solid rgba(255, 255, 255, 0.2); 
-    background: rgba(0, 0, 0, 0.6); /* Darker background */
+    background: rgba(0, 0, 0, 0.6); 
     color: var(--text-main); 
     font-family: 'Outfit';
     font-size: 1rem;
-    box-shadow: inset 0 2px 5px rgba(0,0,0,0.8);
 }
 .send-btn { 
-    width: 60px; /* Larger button */
+    width: 60px; 
     background: var(--primary); 
     border: none; 
     border-radius: 30px; 
@@ -701,28 +569,11 @@ input[type=range] {
     cursor: pointer; 
     font-size: 1.2rem;
 }
-.send-btn:active { transform: scale(0.95); }
-
 
 /* ------------------------------------------------------------------------------------------------------ */
-/* ---------------------------------- SECTION 8: ANIMATIONS --------------------------------------------- */
+/* ---------------------------------- SECTION 9: MOBILE AND RESPONSIVENESS ------------------------------ */
 /* ------------------------------------------------------------------------------------------------------ */
 
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(15px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* ------------------------------------------------------------------------------------------------------ */
-/* ---------------------------------- SECTION 9: MOBILE AND RESPONSIVENESS (Expanded) ------------------- */
-/* ------------------------------------------------------------------------------------------------------ */
-
-/* Mobile (Up to 768px) */
 @media (max-width: 768px) {
     .app-container {
         padding: 15px;
@@ -739,7 +590,6 @@ input[type=range] {
         height: auto;
     }
     
-    /* Panel Adjustments */
     .glass-panel {
         border-radius: 35px;
         padding: 25px;
@@ -752,108 +602,23 @@ input[type=range] {
         gap: 20px;
     }
     
-    /* Header & Title */
     .top-bar h1 { font-size: 2rem; letter-spacing: 1px; }
 
-    /* Player Controls */
     .controls { gap: 25px; }
     .btn-main { width: 80px; height: 80px; font-size: 2rem; }
     .btn-sec { width: 55px; height: 55px; font-size: 1.1rem; }
-    .info-area { margin-bottom: 20px; }
-    #current-song-title { font-size: 1.6rem; }
-    .time-control { margin: 10px 0 25px; }
-    
-    /* Volume Area Hiding (Space Saving) */
-    .volume-area { display: none; }
+    .volume-area { display: none; } /* Hide volume on small screens */
 
-    /* Search and Tabs */
     .search-wrapper { padding: 0 25px 25px; }
     .tabs { padding: 5px 25px; }
     .tab { font-size: 0.95rem; padding: 10px 10px; }
     .list-view { padding: 0 25px 0 25px; }
     
-    /* Song Item */
     .song-item { padding: 10px; }
     .thumb { width: 45px; height: 45px; }
     .meta h4 { font-size: 0.9rem; }
     .add-btn, .del-btn { width: 35px; height: 35px; }
     
-    /* Chat Adjustments */
     .chat-card { padding: 25px; }
-    .chat-messages { padding-right: 10px; }
-    .chat-message { max-width: 100%; font-size: 0.95rem; }
-    #chatInput { padding: 12px 20px; font-size: 0.95rem; }
     .send-btn { width: 50px; height: 50px; border-radius: 25px; font-size: 1.1rem; }
-}
-
-/* Tablet Portrait (768px - 1024px) */
-@media (min-width: 769px) and (max-width: 1024px) {
-    .app-container { max-width: 950px; }
-    .main-layout { gap: 20px; }
-    .player-card { min-width: 450px; }
-    .library-container { min-width: 350px; max-width: 450px; }
-
-    .controls { gap: 40px; }
-    .btn-main { width: 90px; height: 90px; font-size: 2.2rem; }
-    .btn-sec { width: 60px; height: 60px; font-size: 1.2rem; }
-    .volume-area { width: 90%; }
-}
-
-/* Desktop Wide (Above 1600px) - Optional Scaling */
-@media (min-width: 1601px) {
-    .app-container { 
-        max-width: 1920px;
-    }
-    .player-card {
-        padding: 50px;
-    }
-    .controls {
-        gap: 60px;
-    }
-    .btn-main {
-        width: 110px;
-        height: 110px;
-        font-size: 2.8rem;
-    }
-}
-
-/* ------------------------------------------------------------------------------------------------------ */
-/* ---------------------------------- SECTION 10: SPECIFIC COMPONENT STYLES ----------------------------- */
-/* ------------------------------------------------------------------------------------------------------ */
-
-/* Animation for the delete button appearing */
-.song-item .del-btn {
-    opacity: 0;
-    transform: scale(0.8) translateX(10px);
-    transition: opacity 0.3s, transform 0.3s;
-}
-.song-item:hover .del-btn {
-    opacity: 1;
-    transform: scale(1) translateX(0);
-}
-
-.chat-messages .chat-message:last-child {
-    margin-bottom: 0; /* Clean up bottom margin */
-}
-
-/* Disabled state styling */
-.btn-sec:disabled, .btn-main:disabled, .search-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    box-shadow: none;
-    animation: none;
-    transform: none !important;
-}
-
-.library-footer .clear-btn:active {
-    background: rgba(255, 0, 0, 0.2);
-    transform: scale(0.98);
-}
-
-.library-card .tabs .tab:active {
-    transform: scale(0.98);
-}
-
-.chat-input-wrapper #chatInput:focus {
-    box-shadow: inset 0 2px 5px rgba(0,0,0,0.8), 0 0 10px rgba(192, 132, 252, 0.5);
 }
