@@ -1,345 +1,126 @@
-<style>
-    :root {
-        --primary: #4CAF50; /* Green */
-        --secondary: #2196F3; /* Blue */
-        --accent: #FF9800; /* Orange/Amber */
-        --background-dark: #121212;
-        --background-light: #1e1e1e;
-        --text-light: #ffffff;
-        --text-dim: #aaaaaa;
-        --text-error: #f44336;
-        --border-color: #333333;
-    }
-
-    /* --- BASE STYLES (Laptop/Desktop) --- */
-    body {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        margin: 0;
-        padding: 0;
-        background-color: var(--background-dark);
-        color: var(--text-light);
-        display: flex;
-        height: 100vh;
-        overflow: hidden;
-    }
-
-    .left-panel {
-        flex: 3;
-        display: flex;
-        flex-direction: column;
-        background-color: var(--background-light);
-        padding: 20px;
-    }
-
-    .right-panel {
-        flex: 2;
-        display: flex;
-        flex-direction: column;
-        border-left: 1px solid var(--border-color);
-        background-color: var(--background-dark);
-    }
-
-    .player-container {
-        width: 100%;
-        padding-top: 56.25%; /* 16:9 Aspect Ratio */
-        position: relative;
-        margin-bottom: 20px;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
-    }
-
-    #player {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-    }
-
-    /* Player Info */
-    .player-info {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 10px;
-    }
-
-    #current-song-title {
-        font-size: 1.2rem;
-        font-weight: bold;
-        color: var(--primary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 65%; /* Prevents overlap with status */
-    }
-
-    #sync-status-msg {
-        font-size: 0.9rem;
-        padding: 5px 10px;
-        border-radius: 5px;
-        background-color: var(--background-dark);
-        box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.3);
-    }
-
-    /* Tabs and Content */
-    .tabs {
-        display: flex;
-        border-bottom: 1px solid var(--border-color);
-        flex-shrink: 0;
-    }
-
-    .tab {
-        flex: 1;
-        padding: 15px 0;
-        text-align: center;
-        cursor: pointer;
-        font-weight: bold;
-        color: var(--text-dim);
-        transition: color 0.2s, background-color 0.2s;
-    }
-
-    .tab.active {
-        color: var(--primary);
-        border-bottom: 3px solid var(--primary);
-    }
-
-    .tab-content {
-        flex: 1;
-        overflow-y: hidden; /* Manage overflow inside lists */
-        padding: 0;
-        display: flex;
-        flex-direction: column;
-        min-height: 0;
-    }
-
-    .list-view {
-        display: none;
-        overflow-y: auto;
-        padding: 15px;
-        flex-grow: 1;
-        min-height: 0;
-    }
-
-    .list-view.active {
-        display: block;
-    }
-
-    /* Search Bar */
-    .search-container {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 15px;
-        padding: 0; /* Already padded by .list-view */
-        flex-shrink: 0;
-    }
-
-    #searchInput {
-        flex-grow: 1;
-        padding: 10px;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        background-color: var(--background-light);
-        color: var(--text-light);
-    }
-
-    #search-btn {
-        background-color: var(--primary);
-        color: var(--text-light);
-        border: none;
-        padding: 10px 15px;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: background-color 0.2s;
-    }
-
-    /* List Items (Song-item, Queue, Results) - Minor cleanup for mobile */
-    .song-item .thumb {
-        width: 40px;
-        height: 40px;
-        margin-right: 8px;
-    }
-    .song-item h4 {
-        font-size: 0.9rem;
-    }
-
-    /* Chat Styling */
-    .chat-container {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-    }
-
-    #chat-messages {
-        flex-grow: 1;
-        overflow-y: auto;
-        padding: 15px;
-        gap: 10px;
-        min-height: 0;
-    }
-
-    .chat-input-group {
-        display: flex;
-        padding: 15px;
-        border-top: 1px solid var(--border-color);
-        flex-shrink: 0;
-    }
-    /* Rest of chat styles unchanged */
-
-
-    /* --- MOBILE STYLES (Screen width up to 768px) --- */
-    @media (max-width: 768px) {
-        body {
-            flex-direction: column; /* Stack panels vertically */
-            overflow-y: auto;
-            height: auto;
-        }
-
-        .left-panel {
-            flex: none;
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 0;
-            background-color: var(--background-dark);
-        }
-
-        .right-panel {
-            flex: none;
-            width: 100%;
-            height: calc(100vh - 350px); /* Give it a fixed height on mobile */
-            min-height: 400px; /* Ensure a minimum visible area */
-            border-left: none;
-            border-top: 1px solid var(--border-color);
-        }
-
-        .player-container {
-            margin-bottom: 10px;
-        }
-        
-        /* Reduce padding and font sizes for mobile density */
-        .tabs, .chat-input-group {
-            padding: 10px 0;
-        }
-
-        .tab {
-            padding: 10px 0;
-            font-size: 0.9rem;
-        }
-        
-        .list-view {
-            padding: 10px;
-        }
-        
-        .player-info {
-            padding: 5px 0;
-        }
-        
-        #current-song-title {
-            font-size: 1rem;
-            max-width: 60%;
-        }
-        
-        #sync-status-msg {
-            font-size: 0.8rem;
-        }
-
-        .song-item {
-            padding: 8px;
-        }
-
-        .song-item .thumb {
-            width: 35px;
-            height: 35px;
-        }
-        
-        .queue-footer {
-            font-size: 0.9rem;
-            padding: 10px;
-        }
-        
-        .queue-footer button {
-            padding: 6px 10px;
-            font-size: 0.8rem;
-        }
-    }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Space Sync Player</title>
     
-    /* Synchronization Overlay Styles (Unchanged) */
-    #syncOverlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.95);
-        color: var(--accent);
-        display: none; 
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        text-align: center;
-        z-index: 10;
-    }
-
-    #syncOverlay.active {
-        display: flex;
-    }
-
-    #syncOverlay i {
-        font-size: 3rem;
-        margin-bottom: 15px;
-    }
-
-    #overlayTitle {
-        font-size: 1.5rem;
-        margin-bottom: 10px;
-    }
-
-    #overlayText {
-        font-size: 1rem;
-        color: var(--text-dim);
-    }
+    <link rel="stylesheet" href="style.css">
     
-    /* General element styles (Unchanged) */
-    .song-item {
-        display: flex;
-        align-items: center;
-        background-color: var(--background-light);
-        padding: 10px;
-        margin-bottom: 8px;
-        border-radius: 8px;
-        border: 1px solid transparent;
-        cursor: pointer;
-        transition: background-color 0.2s, border-color 0.2s;
-    }
-
-    .song-item:hover {
-        background-color: #2a2a2a;
-        border-color: var(--secondary);
-    }
-
-    .song-item.playing {
-        border-left: 5px solid var(--primary);
-        background-color: #2a2a2a;
-    }
-
-    .song-item .meta {
-        flex-grow: 1;
-        overflow: hidden;
-        white-space: nowrap;
-    }
-
-    .song-item p {
-        margin: 0;
-        font-size: 0.8rem;
-        color: var(--text-dim);
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
+    <script src="https://www.gstatic.com/firebasejs/7.20.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/7.20.0/firebase-database.js"></script>
     
-    .empty-state {
-        color: var(--text-dim);
-        text-align: center;
-        padding: 20px;
-    }
-</style>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="ambient-light"></div>
+    
+    <div class="overlay" id="syncOverlay">
+        <div class="glass-modal">
+            <div class="spinner"></div>
+            <h3 id="overlayTitle">Awaiting Partner to resume...</h3>
+            <p>Playback paused due to a partner Ad/Buffer stall.</p>
+            <button id="forceSyncBtn" onclick="forcePlay()">Force Play & Sync</button>
+        </div>
+    </div>
+
+    <div class="app-container">
+        
+        <div class="top-bar">
+            <h1>Deep Space <span class="pulse"><i class="fa-solid fa-heart"></i></span> Sync</h1>
+        </div>
+        
+        <div class="main-layout">
+
+            <div class="glass-panel player-card">
+                
+                <div class="video-wrapper">
+                    <div id="player"></div>
+                </div>
+
+                <div class="info-area">
+                    <div id="current-song-title" class="truncate-text">Welcome, Sarthak and Partner!</div>
+                    <div class="sync-status-msg" id="sync-status-msg"><i class="fa-solid fa-pause"></i> **PAUSED**</div>
+                </div>
+
+                <div class="controls">
+                    <button class="btn-sec" id="prev-btn" title="Previous Song">
+                        <i class="fa-solid fa-backward-step"></i>
+                    </button>
+                    <button class="btn-main" id="play-pause-btn" onclick="togglePlayPause()" title="Play / Pause">
+                        <i class="fa-solid fa-play"></i>
+                    </button>
+                    <button class="btn-sec" id="next-btn" title="Next Song">
+                        <i class="fa-solid fa-forward-step"></i>
+                    </button>
+                </div>
+                
+                <div class="time-control">
+                    <span id="current-time">0:00</span>
+                    <div class="slider-wrapper">
+                        <input type="range" id="seek-bar" min="0" max="100" value="0">
+                        <div class="slider-progress" id="seek-progress"></div>
+                    </div>
+                    <span id="duration">0:00</span>
+                </div>
+
+                <div class="volume-area">
+                    <i class="fa-solid fa-volume-high"></i>
+                    <div class="slider-wrapper volume-slider-wrapper">
+                         <input type="range" id="volume-bar" min="0" max="100" value="70">
+                        <div class="slider-progress volume-progress-fill" id="volume-progress"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="library-container">
+                
+                <div class="glass-panel top-panel">
+                    <div class="search-wrapper">
+                        <input type="text" id="searchInput" placeholder="Search YouTube or paste a link..." onkeyup="if(event.key === 'Enter') handleSearch()">
+                        <button class="search-btn" id="search-btn" onclick="handleSearch()">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </button>
+                    </div>
+
+                    <div class="tabs">
+                        <button class="tab active" id="tab-search" onclick="switchTab('search')">Search Results</button>
+                        <button class="tab" id="tab-queue" onclick="switchTab('queue')">Queue (<span id="queue-count">0</span>)</button>
+                    </div>
+
+                    <div class="list-view active" id="search-list">
+                        <div id="results-list">
+                            <p class="empty-state">Start by searching for a song, artist, or pasting a YouTube/Spotify link!</p>
+                        </div>
+                    </div>
+                    
+                    <div class="list-view" id="queue-list">
+                        </div>
+                </div>
+                
+                <div class="glass-panel chat-card bottom-panel">
+                    <h2 class="section-title-inline" style="padding-top: 0; margin-bottom: 20px;">Live Chat</h2>
+                    
+                    <div class="chat-messages" id="chat-messages">
+                        </div>
+                    
+                    <div class="chat-input-wrapper">
+                        <input type="text" id="chatInput" placeholder="Send a message to your partner..." onkeyup="if(event.key === 'Enter') sendChatMessage()">
+                        <button class="send-btn" id="chatSendBtn" onclick="sendChatMessage()">
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+    
+</body>
+</html>
