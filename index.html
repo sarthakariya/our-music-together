@@ -3,22 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sarthak & Reechita | Connected</title>
+    <title>Sarthak & Reechita | Infinite Vibe 💖</title>
     
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+    <div class="ambient-light"></div>
+
     <div id="syncOverlay" class="overlay">
         <div class="glass-modal">
             <div class="loader"></div>
-            <h2 id="overlayTitle">Syncing...</h2>
-            <p id="overlayText">Waiting for audio to align...</p>
+            <h2 id="overlayTitle">Syncing Harmony...</h2>
+            <p id="overlayText">Please wait for the other player to catch up...</p>
             
             <button id="forceSyncBtn" onclick="forceSyncResume()">
-                <i class="fa-solid fa-play"></i> RESUME / SKIP AD FOR US
+                <i class="fa-solid fa-bolt"></i> FORCE RESUME / SKIP AD
             </button>
         </div>
     </div>
@@ -27,57 +29,52 @@
         
         <header class="top-bar">
             <h1>Sarthak <i class="fa-solid fa-heart pulse"></i> Reechita</h1>
-            <p class="subtitle">Our synced Music just like our hearts</p>
         </header>
 
         <div class="main-layout">
             
             <section class="player-card glass-panel">
                 
-                <div class="disc-container">
+                <div class="video-wrapper">
+                    <div id="player"></div>
+                    <div class="video-overlay"></div> </div>
+
+                <div class="disc-section">
                     <div class="vinyl-record paused" id="music-disc">
                         <div class="vinyl-art" id="album-art"></div>
                     </div>
-                    <div class="glow-ring"></div>
                 </div>
 
-                <div class="song-info">
-                    <h2 id="current-song-title">Select a song to start...</h2>
-                    <p id="connection-status"><span class="dot"></span> Connected</p>
-                </div>
-
-                <div class="time-control">
-                    <span id="current-time">0:00</span>
-                    <input type="range" id="seek-bar" value="0" min="0" max="100">
-                    <span id="duration">0:00</span>
+                <div class="info-area">
+                    <h2 id="current-song-title">Ready to Vibe...</h2>
+                    
+                    <div class="time-control">
+                        <span id="current-time">0:00</span>
+                        <div class="slider-wrapper">
+                            <input type="range" id="seek-bar" value="0" min="0" max="100">
+                            <div class="slider-progress" id="seek-progress"></div>
+                        </div>
+                        <span id="duration">0:00</span>
+                    </div>
                 </div>
 
                 <div class="controls">
-                    <button class="btn-sec" onclick="syncSeek(-10)"><i class="fa-solid fa-rotate-left"></i></button>
                     <button class="btn-sec" onclick="playPrev()"><i class="fa-solid fa-backward-step"></i></button>
+                    <button class="btn-sec" onclick="syncSeek(-10)"><i class="fa-solid fa-rotate-left"></i></button>
                     
                     <button class="btn-main" id="play-pause-btn" onclick="togglePlay()">
                         <i class="fa-solid fa-play"></i>
                     </button>
                     
-                    <button class="btn-sec" onclick="playNext()"><i class="fa-solid fa-forward-step"></i></button>
                     <button class="btn-sec" onclick="syncSeek(10)"><i class="fa-solid fa-rotate-right"></i></button>
-                </div>
-
-                <div class="volume-area">
-                    <i class="fa-solid fa-volume-low"></i>
-                    <input type="range" id="volume-bar" min="0" max="100" value="100">
-                </div>
-
-                <div id="player-container">
-                    <div id="player"></div>
+                    <button class="btn-sec" onclick="playNext()"><i class="fa-solid fa-forward-step"></i></button>
                 </div>
             </section>
 
             <aside class="library-card glass-panel">
                 <div class="search-wrapper">
-                    <i class="fa-solid fa-search"></i>
                     <input type="text" id="searchInput" placeholder="Search Song or Paste Playlist Link...">
+                    <button onclick="manualSearch()"><i class="fa-solid fa-search"></i></button>
                 </div>
 
                 <div class="tabs">
@@ -90,7 +87,7 @@
                 </div>
                 
                 <div id="results-list" class="list-view">
-                    <div class="empty-state">Type to search...</div>
+                    <div class="empty-state">Results will appear here</div>
                 </div>
 
                 <div class="library-footer">
