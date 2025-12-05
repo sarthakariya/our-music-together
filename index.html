@@ -3,100 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sarthak & Reechita's Musical World 💖</title>
+    <title>Sarthak & Reechita | Connected</title>
     
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Montserrat:wght@600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <div class="bg-blobs">
-        <div class="blob blob-1"></div>
-        <div class="blob blob-2"></div>
-    </div>
-
     <div id="syncOverlay" class="overlay">
         <div class="glass-modal">
-            <div class="spinner"></div>
-            <h2 id="overlayTitle">Syncing Hearts...</h2>
-            <p id="overlayText">Waiting for connection...</p>
-            <button id="sharedSkipButton" onclick="skipAdSynchronized()">
-                <i class="fa-solid fa-forward-fast"></i> Skip Ad For Us
+            <div class="loader"></div>
+            <h2 id="overlayTitle">Syncing...</h2>
+            <p id="overlayText">Waiting for audio to align...</p>
+            
+            <button id="forceSyncBtn" onclick="forceSyncResume()">
+                <i class="fa-solid fa-play"></i> RESUME / SKIP AD FOR US
             </button>
         </div>
     </div>
 
-    <div class="app-layout">
+    <div class="app-container">
         
-        <main class="player-section glass-panel">
-            <div class="header">
-                <h3><i class="fa-solid fa-heart pulse"></i> Connected</h3>
-            </div>
+        <header class="top-bar">
+            <h1>Sarthak <i class="fa-solid fa-heart pulse"></i> Reechita</h1>
+            <p class="subtitle">Our synced Music just like our hearts</p>
+        </header>
 
-            <div class="disc-wrapper">
-                <div class="vinyl-record paused" id="music-disc">
-                    <div class="vinyl-center" id="album-art"></div>
+        <div class="main-layout">
+            
+            <section class="player-card glass-panel">
+                
+                <div class="disc-container">
+                    <div class="vinyl-record paused" id="music-disc">
+                        <div class="vinyl-art" id="album-art"></div>
+                    </div>
+                    <div class="glow-ring"></div>
                 </div>
-            </div>
 
-            <div class="track-info">
-                <h2 id="current-song-title">Select a Song...</h2>
-            </div>
+                <div class="song-info">
+                    <h2 id="current-song-title">Select a song to start...</h2>
+                    <p id="connection-status"><span class="dot"></span> Connected</p>
+                </div>
 
-            <div class="progress-container">
-                <span id="current-time">0:00</span>
-                <input type="range" id="seek-bar" value="0" min="0" max="100">
-                <span id="duration">0:00</span>
-            </div>
+                <div class="time-control">
+                    <span id="current-time">0:00</span>
+                    <input type="range" id="seek-bar" value="0" min="0" max="100">
+                    <span id="duration">0:00</span>
+                </div>
 
-            <div class="controls">
-                <button class="btn-icon" onclick="syncSeek(-10)"><i class="fa-solid fa-rotate-left"></i></button>
-                <button class="btn-icon" onclick="playPrev()"><i class="fa-solid fa-backward-step"></i></button>
+                <div class="controls">
+                    <button class="btn-sec" onclick="syncSeek(-10)"><i class="fa-solid fa-rotate-left"></i></button>
+                    <button class="btn-sec" onclick="playPrev()"><i class="fa-solid fa-backward-step"></i></button>
+                    
+                    <button class="btn-main" id="play-pause-btn" onclick="togglePlay()">
+                        <i class="fa-solid fa-play"></i>
+                    </button>
+                    
+                    <button class="btn-sec" onclick="playNext()"><i class="fa-solid fa-forward-step"></i></button>
+                    <button class="btn-sec" onclick="syncSeek(10)"><i class="fa-solid fa-rotate-right"></i></button>
+                </div>
+
+                <div class="volume-area">
+                    <i class="fa-solid fa-volume-low"></i>
+                    <input type="range" id="volume-bar" min="0" max="100" value="100">
+                </div>
+
+                <div id="player-container">
+                    <div id="player"></div>
+                </div>
+            </section>
+
+            <aside class="library-card glass-panel">
+                <div class="search-wrapper">
+                    <i class="fa-solid fa-search"></i>
+                    <input type="text" id="searchInput" placeholder="Search Song or Paste Playlist Link...">
+                </div>
+
+                <div class="tabs">
+                    <button class="tab active" onclick="switchTab('queue')">Queue</button>
+                    <button class="tab" onclick="switchTab('results')">Results</button>
+                </div>
+
+                <div id="queue-list" class="list-view active">
+                    <div class="empty-state">Queue is empty</div>
+                </div>
                 
-                <button class="btn-play" id="play-pause-btn" onclick="togglePlay()">
-                    <i class="fa-solid fa-play"></i>
-                </button>
-                
-                <button class="btn-icon" onclick="playNext()"><i class="fa-solid fa-forward-step"></i></button>
-                <button class="btn-icon" onclick="syncSeek(10)"><i class="fa-solid fa-rotate-right"></i></button>
-            </div>
+                <div id="results-list" class="list-view">
+                    <div class="empty-state">Type to search...</div>
+                </div>
 
-            <div class="volume-control">
-                <i class="fa-solid fa-volume-high"></i>
-                <input type="range" id="volume-bar" min="0" max="100" value="100">
-            </div>
+                <div class="library-footer">
+                    <span id="queue-count">0 Songs</span>
+                    <button class="clear-btn" onclick="clearQueue()">Clear All</button>
+                </div>
+            </aside>
 
-            <div id="player-container">
-                <div id="player"></div>
-            </div>
-        </main>
-
-        <aside class="sidebar glass-panel">
-            <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Search Song or Paste Playlist URL...">
-                <button onclick="manualSearch()"><i class="fa-solid fa-search"></i></button>
-            </div>
-
-            <div class="tabs">
-                <button class="tab-btn active" onclick="switchTab('queue')">Queue</button>
-                <button class="tab-btn" onclick="switchTab('results')">Results</button>
-            </div>
-
-            <div id="queue-list" class="scroll-list active">
-                <div class="empty-state">Queue is empty 🎵</div>
-            </div>
-
-            <div id="results-list" class="scroll-list">
-                <div class="empty-state">Search for something romantic...</div>
-            </div>
-
-            <div class="queue-actions">
-                <span id="queue-count">0 Songs</span>
-                <button class="btn-small" onclick="clearQueue()"><i class="fa-solid fa-trash"></i> Clear</button>
-            </div>
-        </aside>
-
+        </div>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
