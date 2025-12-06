@@ -18,9 +18,48 @@ if (typeof firebase !== 'undefined' && !firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 const db = firebase.database();
-const syncRef = db.ref('sync');
-const queueRef = db.ref('queue');
-const chatRef = db.ref('chat');
+
+// --- USER IDENTIFICATION (Ensuring a Fixed Name is Used for DB Path) ---
+let myName = "Sarthak"; 
+const storedName = localStorage.getItem('deepSpaceUserName');
+if (storedName) {
+    myName = storedName;
+} else {
+    // Note: The prompt is crucial here. If Reechita registers her account first, 
+    // she must enter her correct name here.
+    const enteredName = prompt("Welcome to Deep Space Sync! Please enter your name (Sarthak or Partner's Name):");
+    if (enteredName && enteredName.trim() !== "") {
+        myName = enteredName.trim();
+        localStorage.setItem('deepSpaceUserName', myName);
+    }
+}
+
+// CRITICAL FIX: The name used for the Database path MUST be normalized and fixed.
+// We are assuming the fixed partners are Sarthak and Reechita.
+// If the entered name is Sarthak (case-insensitive), use 'Sarthak'. Otherwise, use 'Reechita'.
+const fixedDBName = (myName.toLowerCase() === "sarthak") ? "Sarthak" : "Reechita"; 
+const fixedPartnerName = (fixedDBName === "Sarthak") ? "Reechita" : "Sarthak";
+
+// --- NEW/FIXED DATABASE REFERENCES ---
+// All data (sync, queue, chat) for THIS user goes under their fixed name in the 'users' node.
+const myRootRef = db.ref(`users/${fixedDBName}`);
+const mySyncRef = myRootRef.child('sync');
+const myQueueRef = myRootRef.child('queue');
+const myChatRef = myRootRef.child('chat');
+
+// References for the PARTNER's data (for reading sync commands and their chat)
+const partnerRootRef = db.ref(`users/${fixedPartnerName}`);
+const partnerSyncRef = partnerRootRef.child('sync');
+const partnerChatRef = partnerRootRef.child('chat');
+
+// Restore the original global sync references to point to the user's OWN sync ref
+const syncRef = mySyncRef; 
+const queueRef = myQueueRef; 
+const chatRef = myChatRef; 
+
+// The 'partnerName' shown on the UI should still use the display name or a label like 'Partner'
+const partnerName = (myName === "Sarthak" || myName === "sarthak") ? "Partner" : "Sarthak";
+
 
 // --- GLOBAL STATE ---
 let player; 
@@ -32,20 +71,6 @@ let lastBroadcaster = "System";
 let isManualAction = false; 
 let ignoreTemporaryState = false; 
 let lastSyncState = null; 
-
-// --- USER IDENTIFICATION ---
-let myName = "Sarthak"; 
-const storedName = localStorage.getItem('deepSpaceUserName');
-if (storedName) {
-    myName = storedName;
-} else {
-    const enteredName = prompt("Welcome to Deep Space Sync! Please enter your name (Sarthak or Partner's Name):");
-    if (enteredName && enteredName.trim() !== "") {
-        myName = enteredName.trim();
-        localStorage.setItem('deepSpaceUserName', myName);
-    }
-}
-const partnerName = (myName === "Sarthak" || myName === "sarthak") ? "Partner" : "Sarthak";
 
 
 // ------------------------------------------------------------------------------------------------------
@@ -59,7 +84,7 @@ function onYouTubeIframeAPIReady() {
         videoId: '', 
         playerVars: {
             // FIX: Changed 'controls': 0 to 'controls': 1 to enable native seek bar 
-            'controls': 1,             
+            'controls': 1,           
             'disablekb': 0, 
             'rel': 0,
             'showinfo': 0,
@@ -230,7 +255,8 @@ function addToQueue(videoId, title, uploader, thumbnail, event) {
         thumbnail, 
         order: Date.now() + Math.random() 
     };
-    const newKey = queueRef.push().key;
+    // CRITICAL: Uses the fixed queueRef (myQueueRef)
+    const newKey = queueRef.push().key; 
     
     queueRef.child(newKey).set(newSong)
         .then(() => { 
@@ -240,7 +266,7 @@ function addToQueue(videoId, title, uploader, thumbnail, event) {
             // If the queue was empty, start playing the new song
             if (!currentVideoId && currentQueue.length === 0) {
                 // currentQueue hasn't been updated by listener yet, so we use the new song info
-                 loadAndPlayVideo(videoId, title);
+                loadAndPlayVideo(videoId, title);
             }
         })
         .catch(error => { console.error("Error adding song to queue:", error); });
@@ -255,6 +281,7 @@ function addBatchToQueue(songs) {
         updates[newKey] = { ...song, order: Date.now() + index * 1000 }; 
     });
     
+    // CRITICAL: Uses the fixed queueRef (myQueueRef)
     queueRef.update(updates)
         .then(() => {
             switchTab('queue');
@@ -275,6 +302,7 @@ function removeFromQueue(key, event) {
     const songToRemove = currentQueue.find(song => song.key === key);
     
     if (songToRemove) {
+        // CRITICAL: Uses the fixed queueRef (myQueueRef)
         queueRef.child(key).remove()
             .then(() => {
                 if (songToRemove.videoId === currentVideoId) { 
@@ -292,6 +320,7 @@ function updateQueueOrder(newOrder) {
         updates[`${song.key}/order`] = index;
     });
 
+    // CRITICAL: Uses the fixed queueRef (myQueueRef)
     queueRef.update(updates)
         .catch(error => console.error("Error updating queue order:", error));
 }
@@ -427,7 +456,7 @@ function addDragDropListeners(listElement, originalQueue) {
             
             // Re-sequence the queue based on the DOM order and broadcast the change
             const newOrderKeys = Array.from(listElement.querySelectorAll('.song-item'))
-                                    .map(el => el.getAttribute('data-key'));
+                                         .map(el => el.getAttribute('data-key'));
             
             // Filter the original queue by keys to maintain song data
             const newOrder = newOrderKeys.map(key => originalQueue.find(song => song.key === key));
@@ -635,7 +664,7 @@ async function handleSearchAndLinks() {
 // ------------------------------------------------------------------------------------------------------
 
 function loadInitialData() {
-    // 1. Queue Listener (Sorted by 'order' or default push key if 'order' is missing)
+    // 1. Queue Listener (Uses myQueueRef which points to my fixed user path)
     queueRef.orderByChild('order').on('value', (snapshot) => {
         const queueData = snapshot.val();
         let fetchedQueue = [];
@@ -651,8 +680,8 @@ function loadInitialData() {
         renderQueue(currentQueue, currentVideoId);
     });
 
-    // 2. Sync Command Listener (STRICT AD HALT IMPLEMENTATION)
-    syncRef.on('value', (snapshot) => {
+    // 2. Sync Command Listener (Listens to the PARTNER's sync node for commands)
+    partnerSyncRef.on('value', (snapshot) => {
         const syncState = snapshot.val();
         lastSyncState = syncState; 
 
@@ -670,8 +699,14 @@ function loadInitialData() {
         updateSyncStatus();
     });
 
-    // 3. Chat Listener
+    // 3. Chat Listener (Listens to MY chatRef for my messages)
     chatRef.limitToLast(20).on('child_added', (snapshot) => {
+        const message = snapshot.val();
+        displayChatMessage(message.user, message.text, message.timestamp);
+    });
+    
+    // NEW: Listen to PARTNER's chatRef for their messages
+    partnerChatRef.limitToLast(20).on('child_added', (snapshot) => {
         const message = snapshot.val();
         displayChatMessage(message.user, message.text, message.timestamp);
     });
@@ -680,11 +715,12 @@ function loadInitialData() {
 function broadcastState(action, time, videoId = currentVideoId, isAdStall = false) {
     if (!videoId) return;
 
-    syncRef.set({
+    // FIX: Uses mySyncRef to broadcast state to my own fixed user path
+    mySyncRef.set({
         action: action, 
         time: time,
         videoId: videoId,
-        lastUpdater: myName, 
+        lastUpdater: myName, // The displayed name (e.g., Sarthak or Reechita)
         isAdStall: isAdStall, 
         timestamp: Date.now()
     });
@@ -700,13 +736,13 @@ function applyRemoteCommand(state) {
     
     // CRITICAL: STRICT AD STALL LOGIC ENFORCEMENT
     if (!partnerIsPlaying && state.isAdStall) {
-         // Partner is reporting an ad stall -> PAUSE my player and show overlay
-         document.getElementById('syncOverlay').classList.add('active');
-         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-            player.pauseVideo();
-         }
-         updateSyncStatus();
-         return; 
+           // Partner is reporting an ad stall -> PAUSE my player and show overlay
+           document.getElementById('syncOverlay').classList.add('active');
+           if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+             player.pauseVideo();
+           }
+           updateSyncStatus();
+           return; 
     }
     
     // Command is not an ad stall, so remove the overlay if it was showing
@@ -757,13 +793,13 @@ function updateSyncStatus() {
     const overlayIsActive = document.getElementById('syncOverlay').classList.contains('active');
     
     if (overlayIsActive) {
-         // Show specific ad stall warning details
-         document.getElementById('overlayTitle').textContent = `⚠️ PAUSED by ${lastBroadcaster}`;
-         document.getElementById('overlayText').innerHTML = `Playback paused because **${lastBroadcaster}** is experiencing an **Ad/Buffer stall**. Please wait for them to resume or use **Force Play & Sync** to override.`;
-         
-         msgEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation pulse"></i> **STALL HALT** (Waiting for ${lastBroadcaster})`;
-         msgEl.style.color = 'var(--text-error)';
-         
+           // Show specific ad stall warning details
+           document.getElementById('overlayTitle').textContent = `⚠️ PAUSED by ${lastBroadcaster}`;
+           document.getElementById('overlayText').innerHTML = `Playback paused because **${lastBroadcaster}** is experiencing an **Ad/Buffer stall**. Please wait for them to resume or use **Force Play & Sync** to override.`;
+           
+           msgEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation pulse"></i> **STALL HALT** (Waiting for ${lastBroadcaster})`;
+           msgEl.style.color = 'var(--text-error)';
+           
     } else if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
         msgEl.innerHTML = `<i class="fa-solid fa-satellite-dish"></i> **DEEP SYNC ACTIVE**`;
         msgEl.style.color = 'var(--primary)';
@@ -783,7 +819,8 @@ function sendChatMessage() {
     const text = input.value.trim();
     if (!text) return;
 
-    chatRef.push({
+    // FIX: Uses myChatRef to send messages to my own chat path
+    myChatRef.push({ 
         user: myName,
         text: text,
         timestamp: Date.now()
@@ -837,22 +874,19 @@ function initializeAppListeners() {
     // 3. Tab Switches 
     document.getElementById('tab-results').addEventListener('click', () => switchTab('results'));
     document.getElementById('tab-queue').addEventListener('click', () => switchTab('queue'));
+    document.getElementById('tab-chat').addEventListener('click', () => switchTab('chat'));
 
-    // 4. Chat Handlers
-    document.getElementById('chatSendBtn').addEventListener('click', sendChatMessage);
-    document.getElementById('chatInput').addEventListener('keypress', function (e) {
+    // 4. Chat Handler
+    document.getElementById('sendChatBtn').addEventListener('click', sendChatMessage);
+    document.getElementById('chatInput').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
-            e.preventDefault(); 
             sendChatMessage();
         }
     });
-
-    // 5. Sync Overlay Control
-    document.getElementById('forceSyncBtn').addEventListener('click', forcePlay);
     
-    // 6. Initial Tab Load
-    switchTab('queue');
+    // 5. Force Play Button
+    document.getElementById('forcePlayBtn').addEventListener('click', forcePlay);
 }
 
-// Execute the listener setup when the script loads
-initializeAppListeners();
+// Initial Listener Setup
+document.addEventListener('DOMContentLoaded', initializeAppListeners);
