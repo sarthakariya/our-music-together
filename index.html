@@ -3,92 +3,120 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deep Space Sync Player</title>
-    
-    <link rel="stylesheet" href="style.css">
-    
+    <title>Deep Space Sync Player - Sarthak & Partner</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
-    
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-
+    <!-- YouTube API -->
     <script src="https://www.youtube.com/iframe_api"></script>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <header class="header">
-        <h1>🚀 Deep Space Sync</h1>
-        <div class="status-badge" id="sync-status-msg">
-            <i class="fa-solid fa-hourglass-start"></i> Initializing...
-        </div>
-    </header>
-
-    <div class="main-container">
-        
-        <div class="player-side">
-            <div class="player-wrapper">
-                <div id="player"></div>
-                <div id="syncOverlay">
-                    <h2 id="overlayTitle">⚠️ Playback Paused</h2>
-                    <p id="overlayText">Waiting for the other player to sync.</p>
-                    <button id="forcePlayBtn">Force Play & Sync</button>
-                </div>
-            </div>
-            <h3 id="current-song-title">Welcome! Start by searching for music.</h3>
+    <div class="ambient-light"></div>
+    
+    <div class="app-container">
+        <div class="top-bar">
+            <h1>DEEP SPACE <i class="fa-solid fa-heart pulse"></i> SYNC</h1>
         </div>
 
-        <div class="sidebar">
-            <div class="tabs">
-                <div class="tab active" id="tab-results">
-                    <i class="fa-solid fa-magnifying-glass"></i> Search
-                </div>
-                <div class="tab" id="tab-queue">
-                    <i class="fa-solid fa-list-ul"></i> Queue (<span id="queue-count">0</span>)
-                </div>
-                <div class="tab" id="tab-chat">
-                    <i class="fa-solid fa-message"></i> Chat
-                </div>
-            </div>
-
-            <div class="tab-content">
+        <div class="main-layout">
+            
+            <div class="player-card glass-panel">
                 
-                <div class="list-view active" id="results-list">
-                    <div class="search-container">
-                        <input type="text" id="searchInput" placeholder="Search YouTube or paste Spotify/Playlist link...">
-                        <button id="search-btn"><i class="fa-solid fa-search"></i></button>
-                    </div>
-                    <p class="empty-state">Search results will appear here.</p>
+                <div class="video-wrapper">
+                    <div id="player"></div>
                 </div>
 
-                <div class="list-view" id="queue-list">
-                    <p class="empty-state">Queue is empty.</p>
+                <div class="info-area">
+                    <h2 id="current-song-title" class="truncate-text">No Song Loaded</h2>
+                    <p class="sync-status-msg" id="sync-status-msg">
+                        <i class="fa-solid fa-pause"></i> PAUSED
+                    </p>
+                </div>
+                
+                <div class="time-control">
+                    <span id="current-time">0:00</span>
+                    <div class="slider-wrapper" id="seek-bar-wrapper">
+                        <input type="range" id="seekBar" min="0" max="100" value="0" step="0.1">
+                        <div class="slider-progress" id="seek-progress"></div>
+                    </div>
+                    <span id="duration">0:00</span>
                 </div>
 
-                <div class="list-view" id="chat-list">
-                    <div id="chat-messages">
-                        <p class="empty-state" style="margin-bottom: 0;">Start chatting with your partner!</p>
+                <div class="controls">
+                    <button class="btn-sec" id="prev-btn" title="Previous Song">
+                        <i class="fa-solid fa-backward-step"></i>
+                    </button>
+                    <button class="btn-main" id="play-pause-btn" title="Play / Pause">
+                        <i class="fa-solid fa-play"></i>
+                    </button>
+                    <button class="btn-sec" id="next-btn" title="Next Song">
+                        <i class="fa-solid fa-forward-step"></i>
+                    </button>
+                </div>
+
+                <div class="volume-area">
+                    <i class="fa-solid fa-volume-low"></i>
+                    <div class="slider-wrapper volume-slider-wrapper">
+                        <input type="range" id="volume-bar" min="0" max="100" value="70">
+                        <div class="slider-progress volume-progress-fill" id="volume-progress"></div>
+                    </div>
+                    <i class="fa-solid fa-volume-high"></i>
+                </div>
+
+            </div>
+
+            <div class="library-container">
+                
+                <div class="top-panel glass-panel">
+                    <div class="section-title-inline">Search & Queue</div>
+
+                    <div class="search-wrapper">
+                        <input type="text" id="searchInput" placeholder="Search song, YouTube, or Spotify link...">
+                        <button class="search-btn" id="search-btn" title="Search">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </button>
                     </div>
 
-                    <div class="chat-input-container">
-                        <input type="text" id="chatInput" placeholder="Type a message...">
-                        <button id="sendChatBtn"><i class="fa-solid fa-paper-plane"></i></button>
+                    <div class="tabs">
+                        <button class="tab" id="tab-results">Search Results</button>
+                        <button class="tab active" id="tab-queue">Queue (<span id="queue-count">0</span>)</button>
+                        <button class="tab" id="tab-chat">Chat</button>
+                    </div>
+
+                    <div class="list-view active" id="queue-list">
+                        <p class="empty-state">Queue is empty. Find a song to get the party started!</p>
+                    </div>
+
+                    <div class="list-view" id="results-list">
+                        <p class="empty-state">Search for a song or paste a link above.</p>
+                    </div>
+                    
+                    <!-- Chat Integrated into Library Tabs -->
+                    <div class="list-view" id="chat-list">
+                        <div class="chat-messages" id="chat-messages"></div>
+                        <div class="chat-input-wrapper">
+                            <input type="text" id="chatInput" placeholder="Type a message...">
+                            <button class="send-btn" id="sendChatBtn"><i class="fa-solid fa-paper-plane"></i></button>
+                        </div>
                     </div>
                 </div>
+
             </div>
         </div>
     </div>
-
-    <footer class="controls-footer">
-        <button id="prev-btn" title="Previous Song">
-            <i class="fa-solid fa-backward-step"></i>
-        </button>
-        <button id="play-pause-btn" title="Play/Pause">
-            <i class="fa-solid fa-play"></i>
-        </button>
-        <button id="next-btn" title="Next Song">
-            <i class="fa-solid fa-forward-step"></i>
-        </button>
-    </footer>
+    
+    <!-- SYNC OVERLAY (Shows when partner has an ad) -->
+    <div class="overlay" id="syncOverlay">
+        <div class="glass-modal">
+            <div class="spinner"></div>
+            <h2 id="overlayTitle">Awaiting Partner...</h2>
+            <p id="overlayText">Your partner is experiencing an Ad or Buffer. Playback is paused to keep you in sync.</p>
+            <button id="forcePlayBtn">Force Resume (Override)</button>
+        </div>
+    </div>
 
     <script src="script.js"></script>
 </body>
