@@ -46,16 +46,7 @@
                     </button>
                 </div>
 
-                <div class="volume-area">
-                    <i class="fa-solid fa-volume-low"></i>
-                    <div class="slider-wrapper volume-slider-wrapper">
-                        <input type="range" id="volume-bar" min="0" max="100" value="70">
-                        <div class="slider-progress volume-progress-fill" id="volume-progress"></div>
-                    </div>
-                    <i class="fa-solid fa-volume-high"></i>
                 </div>
-
-            </div>
 
             <div class="library-container">
                 
@@ -70,8 +61,8 @@
                     </div>
 
                     <div class="tabs">
-                        <button class="tab" id="tab-results" onclick="switchTab('results')">Search Results</button>
-                        <button class="tab active" id="tab-queue" onclick="switchTab('queue')">Queue (<span id="queue-count">0</span>)</button>
+                        <button class="tab" id="tab-results">Search Results</button>
+                        <button class="tab active" id="tab-queue">Queue (<span id="queue-count">0</span>)</button>
                     </div>
 
                     <div class="list-view active" id="queue-list">
