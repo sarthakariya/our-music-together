@@ -40,13 +40,14 @@ if (storedName) {
     myName = storedName;
 } else {
     // Prompt only for initial setup if name is not stored
-    const enteredName = prompt("Welcome to Deep Space Sync! Please enter your name (Sarthak or Reechita):");
+    const enteredName = prompt("Welcome to Deep Space Sync! Please enter your name (Sarthak or Partner's Name):");
     if (enteredName && enteredName.trim() !== "") {
         myName = enteredName.trim();
         localStorage.setItem('deepSpaceUserName', myName);
     }
 }
-const partnerName = (myName === "Sarthak") ? "Reechita" : "Sarthak";
+// Automatically determine partner's name for chat clarity
+const partnerName = (myName === "Sarthak" || myName === "sarthak") ? "Partner" : "Sarthak";
 
 
 // ------------------------------------------------------------------------------------------------------
@@ -59,7 +60,7 @@ function onYouTubeIframeAPIReady() {
         width: '100%',
         videoId: '', 
         playerVars: {
-            'controls': 1, 
+            'controls': **0**,             // <--- HIDES NATIVE PLAYER CONTROLS (Play/Pause, Seek Bar)
             'disablekb': 0, 
             'rel': 0,
             'showinfo': 0,
@@ -75,8 +76,10 @@ function onYouTubeIframeAPIReady() {
 }
 
 function onPlayerReady(event) {
-    player.setVolume(70); 
-    document.getElementById('volume-progress').style.width = '70%'; 
+    // Initialize volume setting
+    const initialVolume = 70;
+    player.setVolume(initialVolume); 
+    document.getElementById('volume-progress').style.width = initialVolume + '%'; 
     
     // Volume Control Listener
     document.getElementById('volume-bar').addEventListener('input', (e) => {
@@ -89,8 +92,9 @@ function onPlayerReady(event) {
     setInterval(broadcastTimeIfPlaying, 1000); 
 
     // On-Disconnect Cleanup
-    queueRef.onDisconnect().remove();
-    syncRef.onDisconnect().remove();
+    // NOTE: Keep onDisconnect for queue/sync only if you want the room to vanish if *you* leave.
+    // queueRef.onDisconnect().remove();
+    // syncRef.onDisconnect().remove(); 
     
     loadInitialData(); 
 }
@@ -140,7 +144,7 @@ function onPlayerStateChange(event) {
             if (!isPartnerPlaying) {
                 broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
             }
-            playNextSong();
+            // Will trigger next song logic
         }
     }
     
@@ -165,6 +169,7 @@ function togglePlayPause() {
         broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
     } else {
         if (!currentVideoId && currentQueue.length > 0) {
+            // If nothing is loaded, load and play the first in queue
             loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title);
         } else if (currentVideoId) {
             player.playVideo();
@@ -184,6 +189,7 @@ function loadAndPlayVideo(videoId, title) {
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
         
+        // Wait briefly for player to be in PLAYING/BUFFERING state before broadcasting
         setTimeout(() => {
             if(player.getPlayerState() === YT.PlayerState.PLAYING || player.getPlayerState() === YT.PlayerState.BUFFERING) {
                  broadcastState('play', player.getCurrentTime(), videoId, false); 
@@ -241,6 +247,7 @@ function addBatchToQueue(songs) {
     queueRef.update(updates)
         .then(() => {
             switchTab('queue');
+            // Auto-play the first song if the player is currently stopped
             if (!currentVideoId && songs.length > 0) {
                 setTimeout(() => {
                     if (currentQueue.length > 0) {
@@ -442,6 +449,7 @@ async function fetchSpotifyData(link) {
     const statusDiv = document.getElementById('results-list');
     statusDiv.innerHTML = '<p class="empty-state">Attempting to fetch Spotify data (This may take a moment)...</p>';
 
+    // NOTE: This relies on a separate proxy server for Spotify API access. 
     const proxyUrl = `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`;
 
     try {
@@ -511,7 +519,7 @@ async function handleSearchAndLinks() {
     
     // IMPORTANT: Check if the API search failed (empty array, likely due to API Key)
     if (currentSearchResults.length === 0) {
-        document.getElementById('results-list').innerHTML = '<p class="empty-state" style="color: var(--text-error);">Search failed! If you are sure a song exists, please check your YouTube API key quota or console logs for errors.</p>';
+        document.getElementById('results-list').innerHTML = '<p class="empty-state" style="color: var(--text-error);">Search failed! Please check your YouTube API key or console logs.</p>';
     } else {
         renderSearchResults(currentSearchResults);
     }
@@ -601,6 +609,7 @@ function applyRemoteCommand(state) {
         const song = currentQueue.find(s => s.videoId === state.videoId);
         const title = song ? song.title : 'External Sync';
 
+        // Load new video and seek
         player.loadVideoById(state.videoId, state.time);
         currentVideoId = state.videoId;
         document.getElementById('current-song-title').textContent = title;
@@ -726,7 +735,7 @@ function initializeAppListeners() {
     document.getElementById('chatSendBtn').addEventListener('click', sendChatMessage);
     document.getElementById('chatInput').addEventListener('keypress', function (e) {
         if (e.key === 'Enter') {
-            // Prevent the default form submit if in a form, although typically unnecessary here
+            // Prevent the default form submit if in a form
             e.preventDefault(); 
             sendChatMessage();
         }
@@ -736,6 +745,7 @@ function initializeAppListeners() {
     document.getElementById('forceSyncBtn').addEventListener('click', forcePlay);
     
     // 5. Initial Tab Load
+    // Note: The switchTab function uses inline onclicks in index.html, which is okay for simple tab switching.
     switchTab('queue');
 }
 
