@@ -34,15 +34,6 @@
                     </p>
                 </div>
                 
-                <div class="time-control">
-                    <span id="current-time">0:00</span>
-                    <div class="slider-wrapper" id="seek-bar-wrapper">
-                        <input type="range" id="seekBar" min="0" max="100" value="0" step="0.1">
-                        <div class="slider-progress" id="seek-progress"></div>
-                    </div>
-                    <span id="duration">0:00</span>
-                </div>
-
                 <div class="controls">
                     <button class="btn-sec" id="prev-btn" title="Previous Song">
                         <i class="fa-solid fa-backward-step"></i>
@@ -53,15 +44,6 @@
                     <button class="btn-sec" id="next-btn" title="Next Song">
                         <i class="fa-solid fa-forward-step"></i>
                     </button>
-                </div>
-
-                <div class="volume-area">
-                    <i class="fa-solid fa-volume-low"></i>
-                    <div class="slider-wrapper volume-slider-wrapper">
-                        <input type="range" id="volume-bar" min="0" max="100" value="70">
-                        <div class="slider-progress volume-progress-fill" id="volume-progress"></div>
-                    </div>
-                    <i class="fa-solid fa-volume-high"></i>
                 </div>
 
             </div>
@@ -79,8 +61,8 @@
                     </div>
 
                     <div class="tabs">
-                        <button class="tab" id="tab-results" onclick="switchTab('results')">Search Results</button>
-                        <button class="tab active" id="tab-queue" onclick="switchTab('queue')">Queue (<span id="queue-count">0</span>)</button>
+                        <button class="tab" id="tab-results">Search Results</button>
+                        <button class="tab active" id="tab-queue">Queue (<span id="queue-count">0</span>)</button>
                     </div>
 
                     <div class="list-view active" id="queue-list">
