@@ -31,7 +31,12 @@
                 </div>
 
                 <div class="info-area">
-                    <h2 id="current-song-title" class="truncate-text">Waiting for music...</h2>
+                    <div class="title-row">
+                        <h2 id="current-song-title" class="truncate-text">Waiting for music...</h2>
+                        <button id="like-btn" class="like-btn" title="Mark as Our Song">
+                            <i class="fa-regular fa-heart"></i>
+                        </button>
+                    </div>
                     <p class="sync-status-msg" id="sync-status-msg">
                         <i class="fa-solid fa-pause"></i> READY
                     </p>
@@ -50,25 +55,25 @@
                 
                 <div class="tabs-panel glass-panel">
                     <div class="tabs">
-                        <button class="tab active" id="tab-queue" onclick="switchTab('queue')">Queue (<span id="queue-count">0</span>)</button>
-                        <button class="tab" id="tab-results" onclick="switchTab('results')">Search</button>
+                        <button class="tab active" id="tab-queue" onclick="window.switchTab('queue')">Queue (<span id="queue-count">0</span>)</button>
+                        <button class="tab" id="tab-results" onclick="window.switchTab('results')">Search</button>
                     </div>
 
-                    <div class="search-wrapper" id="search-container" style="display:none;">
-                        <input type="text" id="searchInput" placeholder="Song name, YouTube URL, or Spotify Link...">
+                    <div class="search-wrapper" id="search-container">
+                        <input type="text" id="searchInput" placeholder="Search Song, YouTube URL, or Playlist...">
                         <button class="search-btn" id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
                     </div>
 
                     <div class="list-view active" id="queue-list">
-                        <div class="empty-state">Queue is empty.<br>Add songs to start!</div>
+                        <div class="empty-state">Queue is empty.</div>
                     </div>
 
                     <div class="list-view" id="results-list">
-                        <div class="empty-state">Search or paste a link...</div>
+                        <div class="empty-state">Type above to search.</div>
                     </div>
                 </div>
 
-                <div class="bottom-panel chat-card glass-panel" id="chat-panel">
+                <div class="bottom-panel chat-card glass-panel">
                     <div class="section-title-inline">Chat Room</div>
                     <div class="chat-messages" id="chat-messages"></div>
                     <div class="chat-input-wrapper">
