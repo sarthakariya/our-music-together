@@ -41,7 +41,8 @@ const queueRef = db.ref('queue');
 const mySyncRef = db.ref(`users/${fixedDBName}/sync`);
 const myChatRef = db.ref(`users/${fixedDBName}/chat`);
 const partnerSyncRef = db.ref(`users/${fixedPartnerName}/sync`);
-const partnerChatRef = db.ref(`users/${fixedPartnerName}/chat`);
+// FIX 1: Correctly reference the PARTNER's chat path for RECEIVING messages
+const partnerReceiveChatRef = db.ref(`users/${fixedPartnerName}/chat`);
 
 const partnerDisplayLabel = fixedPartnerName;
 
@@ -92,7 +93,6 @@ function onPlayerReady(event) {
     loadInitialData(); 
 }
 
-// CRITICAL FIX: Only broadcast position if we were the last user to change state
 function broadcastTimeIfPlaying() {
     if (player && player.getPlayerState && currentVideoId) {
         const state = player.getPlayerState();
@@ -129,12 +129,10 @@ function onPlayerStateChange(event) {
 
         if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.BUFFERING) {
             
-            // If the player pauses on its own (ad/buffer) and we are the broadcaster, 
-            // send an AD STALL to the partner.
             const timeSinceLastAction = Date.now() - lastLocalActionTime;
 
             if (timeSinceLastAction > 500 && lastBroadcaster === fixedDBName) {
-                console.log("Player paused due to ad/buffer. Broadcasting Ad Stall.");
+                // console.log("Player paused due to ad/buffer. Broadcasting Ad Stall.");
                 broadcastState('pause', player.getCurrentTime(), currentVideoId, true); 
             }
         } 
@@ -145,7 +143,6 @@ function onPlayerStateChange(event) {
         }
     }
     
-    // Reset flags after processing state change
     isManualAction = false; 
     updateSyncStatus();
 }
@@ -153,9 +150,9 @@ function onPlayerStateChange(event) {
 function togglePlayPause() {
     if (!player || !player.getPlayerState) return;
 
-    lastLocalActionTime = Date.now(); // Record the time of local action
+    lastLocalActionTime = Date.now(); 
     isManualAction = true;
-    lastBroadcaster = fixedDBName; // Set THIS user as the active broadcaster
+    lastBroadcaster = fixedDBName; 
     
     const state = player.getPlayerState();
     
@@ -187,7 +184,6 @@ function loadAndPlayVideo(videoId, title) {
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
         
-        // Broadcast initial load state after a small delay
         setTimeout(() => {
             if(player.getPlayerState() === YT.PlayerState.PLAYING || player.getPlayerState() === YT.PlayerState.BUFFERING) {
                  broadcastState('play', player.getCurrentTime(), videoId, false); 
@@ -208,7 +204,6 @@ function playNextSong() {
     let nextIndex = (currentIndex + 1) % currentQueue.length; 
     
     if (currentQueue.length > 0) {
-        // If current song wasn't found (e.g., deleted), play the first song.
         if (currentIndex === -1) nextIndex = 0; 
 
         const nextSong = currentQueue[nextIndex];
@@ -250,8 +245,6 @@ function addToQueue(videoId, title, uploader, thumbnail, event) {
             switchTab('queue'); 
             
             if (!currentVideoId && currentQueue.length === 0) {
-                // If queue was empty, start playing the first song added.
-                // We need a slight delay as currentQueue listener might not have updated yet.
                 setTimeout(() => {
                     loadAndPlayVideo(videoId, title);
                 }, 300);
@@ -267,7 +260,6 @@ function addBatchToQueue(songs) {
 
     songs.forEach((song, index) => {
         const newKey = queueRef.push().key;
-        // Use index for stable ordering within the batch
         updates[newKey] = { 
             videoId: song.videoId, 
             title: song.title, 
@@ -281,7 +273,6 @@ function addBatchToQueue(songs) {
         .then(() => {
             switchTab('queue');
             if (!currentVideoId && currentQueue.length === 0 && songs.length > 0) {
-                // Wait for the queue listener to update before playing the first one
                 setTimeout(() => {
                     const firstSong = currentQueue[0];
                     if (firstSong) { loadAndPlayVideo(firstSong.videoId, firstSong.title); }
@@ -300,7 +291,6 @@ function removeFromQueue(key, event) {
         queueRef.child(key).remove()
             .then(() => {
                 if (songToRemove.videoId === currentVideoId) { 
-                    // If playing song is removed, move to the next
                     playNextSong(); 
                 }
             })
@@ -311,7 +301,6 @@ function removeFromQueue(key, event) {
 function updateQueueOrder(newOrder) {
     const updates = {};
     newOrder.forEach((song, index) => {
-        // Use index as the new order value
         updates[`${song.key}/order`] = index;
     });
 
@@ -343,10 +332,8 @@ function switchTab(tabName) {
 function renderQueue(queueArray, currentVideoId) {
     const queueList = document.getElementById('queue-list');
     
-    // Clear any previous results/status before rendering the queue
     queueList.innerHTML = '';
     
-    // Ensure array is sorted by the 'order' property
     queueArray.sort((a, b) => (a.order || 0) - (b.order || 0));
     currentQueue = queueArray; 
 
@@ -361,7 +348,6 @@ function renderQueue(queueArray, currentVideoId) {
         item.className = `song-item ${song.videoId === currentVideoId ? 'playing' : ''}`;
         item.setAttribute('draggable', 'true'); 
         item.setAttribute('data-key', song.key); 
-        // Note: The onclick event handles playback initiation
         item.setAttribute('onclick', `loadAndPlayVideo('${song.videoId}', '${song.title.replace(/'/g, "\\'")}')`);
         
         item.innerHTML = `
@@ -400,7 +386,6 @@ function renderSearchResults(resultsArray) {
     if (!resultContainer) {
          resultContainer = document.createElement('div');
          resultContainer.className = 'result-container';
-         // Insert results below the search container
          resultsList.insertBefore(resultContainer, searchContainer.nextSibling); 
     }
     resultContainer.innerHTML = '';
@@ -414,7 +399,6 @@ function renderSearchResults(resultsArray) {
     resultsArray.forEach(song => {
         const item = document.createElement('div');
         item.className = 'song-item';
-        // URI encoding for safe thumbnail passing in onclick
         const safeThumbnail = encodeURIComponent(song.thumbnail);
         
         item.innerHTML = `
@@ -472,18 +456,15 @@ function addDragDropListeners(listElement, originalQueue) {
             const newOrderKeys = Array.from(listElement.querySelectorAll('.song-item'))
                                          .map(el => el.getAttribute('data-key'));
             
-            // Map keys back to the full song object structure from the latest currentQueue
             const newOrder = newOrderKeys.map(key => currentQueue.find(song => song.key === key)).filter(Boolean);
             
             updateQueueOrder(newOrder); 
         });
         
-        // Prevent click event propagation when clicking delete button
         item.querySelector('.item-controls').addEventListener('click', (e) => {
             e.stopPropagation();
         });
         
-        // Ensure that clicking the item triggers playback
         item.addEventListener('click', (e) => {
             if (e.defaultPrevented || e.target.closest('.drag-handle')) return;
             const key = item.getAttribute('data-key');
@@ -541,14 +522,12 @@ async function fetchPlaylist(playlistId, pageToken = null, allSongs = []) {
     switchTab('results');
     const resultsList = document.getElementById('results-list');
     
-    // Clear previous results container
     resultsList.querySelector('.result-container')?.remove(); 
     
     let statusEl = resultsList.querySelector('.playlist-status');
     if (!statusEl) {
         statusEl = document.createElement('p');
         statusEl.className = 'empty-state playlist-status';
-        // Append status below the search container
         resultsList.insertBefore(statusEl, resultsList.querySelector('.search-container').nextSibling);
     }
     statusEl.innerHTML = `Fetching playlist (Total songs: ${allSongs.length})... Please wait.`;
@@ -618,7 +597,6 @@ async function fetchSpotifyData(link) {
     statusEl.style.color = 'var(--text-dim)';
     resultsList.querySelector('.result-container')?.remove();
 
-    // Note: The proxy URL needs to be accessible for this to work.
     const proxyUrl = `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`;
 
     try {
@@ -631,7 +609,6 @@ async function fetchSpotifyData(link) {
             return;
         }
         
-        // Limit tracks to a reasonable amount to prevent excessive YouTube API calls
         const tracksToSearch = data.tracks.slice(0, 30); 
         const foundSongs = [];
         
@@ -673,7 +650,6 @@ async function handleSearchAndLinks() {
     if (!query) return;
 
     const resultsList = document.getElementById('results-list');
-    // Clear any previous status messages and results
     resultsList.querySelector('.empty-state.search-status')?.remove();
     resultsList.querySelector('.playlist-status')?.remove();
     resultsList.querySelector('.spotify-status')?.remove();
@@ -709,7 +685,7 @@ async function handleSearchAndLinks() {
         searchStatusEl.innerHTML = 'Search failed! Check your API key, network, or try a simpler query.';
         searchStatusEl.style.color = 'var(--text-error)';
     } else {
-        searchStatusEl.remove(); // Remove status when results appear
+        searchStatusEl.remove(); 
         renderSearchResults(currentSearchResults);
     }
     
@@ -762,8 +738,8 @@ function loadInitialData() {
         displayChatMessage(message.user, message.text, message.timestamp);
     });
     
-    // 4. Listen to PARTNER's chatRef for their messages
-    partnerChatRef.limitToLast(20).on('child_added', (snapshot) => {
+    // FIX 2: Listen to PARTNER's chat path for their messages (partnerReceiveChatRef)
+    partnerReceiveChatRef.limitToLast(20).on('child_added', (snapshot) => {
         const message = snapshot.val();
         displayChatMessage(message.user, message.text, message.timestamp);
     });
@@ -772,7 +748,6 @@ function loadInitialData() {
 function broadcastState(action, time, videoId = currentVideoId, isAdStall = false) {
     if (!videoId) return;
 
-    // Use my fixed DB name as the updater
     mySyncRef.set({
         action: action, 
         time: time,
@@ -783,18 +758,17 @@ function broadcastState(action, time, videoId = currentVideoId, isAdStall = fals
     });
 }
 
-// CRITICAL FIX: Enforce remote state and handle player commands precisely
+// CRITICAL FIX: Ensures remote command is strictly followed when appropriate
 function applyRemoteCommand(state) {
     if (!player || !state || state.videoId === undefined) return;
     
     const partnerIsPlaying = state.action === 'play';
     const localTime = player.getCurrentTime ? player.getCurrentTime() : 0; 
     
-    // Check if we just performed a manual action (within the last 500ms). 
-    // If so, ignore the partner's potentially conflicting remote signal.
+    // Ignore remote signal if we just performed a manual action (e.g., pressed play/pause button)
     const timeSinceLastLocalAction = Date.now() - lastLocalActionTime;
     if (timeSinceLastLocalAction < 500) {
-        console.log(`Ignoring remote signal from ${state.lastUpdater} due to recent local action.`);
+        // console.log(`Ignoring remote signal from ${state.lastUpdater} due to recent local action.`);
         return; 
     }
     
@@ -848,7 +822,7 @@ function applyRemoteCommand(state) {
         
         // Only seek if the difference is significant (> 1.5 seconds) AND the partner is playing
         if (partnerIsPlaying && localPlayerState === YT.PlayerState.PLAYING && timeDiff > 1.5) { 
-            console.log(`Auto-Resyncing to ${state.time.toFixed(1)}s (Diff: ${timeDiff.toFixed(1)}s)`);
+            // console.log(`Auto-Resyncing to ${state.time.toFixed(1)}s (Diff: ${timeDiff.toFixed(1)}s)`);
             player.seekTo(state.time, true);
         }
     }
@@ -859,7 +833,6 @@ function forcePlay() {
     document.getElementById('syncOverlay').classList.remove('active');
     if (currentVideoId) {
         player.playVideo();
-        // Force state broadcast immediately, setting current user as broadcaster and overriding the partner's stall
         lastBroadcaster = fixedDBName;
         lastLocalActionTime = Date.now();
         broadcastState('play', player.getCurrentTime(), currentVideoId, false);
@@ -895,12 +868,19 @@ function sendChatMessage() {
     const text = input.value.trim();
     if (!text) return;
 
-    // Send the message to *your own* chat path
-    myChatRef.push({ 
+    // FIX 3: Messages must be written to the PARTNER's chat path so they can receive it.
+    // We were writing only to 'myChatRef' previously, which only confirmed delivery to ourselves.
+    partnerReceiveChatRef.push({ 
         user: myName,
         text: text,
-        timestamp: firebase.database.ServerValue.TIMESTAMP // Use server time for accuracy
+        timestamp: firebase.database.ServerValue.TIMESTAMP 
     }).then(() => {
+        // Also write to my own chat path for the local client to display it immediately
+        myChatRef.push({ 
+             user: myName,
+             text: text,
+             timestamp: firebase.database.ServerValue.TIMESTAMP 
+        });
         input.value = ''; 
     }).catch(error => {
         console.error("Error sending message:", error);
@@ -911,7 +891,6 @@ function displayChatMessage(user, text, timestamp) {
     const chatMessages = document.getElementById('chat-messages');
     const isMe = user === myName;
     
-    // Format timestamp nicely
     const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     const msgDiv = document.createElement('div');
@@ -919,7 +898,6 @@ function displayChatMessage(user, text, timestamp) {
     
     const safeText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-    // Replace the initial empty state message if it exists
     if (chatMessages.querySelector('.empty-state')) {
         chatMessages.innerHTML = '';
     }
@@ -930,7 +908,7 @@ function displayChatMessage(user, text, timestamp) {
     `;
     
     chatMessages.appendChild(msgDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight; // Auto-scroll to latest message
+    chatMessages.scrollTop = chatMessages.scrollHeight; 
 }
 
 
