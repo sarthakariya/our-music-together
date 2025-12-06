@@ -14,12 +14,15 @@
     --text-dim: #d3c7e0;            /* Softened dim text for elegance */
     --text-error: #ff7070;          /* Light red for error states */
     
+    /* Carved Text Shadow - Light on top/left, Dark on bottom/right */
+    --shadow-carve-light: 1px 1px 0 rgba(255, 255, 255, 0.15), -1px -1px 0 rgba(0, 0, 0, 0.4); 
+    
     /* Global Curves and Shadows */
-    --curve-l: 35px;                /* Large curve for main panels (softer look) */
-    --curve-m: 20px;                /* Medium curve for wrappers */
-    --curve-s: 12px;                /* Small curve for list items and buttons (very rounded) */
-    --shadow-deep: 0 15px 45px rgba(0, 0, 0, 0.7); /* Softer, ambient shadow */
-    --shadow-neon: 0 0 30px rgba(157, 80, 237, 0.5); /* Softer neon glow */
+    --curve-l: 35px;                
+    --curve-m: 20px;                
+    --curve-s: 12px;                
+    --shadow-deep: 0 15px 45px rgba(0, 0, 0, 0.7); 
+    --shadow-neon: 0 0 30px rgba(157, 80, 237, 0.5); 
 }
 
 /* Import new font (Poppins) */
@@ -94,14 +97,29 @@ body {
 /* App Container and Grid Layout */
 .app-container {
     width: 95%; 
-    max-width: 1400px; /* Slightly narrower for focus */
+    max-width: 1400px; 
     height: 95vh;
     min-height: 600px;
     display: flex; 
     flex-direction: column; 
-    gap: 25px; /* Smaller gap */
+    gap: 25px; 
     padding: 15px;
 }
+
+/* FIX: Scaling down the entire app container for large screens */
+@media (min-width: 1200px) {
+    .app-container {
+        /* Scale down to 85% of its original size */
+        transform: scale(0.85); 
+        /* Ensure it remains centered after scaling */
+        transform-origin: center center;
+        /* Re-adjust max width to compensate for scaling */
+        max-width: 1650px; 
+        width: calc(100% / 0.85); 
+        height: auto; 
+    }
+}
+
 
 .main-layout { 
     display: flex; 
@@ -117,10 +135,11 @@ body {
 }
 .top-bar h1 { 
     font-weight: 900; 
-    font-size: clamp(2rem, 3.5vw, 2.5rem); /* Slightly smaller header */
+    font-size: clamp(2rem, 3.5vw, 2.5rem); 
     letter-spacing: 2px; 
     margin: 0; 
-    text-shadow: 0 0 10px var(--primary), 0 0 5px var(--accent);
+    /* CARVED EFFECT HERE */
+    text-shadow: 0 0 10px var(--primary), 0 0 5px var(--accent), var(--shadow-carve-light); 
 }
 /* Heart pulse animation */
 .pulse { 
@@ -143,7 +162,7 @@ body {
     border: 1px solid var(--glass-border);
     border-radius: var(--curve-l); 
     box-shadow: var(--shadow-deep);
-    backdrop-filter: blur(20px); /* Softer blur */
+    backdrop-filter: blur(20px); 
     display: flex; 
     flex-direction: column;
     transition: box-shadow 0.4s ease, transform 0.2s ease;
@@ -158,6 +177,8 @@ body {
     color: var(--primary);
     padding: 25px 30px 0;
     margin-bottom: 15px;
+    /* CARVED EFFECT HERE */
+    text-shadow: var(--shadow-carve-light);
 }
 
 /* Overlay for Sync Warning */
@@ -186,6 +207,9 @@ body {
     box-shadow: 0 0 50px rgba(0, 0, 0, 0.9), var(--shadow-neon);
     max-width: 450px;
     animation: fadeIn 0.5s ease-out;
+}
+.glass-modal h2, .glass-modal p {
+    text-shadow: var(--shadow-carve-light);
 }
 .spinner {
     border: 4px solid rgba(255, 255, 255, 0.3);
@@ -247,13 +271,16 @@ body {
     font-size: clamp(1.3rem, 2.5vw, 1.8rem); 
     font-weight: 700; 
     margin: 0; 
-    text-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+    /* CARVED EFFECT HERE */
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.3), var(--shadow-carve-light);
 }
 .sync-status-msg { 
     color: var(--text-dim); 
     margin-top: 5px; 
     font-weight: 400; 
     font-size: 0.95rem; 
+    /* CARVED EFFECT HERE */
+    text-shadow: var(--shadow-carve-light);
 }
 .sync-status-msg i { 
     color: var(--primary);
@@ -264,56 +291,14 @@ body {
 /* ---------------------------------- SECTION 5: CONTROLS & SEEK BARS ----------------------------------- */
 /* ------------------------------------------------------------------------------------------------------ */
 
-/* Time Control Layout */
-.time-control { 
-    display: flex; 
-    align-items: center; 
-    gap: 12px; 
-    font-size: 0.9rem; 
-    color: var(--text-dim); 
-    margin: 10px 0 25px; 
-}
-
-/* Slider Wrapper */
-.slider-wrapper { 
-    flex: 1; 
-    position: relative; 
-    height: 8px; /* Slightly thinner */
-    background: rgba(255, 255, 255, 0.1); 
-    border-radius: 8px; 
-    cursor: pointer;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.7);
-}
-
-/* Range Input (Hidden but Functional) */
-input[type=range] { 
-    position: absolute; 
-    top: -5px; 
-    left: 0; 
-    width: 100%; 
-    height: 18px; 
-    opacity: 0; 
-    cursor: pointer; 
-    z-index: 2; 
-    margin: 0; 
-}
-
-/* Progress Fill Bar */
-.slider-progress {
-    height: 100%; 
-    background: linear-gradient(to right, var(--primary), var(--accent));
-    border-radius: 8px; 
-    width: 0%; 
-    transition: width 0.1s linear; 
-    box-shadow: 0 0 10px var(--primary);
-}
-
 /* Playback Control Buttons */
 .controls { 
     display: flex; 
     justify-content: center; 
     align-items: center; 
     gap: 40px; 
+    margin-top: 30px; 
+    margin-bottom: 30px; 
 }
 
 /* Secondary Button (Skip/Prev) */
@@ -321,7 +306,7 @@ input[type=range] {
     background: rgba(255, 255, 255, 0.1); 
     border: 1px solid var(--glass-border); 
     color: var(--text-dim); 
-    width: 60px; /* Slightly smaller */
+    width: 60px; 
     height: 60px;
     border-radius: 50%;
     font-size: 1.2rem; 
@@ -339,7 +324,7 @@ input[type=range] {
 
 /* Main Button (Play/Pause) */
 .btn-main {
-    width: 90px; /* Slightly smaller */
+    width: 90px; 
     height: 90px;
     border-radius: 50%;
     background: linear-gradient(135deg, var(--accent), var(--primary));
@@ -356,25 +341,6 @@ input[type=range] {
 @keyframes neonPulse {
     0% { transform: scale(1); box-shadow: 0 0 15px var(--accent), 0 0 30px var(--primary); }
     100% { transform: scale(1.03); box-shadow: 0 0 25px var(--accent), 0 0 50px var(--primary); }
-}
-
-/* Volume Control */
-.volume-area { 
-    display: flex; 
-    align-items: center; 
-    gap: 12px; 
-    width: 70%; 
-    max-width: 400px;
-    margin: 30px auto 0; 
-    color: var(--text-dim); 
-    font-size: 1.1rem;
-}
-.volume-slider-wrapper {
-    height: 6px; /* Very thin */
-}
-.volume-progress-fill {
-    background: linear-gradient(to right, #4ade80, #10b981); 
-    box-shadow: 0 0 8px #10b981;
 }
 
 
@@ -406,20 +372,26 @@ input[type=range] {
     background: rgba(0, 0, 0, 0.4); 
     border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 12px 20px; 
-    border-radius: 30px; /* Fully rounded */
+    border-radius: 30px; 
     color: var(--text-main); 
     font-family: 'Poppins';
     font-size: 1rem;
     box-shadow: inset 0 2px 7px rgba(0,0,0,0.8);
+    /* CARVED EFFECT HERE (for placeholder/value) */
+    text-shadow: var(--shadow-carve-light);
+}
+#searchInput::placeholder {
+    color: var(--text-dim);
+    text-shadow: var(--shadow-carve-light);
 }
 
 .search-btn {
     background: var(--primary); 
     border: none; 
     color: white;
-    width: 45px; /* Smaller button */
+    width: 45px; 
     height: 45px;
-    border-radius: 50%; /* Fully round */
+    border-radius: 50%; 
     cursor: pointer;
     font-size: 1.1rem;
 }
@@ -443,12 +415,16 @@ input[type=range] {
     cursor: pointer;
     border-radius: var(--curve-s); 
     font-size: 0.9rem;
+    /* CARVED EFFECT HERE */
+    text-shadow: var(--shadow-carve-light);
 }
 .tab.active { 
     background: var(--primary); 
     color: var(--bg-dark); 
     box-shadow: 0 0 10px rgba(157, 80, 237, 0.6);
     transform: translateY(-1px);
+    /* Remove carved effect for better contrast on active tab */
+    text-shadow: none; 
 }
 #queue-count { color: var(--accent); font-weight: 700; }
 .tab.active #queue-count { color: var(--bg-dark); } 
@@ -470,6 +446,8 @@ input[type=range] {
     font-style: italic;
     font-weight: 300;
     font-size: 1rem;
+    /* CARVED EFFECT HERE */
+    text-shadow: var(--shadow-carve-light);
 }
 
 /* Individual Song Item Styling */
@@ -480,12 +458,16 @@ input[type=range] {
     padding: 10px; 
     border-radius: var(--curve-s); 
     margin-bottom: 10px; 
-    cursor: pointer;
+    cursor: grab;
     background: rgba(255, 255, 255, 0.05); 
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
     position: relative;
     overflow: hidden;
+}
+.song-item.dragging {
+    opacity: 0.5;
+    transform: scale(1.02);
 }
 .song-item.playing {
     background: linear-gradient(90deg, rgba(157, 80, 237, 0.35), rgba(255, 74, 134, 0.1));
@@ -493,18 +475,50 @@ input[type=range] {
     box-shadow: 0 0 15px rgba(157, 80, 237, 0.5), 0 4px 10px rgba(0, 0, 0, 0.7);
     transform: translateY(-1px);
 }
+.drag-handle {
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    margin-right: 0px; /* Reduced margin to tighten spacing */
+    cursor: grab;
+    transition: color 0.2s;
+    flex-shrink: 0;
+}
+
+.drag-handle:hover {
+    color: var(--primary);
+}
 .thumb { 
-    width: 50px; /* Smaller thumbnail */
+    width: 50px; 
     height: 50px; 
-    border-radius: var(--curve-s); /* Squared corners for modern look */
+    border-radius: var(--curve-s); 
     object-fit: cover; 
     border: 2px solid var(--accent); 
     flex-shrink: 0;
 }
 .meta { flex: 1; overflow: hidden; }
-.meta h4 { margin: 0; font-size: 0.95rem; font-weight: 600; color: white; }
-.meta p { margin: 2px 0 0; font-size: 0.8rem; color: var(--text-dim); font-weight: 300; }
+.meta h4 { 
+    margin: 0; 
+    font-size: 0.95rem; 
+    font-weight: 600; 
+    color: white; 
+    /* CARVED EFFECT HERE */
+    text-shadow: var(--shadow-carve-light);
+}
+.meta p { 
+    margin: 2px 0 0; 
+    font-size: 0.8rem; 
+    color: var(--text-dim); 
+    font-weight: 300; 
+    /* CARVED EFFECT HERE */
+    text-shadow: var(--shadow-carve-light);
+}
 
+.item-controls {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+}
 .add-btn, .del-btn {
     background: transparent; 
     border: 1px solid var(--primary);
@@ -540,6 +554,8 @@ input[type=range] {
     margin-bottom: 8px; 
     line-height: 1.3;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+    /* CARVED EFFECT HERE */
+    text-shadow: var(--shadow-carve-light);
 }
 .chat-message.me { 
     background: linear-gradient(135deg, var(--accent), #e34399); 
@@ -590,6 +606,10 @@ input[type=range] {
     .app-container {
         padding: 10px;
         gap: 15px;
+        /* Remove scaling on mobile devices */
+        transform: none; 
+        max-width: 100%;
+        width: 100%;
     }
     body {
         overflow-y: auto; 
@@ -616,10 +636,9 @@ input[type=range] {
     
     .top-bar h1 { font-size: 1.8rem; letter-spacing: 1px; }
 
-    .controls { gap: 20px; }
+    .controls { gap: 20px; margin-bottom: 20px; }
     .btn-main { width: 70px; height: 70px; font-size: 1.8rem; }
     .btn-sec { width: 50px; height: 50px; font-size: 1rem; }
-    .volume-area { display: none; } 
 
     .search-wrapper { padding: 0 20px 20px; }
     #searchInput { padding: 10px 15px; font-size: 0.9rem; }
@@ -629,10 +648,11 @@ input[type=range] {
     .list-view { padding: 0 20px 0 20px; }
     
     .song-item { padding: 8px; }
+    .drag-handle { margin-right: 5px; } /* Adjust margin for mobile */
     .thumb { width: 40px; height: 40px; }
     .meta h4 { font-size: 0.85rem; }
     .add-btn, .del-btn { width: 30px; height: 30px; font-size: 0.8rem; }
     
     .chat-card { padding: 20px; }
     .send-btn { width: 45px; height: 45px; font-size: 1rem; }
-}	
+}
