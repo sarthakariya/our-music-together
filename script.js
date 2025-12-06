@@ -39,14 +39,12 @@ const storedName = localStorage.getItem('deepSpaceUserName');
 if (storedName) {
     myName = storedName;
 } else {
-    // Prompt only for initial setup if name is not stored
     const enteredName = prompt("Welcome to Deep Space Sync! Please enter your name (Sarthak or Partner's Name):");
     if (enteredName && enteredName.trim() !== "") {
         myName = enteredName.trim();
         localStorage.setItem('deepSpaceUserName', myName);
     }
 }
-// Automatically determine partner's name for chat clarity
 const partnerName = (myName === "Sarthak" || myName === "sarthak") ? "Partner" : "Sarthak";
 
 
@@ -60,7 +58,7 @@ function onYouTubeIframeAPIReady() {
         width: '100%',
         videoId: '', 
         playerVars: {
-            'controls': **0**,             // <--- HIDES NATIVE PLAYER CONTROLS (Play/Pause, Seek Bar)
+            'controls': 0,             // HIDES NATIVE PLAYER CONTROLS (Play/Pause, Seek Bar)
             'disablekb': 0, 
             'rel': 0,
             'showinfo': 0,
@@ -76,25 +74,17 @@ function onYouTubeIframeAPIReady() {
 }
 
 function onPlayerReady(event) {
-    // Initialize volume setting
-    const initialVolume = 70;
-    player.setVolume(initialVolume); 
-    document.getElementById('volume-progress').style.width = initialVolume + '%'; 
+    // Volume Control Removed: Initialize default volume and skip UI listeners.
+    if (player && player.setVolume) {
+        player.setVolume(70); // Keep default volume set, even without UI bar
+    }
     
-    // Volume Control Listener
-    document.getElementById('volume-bar').addEventListener('input', (e) => {
-        const volume = parseInt(e.target.value);
-        player.setVolume(volume);
-        document.getElementById('volume-progress').style.width = volume + '%';
-    });
-
     // Time broadcast interval (for sync)
     setInterval(broadcastTimeIfPlaying, 1000); 
 
-    // On-Disconnect Cleanup
-    // NOTE: Keep onDisconnect for queue/sync only if you want the room to vanish if *you* leave.
+    // On-Disconnect Cleanup (Keep commented out unless explicitly needed)
     // queueRef.onDisconnect().remove();
-    // syncRef.onDisconnect().remove(); 
+    // syncRef.onDisconnect().remove();
     
     loadInitialData(); 
 }
@@ -105,7 +95,7 @@ function broadcastTimeIfPlaying() {
         const currentTime = player.getCurrentTime();
         const duration = player.getDuration();
         
-        // Auto play next song if ended (handles local playback completion)
+        // Auto play next song if ended 
         if (state === YT.PlayerState.PLAYING && duration - currentTime < 1 && duration > 0) {
             playNextSong();
             return; 
@@ -144,7 +134,7 @@ function onPlayerStateChange(event) {
             if (!isPartnerPlaying) {
                 broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
             }
-            // Will trigger next song logic
+            playNextSong();
         }
     }
     
@@ -169,7 +159,6 @@ function togglePlayPause() {
         broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
     } else {
         if (!currentVideoId && currentQueue.length > 0) {
-            // If nothing is loaded, load and play the first in queue
             loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title);
         } else if (currentVideoId) {
             player.playVideo();
@@ -189,7 +178,7 @@ function loadAndPlayVideo(videoId, title) {
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
         
-        // Wait briefly for player to be in PLAYING/BUFFERING state before broadcasting
+        // Broadcast after a slight delay to confirm player state is PLAYING/BUFFERING
         setTimeout(() => {
             if(player.getPlayerState() === YT.PlayerState.PLAYING || player.getPlayerState() === YT.PlayerState.BUFFERING) {
                  broadcastState('play', player.getCurrentTime(), videoId, false); 
@@ -207,6 +196,7 @@ function loadAndPlayVideo(videoId, title) {
 
 function playNextSong() {
     const currentIndex = currentQueue.findIndex(song => song.videoId === currentVideoId);
+    // Loop back to start if at the end, or move to the next index
     const nextIndex = (currentIndex + 1) % currentQueue.length; 
     
     if (currentQueue.length > 0) {
@@ -221,6 +211,7 @@ function playNextSong() {
 function playPreviousSong() {
     const currentIndex = currentQueue.findIndex(song => song.videoId === currentVideoId);
     let prevIndex = currentIndex - 1;
+    // Loop back to end if at the start
     if (prevIndex < 0) { prevIndex = currentQueue.length - 1; } 
     
     if (currentQueue.length > 0) {
@@ -247,13 +238,11 @@ function addBatchToQueue(songs) {
     queueRef.update(updates)
         .then(() => {
             switchTab('queue');
-            // Auto-play the first song if the player is currently stopped
-            if (!currentVideoId && songs.length > 0) {
+            if (!currentVideoId && currentQueue.length === 0 && songs.length > 0) {
+                // If the queue was empty and we added songs, load the first one
                 setTimeout(() => {
-                    if (currentQueue.length > 0) {
-                        const firstSong = currentQueue.find(s => s.videoId === songs[0].videoId);
-                        if (firstSong) { loadAndPlayVideo(firstSong.videoId, firstSong.title); }
-                    }
+                    const firstSong = songs[0];
+                    if (firstSong) { loadAndPlayVideo(firstSong.videoId, firstSong.title); }
                 }, 500);
             }
         })
@@ -273,23 +262,11 @@ function removeFromQueue(videoId, event) {
     }
 }
 
-function clearQueue() {
-    if (confirm("Are you sure you want to clear the entire queue?")) {
-        queueRef.set(null) 
-            .then(() => {
-                currentVideoId = null;
-                if (player && player.stopVideo) player.stopVideo();
-                document.getElementById('current-song-title').textContent = "Queue Cleared";
-            })
-            .catch(error => { console.error("Error clearing queue:", error); });
-    }
-}
-
-
 // ------------------------------------------------------------------------------------------------------
 // --- RENDERING VIEWS ---
 // ------------------------------------------------------------------------------------------------------
 
+// ... (renderQueue and renderSearchResults functions remain the same) ...
 function switchTab(tabName) {
     document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
     document.querySelectorAll('.list-view').forEach(list => list.classList.remove('active'));
@@ -338,26 +315,30 @@ function renderSearchResults(resultsArray) {
     resultsArray.forEach(song => {
         const item = document.createElement('div');
         item.className = 'song-item';
+        // Note: The thumbnail URL must be URI-encoded for safe use in JS string arguments
+        const safeThumbnail = encodeURIComponent(song.thumbnail);
         item.innerHTML = `
             <img src="${song.thumbnail}" class="thumb" alt="Thumbnail">
             <div class="meta">
                 <h4>${song.title}</h4>
                 <p>Uploader: ${song.uploader}</p>
             </div>
-            <button class="add-btn" title="Add to Queue" onclick="addToQueue('${song.videoId}', '${song.title.replace(/'/g, "\\'")}', '${song.uploader.replace(/'/g, "\\'")}', '${song.thumbnail}', event)">
+            <button class="add-btn" title="Add to Queue" onclick="addToQueue('${song.videoId}', '${song.title.replace(/'/g, "\\'")}', '${song.uploader.replace(/'/g, "\\'")}', decodeURIComponent('${safeThumbnail}'), event)">
                 <i class="fa-solid fa-plus"></i>
             </button>
         `;
         resultsList.appendChild(item);
     });
 }
+// ------------------------------------------------------------------------------------------------------
 
 
 // ------------------------------------------------------------------------------------------------------
-// --- SEARCH & LINK HANDLERS ---
+// --- SEARCH & LINK HANDLERS (IMPROVED) ---
 // ------------------------------------------------------------------------------------------------------
 
 async function searchYouTube(query, maxResults = 10, type = 'video') {
+    // IMPORTANT: Added `part=snippet` and `type=video` for reliability
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=${type}&maxResults=${maxResults}&key=${YOUTUBE_API_KEY}`;
     
     try {
@@ -375,7 +356,7 @@ async function searchYouTube(query, maxResults = 10, type = 'video') {
                 videoId: item.id.videoId,
                 title: item.snippet.title,
                 uploader: item.snippet.channelTitle,
-                thumbnail: item.snippet.thumbnails.default.url
+                thumbnail: item.snippet.thumbnails.default.url // Use default for better load time
             }));
         
         return results;
@@ -387,7 +368,8 @@ async function searchYouTube(query, maxResults = 10, type = 'video') {
 }
 
 function extractPlaylistId(url) {
-    const regex = /[?&]list=([^&]+)/;
+    // Covers standard and shortened YouTube Music links for playlists
+    const regex = /(?:list=)([a-zA-Z0-9_-]+)/;
     const match = url.match(regex);
     if (match) {
         return match[1];
@@ -408,12 +390,12 @@ async function fetchPlaylist(playlistId, pageToken = null, allSongs = []) {
         const data = await response.json();
 
         if (data.error) {
-            statusDiv.innerHTML = `<p class="empty-state" style="color: var(--text-error);">Error fetching playlist: ${data.error.message}</p>`;
+            statusDiv.innerHTML = `<p class="empty-state" style="color: var(--text-error);">Error fetching playlist: ${data.error.message}. Check the link or your API key.</p>`;
             return;
         }
 
         const newSongs = data.items
-            .filter(item => item.snippet.resourceId.kind === 'youtube#video')
+            .filter(item => item.snippet && item.snippet.resourceId && item.snippet.resourceId.kind === 'youtube#video')
             .map(item => ({
                 videoId: item.snippet.resourceId.videoId,
                 title: item.snippet.title,
@@ -424,6 +406,7 @@ async function fetchPlaylist(playlistId, pageToken = null, allSongs = []) {
         allSongs = allSongs.concat(newSongs);
 
         if (data.nextPageToken) {
+            // Recursive call for next page
             return await fetchPlaylist(playlistId, data.nextPageToken, allSongs);
         } else {
             statusDiv.innerHTML = `<p class="empty-state" style="color: var(--primary);">✅ Found ${allSongs.length} songs from the playlist. Adding to queue...</p>`;
@@ -433,21 +416,22 @@ async function fetchPlaylist(playlistId, pageToken = null, allSongs = []) {
 
     } catch (error) {
         console.error("Playlist Fetch Error:", error);
-        statusDiv.innerHTML = '<p class="empty-state" style="color: var(--text-error);">Failed to fetch playlist items. Check API Key/Network.</p>';
+        statusDiv.innerHTML = '<p class="empty-state" style="color: var(--text-error);">Failed to fetch playlist items. Network error or invalid ID.</p>';
     }
 }
 
 function extractSpotifyId(url) {
+    // Extracts ID from track, album, or playlist links
     const match = url.match(/(?:playlist|album|track)\/([a-zA-Z0-9]+)/);
     if (match) {
-        return match[1];
+        return url; // Return the full URL for the proxy
     }
     return null;
 }
 
 async function fetchSpotifyData(link) {
     const statusDiv = document.getElementById('results-list');
-    statusDiv.innerHTML = '<p class="empty-state">Attempting to fetch Spotify data (This may take a moment)...</p>';
+    statusDiv.innerHTML = '<p class="empty-state">Attempting to fetch Spotify data and find YouTube matches (This may take a moment)...</p>';
 
     // NOTE: This relies on a separate proxy server for Spotify API access. 
     const proxyUrl = `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`;
@@ -461,7 +445,7 @@ async function fetchSpotifyData(link) {
             return;
         }
         
-        const tracksToSearch = data.tracks.slice(0, 50); 
+        const tracksToSearch = data.tracks.slice(0, 50); // Limit to 50 to prevent huge request load
         const foundSongs = [];
         
         statusDiv.innerHTML = `<p class="empty-state">Found ${tracksToSearch.length} tracks. Searching YouTube for matches...</p>`;
@@ -495,7 +479,7 @@ async function handleSearchAndLinks() {
     const query = inputElement.value.trim();
     if (!query) return;
 
-    // 1. Check for YouTube Playlist Link
+    // 1. Check for YouTube Playlist Link (including YouTube Music)
     const playlistId = extractPlaylistId(query);
     if (playlistId) {
         await fetchPlaylist(playlistId);
@@ -503,10 +487,10 @@ async function handleSearchAndLinks() {
         return;
     }
     
-    // 2. Check for Spotify Link
-    const spotifyId = extractSpotifyId(query);
-    if (spotifyId) {
-        await fetchSpotifyData(query); 
+    // 2. Check for Spotify Link (Track, Album, or Playlist)
+    const spotifyLink = extractSpotifyId(query);
+    if (spotifyLink) {
+        await fetchSpotifyData(spotifyLink); 
         inputElement.value = '';
         return;
     }
@@ -517,9 +501,8 @@ async function handleSearchAndLinks() {
 
     currentSearchResults = await searchYouTube(query, 10);
     
-    // IMPORTANT: Check if the API search failed (empty array, likely due to API Key)
     if (currentSearchResults.length === 0) {
-        document.getElementById('results-list').innerHTML = '<p class="empty-state" style="color: var(--text-error);">Search failed! Please check your YouTube API key or console logs.</p>';
+        document.getElementById('results-list').innerHTML = '<p class="empty-state" style="color: var(--text-error);">Search failed! Check your API key, network, or try a simpler query.</p>';
     } else {
         renderSearchResults(currentSearchResults);
     }
@@ -531,6 +514,8 @@ async function handleSearchAndLinks() {
 // ------------------------------------------------------------------------------------------------------
 // --- FIREBASE SYNC (REALTIME DATABASE) ---
 // ------------------------------------------------------------------------------------------------------
+
+// ... (loadInitialData, broadcastState, applyRemoteCommand, forcePlay, updateSyncStatus remain the same) ...
 
 function loadInitialData() {
     // 1. Queue Listener
@@ -609,7 +594,6 @@ function applyRemoteCommand(state) {
         const song = currentQueue.find(s => s.videoId === state.videoId);
         const title = song ? song.title : 'External Sync';
 
-        // Load new video and seek
         player.loadVideoById(state.videoId, state.time);
         currentVideoId = state.videoId;
         document.getElementById('current-song-title').textContent = title;
@@ -669,7 +653,6 @@ function updateSyncStatus() {
     }
 }
 
-
 // ------------------------------------------------------------------------------------------------------
 // --- CHAT FUNCTIONS ---
 // ------------------------------------------------------------------------------------------------------
@@ -684,7 +667,6 @@ function sendChatMessage() {
         text: text,
         timestamp: Date.now()
     }).then(() => {
-        // Clear the input only after successful send
         input.value = ''; 
     }).catch(error => {
         console.error("Error sending message:", error);
@@ -712,7 +694,7 @@ function displayChatMessage(user, text, timestamp) {
 
 
 // ------------------------------------------------------------------------------------------------------
-// --- INITIALIZATION: EVENT LISTENERS (The Fix for Duplicate Actions) ---
+// --- INITIALIZATION: EVENT LISTENERS ---
 // ------------------------------------------------------------------------------------------------------
 
 function initializeAppListeners() {
@@ -730,22 +712,25 @@ function initializeAppListeners() {
             handleSearchAndLinks();
         }
     });
+    
+    // 3. Tab Switches (Using delegated listeners)
+    document.getElementById('tab-results').addEventListener('click', () => switchTab('results'));
+    document.getElementById('tab-queue').addEventListener('click', () => switchTab('queue'));
 
-    // 3. Chat Handlers (Ensures no double send)
+
+    // 4. Chat Handlers
     document.getElementById('chatSendBtn').addEventListener('click', sendChatMessage);
     document.getElementById('chatInput').addEventListener('keypress', function (e) {
         if (e.key === 'Enter') {
-            // Prevent the default form submit if in a form
             e.preventDefault(); 
             sendChatMessage();
         }
     });
 
-    // 4. Sync Overlay Control
+    // 5. Sync Overlay Control
     document.getElementById('forceSyncBtn').addEventListener('click', forcePlay);
     
-    // 5. Initial Tab Load
-    // Note: The switchTab function uses inline onclicks in index.html, which is okay for simple tab switching.
+    // 6. Initial Tab Load
     switchTab('queue');
 }
 
