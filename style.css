@@ -264,56 +264,13 @@ body {
 /* ---------------------------------- SECTION 5: CONTROLS & SEEK BARS ----------------------------------- */
 /* ------------------------------------------------------------------------------------------------------ */
 
-/* Time Control Layout */
-.time-control { 
-    display: flex; 
-    align-items: center; 
-    gap: 12px; 
-    font-size: 0.9rem; 
-    color: var(--text-dim); 
-    margin: 10px 0 25px; 
-}
-
-/* Slider Wrapper */
-.slider-wrapper { 
-    flex: 1; 
-    position: relative; 
-    height: 8px; /* Slightly thinner */
-    background: rgba(255, 255, 255, 0.1); 
-    border-radius: 8px; 
-    cursor: pointer;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.7);
-}
-
-/* Range Input (Hidden but Functional) */
-input[type=range] { 
-    position: absolute; 
-    top: -5px; 
-    left: 0; 
-    width: 100%; 
-    height: 18px; 
-    opacity: 0; 
-    cursor: pointer; 
-    z-index: 2; 
-    margin: 0; 
-}
-
-/* Progress Fill Bar */
-.slider-progress {
-    height: 100%; 
-    background: linear-gradient(to right, var(--primary), var(--accent));
-    border-radius: 8px; 
-    width: 0%; 
-    transition: width 0.1s linear; 
-    box-shadow: 0 0 10px var(--primary);
-}
-
 /* Playback Control Buttons */
 .controls { 
     display: flex; 
     justify-content: center; 
     align-items: center; 
     gap: 40px; 
+    margin-top: 30px; /* Add space since the time bar is gone */
 }
 
 /* Secondary Button (Skip/Prev) */
@@ -370,10 +327,31 @@ input[type=range] {
     font-size: 1.1rem;
 }
 .volume-slider-wrapper {
+    flex: 1; 
+    position: relative; 
     height: 6px; /* Very thin */
+    background: rgba(255, 255, 255, 0.1); 
+    border-radius: 8px; 
+    cursor: pointer;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.7);
+}
+/* This is needed because the volume bar still uses the slider-wrapper/slider-progress classes */
+.volume-area input[type=range] { 
+    position: absolute; 
+    top: -7px; 
+    left: 0; 
+    width: 100%; 
+    height: 20px; 
+    opacity: 0; 
+    cursor: pointer; 
+    z-index: 2; 
+    margin: 0; 
 }
 .volume-progress-fill {
+    height: 100%; 
     background: linear-gradient(to right, #4ade80, #10b981); 
+    border-radius: 8px; 
+    width: 0%; 
     box-shadow: 0 0 8px #10b981;
 }
 
