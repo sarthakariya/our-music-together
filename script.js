@@ -39,13 +39,14 @@ const storedName = localStorage.getItem('deepSpaceUserName');
 if (storedName) {
     myName = storedName;
 } else {
-    const enteredName = prompt("Welcome to Deep Space Sync! Please enter your name (Sarthak or Partner's Name):");
+    // UPDATED PROMPT: Specific for Sarthak & Reechita
+    const enteredName = prompt("Welcome to Sarthak & Reechita's Deep Space Sync! Please enter your name (Sarthak or Reechita):");
     if (enteredName && enteredName.trim() !== "") {
         myName = enteredName.trim();
         localStorage.setItem('deepSpaceUserName', myName);
     }
 }
-const partnerName = (myName === "Sarthak" || myName === "sarthak") ? "Partner" : "Sarthak";
+const partnerName = (myName === "Sarthak" || myName === "sarthak") ? "Reechita" : "Sarthak";
 
 
 // ------------------------------------------------------------------------------------------------------
@@ -58,7 +59,6 @@ function onYouTubeIframeAPIReady() {
         width: '100%',
         videoId: '', 
         playerVars: {
-            // FIX: Changed 'controls': 0 to 'controls': 1 to enable native seek bar 
             'controls': 1,             
             'disablekb': 0, 
             'rel': 0,
@@ -330,7 +330,7 @@ function renderQueue(queueArray, currentVideoId) {
         item.setAttribute('onclick', `loadAndPlayVideo('${song.videoId}', '${song.title.replace(/'/g, "\\'")}')`);
         
         item.innerHTML = `
-            <i class="fa-solid fa-grip-vertical drag-handle"></i>
+            <i class="fa-solid fa-grip-vertical drag-handle" title="Drag to reorder"></i>
             <img src="${song.thumbnail}" class="thumb" alt="Thumbnail">
             <div class="meta">
                 <h4>${index + 1}. ${song.title}</h4>
@@ -360,9 +360,10 @@ function renderSearchResults(resultsArray) {
     const resultsList = document.getElementById('results-list');
     resultsList.innerHTML = ''; 
     if (resultsArray.length === 0) {
-        resultsList.innerHTML = '<p class="empty-state">No search results found. Try a different query!</p>';
+        document.getElementById('results-list').innerHTML = '<p class="empty-state" style="color: var(--text-error);">No search results found. Try a different query!</p>';
         return;
     }
+    currentSearchResults = resultsArray;
     resultsArray.forEach(song => {
         const item = document.createElement('div');
         item.className = 'song-item';
@@ -856,7 +857,15 @@ function initializeAppListeners() {
     // 5. Sync Overlay Control
     document.getElementById('forceSyncBtn').addEventListener('click', forcePlay);
     
-    // 6. Initial Tab Load
+    // 6. NEW: Info Modal Controls
+    document.getElementById('info-btn').addEventListener('click', () => {
+        document.getElementById('infoOverlay').classList.add('active');
+    });
+    document.getElementById('close-info-btn').addEventListener('click', () => {
+        document.getElementById('infoOverlay').classList.remove('active');
+    });
+    
+    // 7. Initial Tab Load
     switchTab('queue');
 }
 
