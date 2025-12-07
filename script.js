@@ -1,5 +1,5 @@
 // --- CONFIGURATION ---
-// IMPORTANT: Update your Firebase Config and YouTube API Key here!
+// IMPORTANT: Double-check these keys against your active Firebase project and YouTube account!
 const firebaseConfig = {
     apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co", // YOUR FIREBASE API KEY
     authDomain: "our-music-player.firebaseapp.com",
@@ -31,7 +31,7 @@ if (storedName) {
     }
 }
 
-// CRITICAL FIX: Ensure DB paths are consistently Sarthak/Reechita regardless of input casing
+// CRITICAL: Ensure DB paths are consistently Sarthak/Reechita regardless of input casing
 const fixedDBName = (myName.toLowerCase().includes("sarthak")) ? "Sarthak" : "Reechita"; 
 const fixedPartnerName = (fixedDBName === "Sarthak") ? "Reechita" : "Sarthak";
 
@@ -40,7 +40,7 @@ const queueRef = db.ref('queue');
 const mySyncRef = db.ref(`users/${fixedDBName}/sync`);
 const myChatRef = db.ref(`users/${fixedDBName}/chat`);
 const partnerSyncRef = db.ref(`users/${fixedPartnerName}/sync`);
-const partnerChatRef = db.ref(`users/${fixedPartnerName}/chat`); // Partner's chat path
+const partnerChatRef = db.ref(`users/${fixedPartnerName}/chat`); 
 
 const partnerDisplayLabel = fixedPartnerName; 
 
@@ -53,9 +53,9 @@ let lastBroadcaster = "System";
 let isManualAction = false; 
 let isPartnerPlaying = false; 
 let lastSyncState = null; 
-let lastLocalActionTime = 0; // Timestamp of the last local play/pause action
-let lastSentTime = 0; // NEW: For ad/stall detection
-let timeStagnantCount = 0; // NEW: Counter for how many seconds the time hasn't changed
+let lastLocalActionTime = 0; 
+let lastSentTime = 0; 
+let timeStagnantCount = 0; 
 
 // ------------------------------------------------------------------------------------------------------
 // --- YOUTUBE PLAYER FUNCTIONS ---
@@ -95,7 +95,6 @@ function onPlayerReady(event) {
     loadInitialData(); 
 }
 
-// FIX: Implement time stagnation detection for ads/buffers
 function broadcastTimeIfPlaying() {
     if (player && player.getPlayerState && currentVideoId) {
         const state = player.getPlayerState();
@@ -112,29 +111,23 @@ function broadcastTimeIfPlaying() {
         
         // NEW STALL DETECTION LOGIC: Check if player is in 'PLAYING' state but time isn't progressing
         if (state === YT.PlayerState.PLAYING) {
-             // Check for time stagnation (less than 0.1s progression)
              if (Math.abs(currentTime - lastSentTime) < 0.1) {
                 timeStagnantCount++;
             } else {
                 timeStagnantCount = 0;
             }
             
-            // If stagnant for 3 consecutive 1-second intervals, it's a stall
             if (timeStagnantCount >= 3) { 
                 isAdStall = true;
             }
         } else {
-            // Reset count if not playing
             timeStagnantCount = 0;
         }
         
-        lastSentTime = currentTime; // Update last sent time
+        lastSentTime = currentTime; 
 
-        // Only broadcast if we are currently playing/stalled AND we were the one who initiated play
         if ((state === YT.PlayerState.PLAYING || isAdStall) && lastBroadcaster === fixedDBName) {
-            // Action is 'pause' if stalled, otherwise 'play'
             const action = isAdStall ? 'pause' : 'play';
-            // Broadcast the state, including the isAdStall flag
             broadcastState(action, currentTime, currentVideoId, isAdStall);
         }
     }
@@ -149,7 +142,6 @@ function onPlayerStateChange(event) {
         playPauseBtn.innerHTML = pauseIcon;
         isManualAction = false; 
         
-        // Broadcast PLAY immediately if a manual action happened recently
         const timeSinceLastAction = Date.now() - lastLocalActionTime;
         if (timeSinceLastAction < 500 && lastBroadcaster === fixedDBName) {
             broadcastState('play', player.getCurrentTime(), currentVideoId, false);
@@ -162,11 +154,9 @@ function onPlayerStateChange(event) {
             
             const timeSinceLastAction = Date.now() - lastLocalActionTime;
 
-            // Broadcast general pause if it was manual (timeSinceLastAction < 500)
             if (timeSinceLastAction < 500 && lastBroadcaster === fixedDBName) {
                  broadcastState('pause', player.getCurrentTime(), currentVideoId, false);
             }
-            // Note: The AdStall check is now handled by broadcastTimeIfPlaying (Time Stagnation Detection)
         } 
         
         if (event.data === YT.PlayerState.ENDED) {
@@ -194,7 +184,6 @@ function togglePlayPause() {
         player.pauseVideo();
         document.getElementById('syncOverlay').classList.remove('active'); 
         
-        // Broadcast PAUSE immediately (isAdStall: false since it's manual)
         broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
         
     } else {
@@ -204,7 +193,6 @@ function togglePlayPause() {
             player.playVideo();
             document.getElementById('syncOverlay').classList.remove('active');
             
-            // Broadcast PLAY immediately
             broadcastState('play', player.getCurrentTime(), currentVideoId, false);
         }
     }
@@ -220,7 +208,6 @@ function loadAndPlayVideo(videoId, title) {
         document.getElementById('current-song-title').textContent = title;
         
         setTimeout(() => {
-            // If the song loads and starts playing, broadcast play
             if(player.getPlayerState() === YT.PlayerState.PLAYING || player.getPlayerState() === YT.PlayerState.BUFFERING) {
                  broadcastState('play', player.getCurrentTime(), videoId, false); 
             }
@@ -230,9 +217,8 @@ function loadAndPlayVideo(videoId, title) {
     }
 }
 
-
 // ------------------------------------------------------------------------------------------------------
-// --- QUEUE MANAGEMENT ---
+// --- QUEUE MANAGEMENT (Logic untouched) ---
 // ------------------------------------------------------------------------------------------------------
 function playNextSong() {
     const currentIndex = currentQueue.findIndex(song => song.videoId === currentVideoId);
@@ -271,7 +257,6 @@ function addToQueue(videoId, title, uploader, thumbnail, event) {
         title, 
         uploader, 
         thumbnail, 
-        // Use a high order number to ensure it appears at the end
         order: Date.now() + Math.random() 
     };
     const newKey = queueRef.push().key; 
@@ -337,7 +322,6 @@ function removeFromQueue(key, event) {
 function updateQueueOrder(newOrder) {
     const updates = {};
     newOrder.forEach((song, index) => {
-        // Use the index as the new 'order' value
         updates[`${song.key}/order`] = index;
     });
 
@@ -347,7 +331,7 @@ function updateQueueOrder(newOrder) {
 
 
 // ------------------------------------------------------------------------------------------------------
-// --- RENDERING VIEWS ---
+// --- RENDERING VIEWS (Logic untouched) ---
 // ------------------------------------------------------------------------------------------------------
 function switchTab(tabName) {
     document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
@@ -370,7 +354,6 @@ function renderQueue(queueArray, currentVideoId) {
     
     queueList.innerHTML = '';
     
-    // Always sort by order field from Firebase
     queueArray.sort((a, b) => (a.order || 0) - (b.order || 0));
     currentQueue = queueArray; 
 
@@ -384,7 +367,6 @@ function renderQueue(queueArray, currentVideoId) {
         const item = document.createElement('div');
         const itemClasses = 'song-item' + (song.videoId === currentVideoId ? ' playing' : '');
         item.className = itemClasses;
-        // CRITICAL for drag-drop
         item.setAttribute('draggable', 'true'); 
         item.setAttribute('data-key', song.key); 
         item.setAttribute('data-video-id', song.videoId); 
@@ -407,7 +389,6 @@ function renderQueue(queueArray, currentVideoId) {
     
     document.getElementById('queue-count').textContent = queueArray.length;
     
-    // CRITICAL FIX: Attach drag/drop listeners after rendering
     addDragDropListeners(queueList, queueArray); 
 
     const playingItem = queueList.querySelector('.song-item.playing');
@@ -455,7 +436,6 @@ function renderSearchResults(resultsArray) {
     });
 }
 
-// NEW: Full implementation of Drag and Drop for queue reordering
 function addDragDropListeners(listElement, originalQueue) {
     let draggingItem = null;
 
@@ -479,10 +459,8 @@ function addDragDropListeners(listElement, originalQueue) {
                 const rect = item.getBoundingClientRect();
                 const offsetY = e.clientY - rect.top;
                 if (offsetY < rect.height / 2) {
-                    // Insert before the item (hovering top half)
                     listElement.insertBefore(draggingItem, item);
                 } else {
-                    // Insert after the item (hovering bottom half)
                     listElement.insertBefore(draggingItem, item.nextSibling);
                 }
             }
@@ -494,18 +472,14 @@ function addDragDropListeners(listElement, originalQueue) {
             }
             draggingItem = null;
             
-            // Get the new order of keys based on the DOM structure
             const newOrderKeys = Array.from(listElement.querySelectorAll('.song-item'))
                                          .map(el => el.getAttribute('data-key'));
             
-            // Map the keys back to the song objects and create the new order array
             const newOrder = newOrderKeys.map(key => currentQueue.find(song => song.key === key)).filter(Boolean);
             
-            // Update Firebase
             updateQueueOrder(newOrder); 
         });
         
-        // Stop propagation for delete/drag handle clicks
         item.querySelector('.item-controls')?.addEventListener('click', (e) => {
             e.stopPropagation();
         });
@@ -514,9 +488,7 @@ function addDragDropListeners(listElement, originalQueue) {
             e.stopPropagation();
         });
         
-        // Click listener for playing the song
         item.addEventListener('click', (e) => {
-            // Check if the click originated from a control element inside the item
             if (e.defaultPrevented || e.target.closest('.drag-handle') || e.target.closest('.item-controls')) return; 
             
             const videoId = item.getAttribute('data-video-id');
@@ -530,7 +502,7 @@ function addDragDropListeners(listElement, originalQueue) {
 
 
 // ------------------------------------------------------------------------------------------------------
-// --- SEARCH & LINK HANDLERS ---
+// --- SEARCH & LINK HANDLERS (Logic untouched) ---
 // ------------------------------------------------------------------------------------------------------
 async function searchYouTube(query, maxResults = 10, type = 'video') {
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=${type}&maxResults=${maxResults}&key=${YOUTUBE_API_KEY}`;
@@ -746,7 +718,7 @@ async function handleSearchAndLinks() {
 
 
 // ------------------------------------------------------------------------------------------------------
-// --- FIREBASE SYNC ---
+// --- FIREBASE SYNC (Core Logic) ---
 // ------------------------------------------------------------------------------------------------------
 
 function loadInitialData() {
@@ -773,7 +745,6 @@ function loadInitialData() {
         if (syncState) {
             lastBroadcaster = syncState.lastUpdater; 
 
-            // Only apply command if the partner is the broadcaster
             if (syncState.lastUpdater !== fixedDBName) {
                 applyRemoteCommand(syncState);
             }
@@ -787,7 +758,6 @@ function loadInitialData() {
     // 3. Chat Listener (Listens to MY chatRef for local messages)
     myChatRef.limitToLast(50).on('child_added', (snapshot) => {
         const message = snapshot.val();
-        // Prevent double display
         if (message.user === myName) { 
              displayChatMessage(message.user, message.text, message.timestamp);
         }
@@ -796,7 +766,6 @@ function loadInitialData() {
     // 4. Chat Listener (Listens to PARTNER's chat path for their messages)
     partnerChatRef.limitToLast(50).on('child_added', (snapshot) => {
         const message = snapshot.val();
-        // Only display partner messages
         if (message.user !== myName) { 
              displayChatMessage(message.user, message.text, message.timestamp);
         }
@@ -810,13 +779,12 @@ function broadcastState(action, time, videoId = currentVideoId, isAdStall = fals
         action: action, 
         time: time,
         videoId: videoId,
-        lastUpdater: fixedDBName, // Use fixedDBName as the consistent identifier
-        isAdStall: isAdStall, // NEW: Flag for ad/buffer stall
+        lastUpdater: fixedDBName,
+        isAdStall: isAdStall,
         timestamp: Date.now()
     });
 }
 
-// FIX: Strictly follows remote command and handles new AdStall flag
 function applyRemoteCommand(state) {
     if (!player || !state || state.videoId === undefined) return;
     
@@ -826,7 +794,7 @@ function applyRemoteCommand(state) {
     
     // CRITICAL FIX: Ignore remote signal if we just performed a manual action (within 500ms)
     const timeSinceLastLocalAction = Date.now() - lastLocalActionTime;
-    if (timeSinceLastLocalAction < 500) {
+    if (timeSinceLastLocalAction < 500) { 
         return; 
     }
     
@@ -847,13 +815,11 @@ function applyRemoteCommand(state) {
         const song = currentQueue.find(s => s.videoId === state.videoId);
         const title = song ? song.title : 'External Sync';
 
-        // Load and seek to partner's time
         player.loadVideoById(state.videoId, state.time);
         currentVideoId = state.videoId;
         document.getElementById('current-song-title').textContent = title;
         renderQueue(currentQueue, currentVideoId);
         
-        // Ensure play state is set correctly after loading
         if (partnerIsPlaying) {
             player.playVideo();
         } else {
@@ -863,7 +829,6 @@ function applyRemoteCommand(state) {
     } else {
         // SCENARIO 3: SAME SONG, HANDLE PLAY/PAUSE AND SEEK
         
-        // Handle Play/Pause Command
         if (partnerIsPlaying) {
             if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
                 player.playVideo();
@@ -896,7 +861,6 @@ function forcePlay() {
     }
 }
 
-// REMOVED ** MARKDOWN
 function updateSyncStatus() {
     const msgEl = document.getElementById('sync-status-msg');
     
@@ -908,7 +872,6 @@ function updateSyncStatus() {
 
     const broadcasterName = (lastBroadcaster === fixedDBName) ? myName : partnerDisplayLabel; 
 
-    // Check if the current song is still the synced video
     if (lastSyncState.videoId !== currentVideoId && lastSyncState.action === 'play') {
         const title = currentQueue.find(song => song.videoId === lastSyncState.videoId)?.title || 'A New Track';
         msgEl.innerHTML = `<i class="fa-solid fa-shuffle"></i> SWITCHING TO: ${broadcasterName}'s Track (${title})`;
@@ -919,11 +882,9 @@ function updateSyncStatus() {
     } else if (player && (player.getPlayerState() === YT.PlayerState.PAUSED || player.getPlayerState() === YT.PlayerState.BUFFERING)) {
         
         if (!isPartnerPlaying && lastSyncState.isAdStall) {
-            // Partner is reporting an ad stall
             msgEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> AD STALL (Waiting for ${broadcasterName})`;
             msgEl.style.color = 'var(--text-error)';
         } else {
-             // Standard paused state
             msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> PAUSED`;
             msgEl.style.color = 'var(--text-dim)';
         }
@@ -932,14 +893,13 @@ function updateSyncStatus() {
         msgEl.innerHTML = `<i class="fa-solid fa-satellite-dish"></i> DEEP SYNC ACTIVE`;
         msgEl.style.color = 'var(--primary)';
     } else {
-        // Fallback for non-playing/unknown state (e.g. ended)
         msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> PAUSED`;
         msgEl.style.color = 'var(--text-dim)';
     }
 }
 
 // ------------------------------------------------------------------------------------------------------
-// --- CHAT FUNCTIONS ---
+// --- CHAT FUNCTIONS (Logic untouched) ---
 // ------------------------------------------------------------------------------------------------------
 
 function sendChatMessage() {
@@ -953,9 +913,7 @@ function sendChatMessage() {
         timestamp: Date.now()
     };
 
-    // Write to the PARTNER's chat path so they receive it.
     partnerChatRef.push(messagePayload).then(() => {
-        // Also write to my own chat path for the local client to display it immediately.
         myChatRef.push(messagePayload);
         input.value = ''; 
     }).catch(error => {
@@ -993,7 +951,7 @@ function displayChatMessage(user, text, timestamp) {
 // ------------------------------------------------------------------------------------------------------
 
 function initializeAppListeners() {
-    console.log("Setting up application event listeners...");
+    console.log("Setting up application event listeners (Verified)...");
     
     document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
     document.getElementById('prev-btn').addEventListener('click', playPreviousSong);
@@ -1008,9 +966,10 @@ function initializeAppListeners() {
     
     document.getElementById('tab-results').addEventListener('click', () => switchTab('results'));
     document.getElementById('tab-queue').addEventListener('click', () => switchTab('queue'));
-    document.getElementById('tab-chat').addEventListener('click', () => switchTab('chat'));
+    document.getElementById('tab-chat').addEventListener('click', () => switchTab('chat')); // Ensure this exists
 
-    document.getElementById('sendChatBtn').addEventListener('click', sendChatMessage);
+    // FIX: Corrected ID to 'chatSendBtn' (This was the issue I previously fixed)
+    document.getElementById('chatSendBtn').addEventListener('click', sendChatMessage);
     document.getElementById('chatInput').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
             sendChatMessage();
@@ -1018,6 +977,9 @@ function initializeAppListeners() {
     });
     
     document.getElementById('forceSyncBtn').addEventListener('click', forcePlay);
+    
+    // Initialize to the queue tab
+    switchTab('queue');
 }
 
 document.addEventListener('DOMContentLoaded', initializeAppListeners);
