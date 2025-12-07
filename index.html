@@ -4,11 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Deep Space Sync Player - Sarthak & Partner</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <link rel="stylesheet" href="style.css">
+    
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -30,10 +34,10 @@
                 <div class="info-area">
                     <h2 id="current-song-title" class="truncate-text">No Song Loaded</h2>
                     <p class="sync-status-msg" id="sync-status-msg">
-                        <i class="fa-solid fa-pause"></i> PAUSED
+                        <i class="fa-solid fa-satellite-dish"></i> Waiting for sync...
                     </p>
                 </div>
-                
+
                 <div class="controls">
                     <button class="btn-sec" id="prev-btn" title="Previous Song">
                         <i class="fa-solid fa-backward-step"></i>
@@ -45,14 +49,11 @@
                         <i class="fa-solid fa-forward-step"></i>
                     </button>
                 </div>
-
             </div>
 
             <div class="library-container">
                 
-                <div class="top-panel glass-panel">
-                    <div class="section-title-inline">Search & Queue</div>
-
+                <div class="search-panel glass-panel">
                     <div class="search-wrapper">
                         <input type="text" id="searchInput" placeholder="Search song, YouTube, or Spotify link...">
                         <button class="search-btn" id="search-btn" title="Search">
@@ -60,11 +61,20 @@
                         </button>
                     </div>
 
-                    <div class="tabs">
-                        <button class="tab" id="tab-results">Search Results</button>
-                        <button class="tab active" id="tab-queue">Queue (<span id="queue-count">0</span>)</button>
+                    <div class="tab-controls">
+                        <button class="tab active" id="tab-queue">
+                            Queue (<span id="queue-count">0</span>)
+                        </button>
+                        <button class="tab" id="tab-results">
+                            Search Results
+                        </button>
+                         <button class="tab" id="tab-chat">
+                            Chat
+                        </button>
                     </div>
+                </div>
 
+                <div class="list-area glass-panel">
                     <div class="list-view active" id="queue-list">
                         <p class="empty-state">Queue is empty. Find a song to get the party started!</p>
                     </div>
@@ -72,22 +82,19 @@
                     <div class="list-view" id="results-list">
                         <p class="empty-state">Search for a song or paste a link above.</p>
                     </div>
-                </div>
 
-                <div class="bottom-panel chat-card glass-panel">
-                    <div class="section-title-inline">Chat with Partner</div>
-                    
-                    <div class="chat-messages" id="chat-messages">
+                    <div class="list-view chat-container" id="chat-list">
+                        <div class="chat-messages" id="chat-messages">
+                             <p class="empty-state">Start a conversation with your partner!</p>
                         </div>
-
-                    <div class="chat-input-wrapper">
-                        <input type="text" id="chatInput" placeholder="Type a message...">
-                        <button class="send-btn" id="chatSendBtn" title="Send Message">
-                            <i class="fa-solid fa-paper-plane"></i>
-                        </button>
+                        <div class="chat-input-wrapper">
+                            <input type="text" id="chatInput" placeholder="Type a message...">
+                            <button class="send-btn" id="chatSendBtn" title="Send Message">
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
-
             </div>
         </div>
     </div>
