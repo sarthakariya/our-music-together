@@ -3,14 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sarthak & Reechita's Deep Space Sync Player</title>
+    <title>Our Deep Space Sync - Exclusive for Sarthak & Partner</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;900&display=swap" rel="stylesheet">
-    
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,7 +16,7 @@
     
     <div class="app-container">
         <div class="top-bar">
-            <h1>SARTHAK <i class="fa-solid fa-heart pulse"></i> REECHITA SYNC</h1>
+            <h1>OUR DEEP SPACE <i class="fa-solid fa-heart pulse"></i> SYNC</h1>
         </div>
 
         <div class="main-layout">
@@ -32,46 +29,54 @@
 
                 <div class="info-area">
                     <h2 id="current-song-title" class="truncate-text">No Song Loaded</h2>
-                    <p class="sync-status-msg" id="sync-status-msg" title="This status shows if the player is in sync with your partner, or if there is an ad/buffer stall.">
-                        <i class="fa-solid fa-pause"></i> PAUSED
+                    
+                    <p id="song-uploader" class="song-uploader-info truncate-text">Artist/Uploader: Loading...</p>
+                    
+                    <p class="sync-status-msg" id="sync-status-msg">
+                        <i class="fa-solid fa-satellite-dish"></i> Not Connected
                     </p>
-                </div>
-                
-                <div class="controls">
-                    <button class="btn-sec" id="prev-btn" title="Previous Song in Queue">
-                        <i class="fa-solid fa-backward-step"></i>
-                    </button>
-                    <button class="btn-main" id="play-pause-btn" title="Play / Pause (Syncs status with partner)">
-                        <i class="fa-solid fa-play"></i>
-                    </button>
-                    <button class="btn-sec" id="next-btn" title="Next Song in Queue">
-                        <i class="fa-solid fa-forward-step"></i>
-                    </button>
-                </div>
+                    
+                    <div class="seek-instruction-box">
+                        <p>
+                            **Important Note for Time Seeking:**
+                        </p>
+                        <p>
+                            To jump to a new timestamp, you must first <strong>pause the song</strong> using the play/pause button. 
+                        </p>
+                        <p style="margin-top: 5px;">
+                            You can then manually seek the player bar to the desired time and press <strong>play/resume</strong>. This process is essential to ensure a smooth sync with your partner.
+                        </p>
+                    </div>
 
+                    <div class="controls">
+                        <button class="btn-sec" id="prev-btn" title="Previous Song">
+                            <i class="fa-solid fa-backward-step"></i>
+                        </button>
+                        <button class="btn-main" id="play-pause-btn" title="Play / Pause">
+                            <i class="fa-solid fa-play"></i>
+                        </button>
+                        <button class="btn-sec" id="next-btn" title="Next Song">
+                            <i class="fa-solid fa-forward-step"></i>
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div class="library-container">
-                
                 <div class="top-panel glass-panel">
-                    <div class="section-title-inline">
-                        Search & Queue 
-                        <button class="info-btn" id="info-btn" title="Click for App Guide">
-                            <i class="fa-solid fa-circle-info"></i>
-                        </button>
+                    <div class="tab-header">
+                        <button class="tab-btn active" id="tab-queue">Queue (<span id="queue-count">0</span>)</button>
+                        <button class="tab-btn" id="tab-results">Results</button>
                     </div>
 
                     <div class="search-wrapper">
-                        <input type="text" id="searchInput" placeholder="Search song, YouTube, Spotify link, or Playlist link...">
-                        <button class="search-btn" id="search-btn" title="Search YouTube/Fetch Link">
+                        <input type="text" id="searchInput" placeholder="Search or paste link (YouTube/Spotify)...">
+                        <button class="search-btn" id="search-btn" title="Search">
                             <i class="fa-solid fa-magnifying-glass"></i>
                         </button>
                     </div>
                     
-                    <div class="tabs">
-                        <button class="tab" id="tab-results" title="See search results to add songs to the queue.">Search Results</button>
-                        <button class="tab active" id="tab-queue" title="View and re-order the shared playlist.">Queue (<span id="queue-count">0</span>)</button>
-                    </div>
+                    <div id="search-status" class="search-status-msg"></div>
 
                     <div class="list-view active" id="queue-list">
                         <p class="empty-state">Queue is empty. Find a song to get the party started!</p>
@@ -89,7 +94,7 @@
                         </div>
 
                     <div class="chat-input-wrapper">
-                        <input type="text" id="chatInput" placeholder="Send a sweet message to your partner...">
+                        <input type="text" id="chatInput" placeholder="Type a message...">
                         <button class="send-btn" id="chatSendBtn" title="Send Message">
                             <i class="fa-solid fa-paper-plane"></i>
                         </button>
@@ -98,37 +103,6 @@
 
             </div>
         </div>
-        
-        <div class="info-modal-overlay overlay" id="infoOverlay">
-            <div class="glass-modal info-modal">
-                <button class="close-btn" id="close-info-btn" title="Close Guide"><i class="fa-solid fa-xmark"></i></button>
-                <h2>Deep Space Sync Guide</h2>
-                <div class="guide-content">
-                    <p>This is your personal, synchronized music player, built for <strong>Sarthak and Reechita</strong> to listen together, no matter the distance!</p>
-                    
-                    <div class="guide-section">
-                        <h4><i class="fa-solid fa-magnifying-glass"></i> Search & Queue</h4>
-                        <p>Use the search bar to find YouTube songs, or paste links from <strong>YouTube (including Playlists)</strong> or <strong>Spotify (Track/Album/Playlist)</strong>. All added songs are automatically shared in the Queue.</p>
-                    </div>
-                    
-                    <div class="guide-section">
-                        <h4><i class="fa-solid fa-repeat"></i> The Queue</h4>
-                        <p>Drag and drop songs in the Queue tab to re-order the shared playlist. Click a song to start playing it immediately.</p>
-                    </div>
-                    
-                    <div class="guide-section">
-                        <h4><i class="fa-solid fa-satellite-dish"></i> Sync Status</h4>
-                        <p>The main player syncs both the video and the playback time. If one of you gets an ad or buffers, the other player will <strong>pause automatically</strong> (Ad/Buffer Stall) to keep you perfectly synchronized.</p>
-                    </div>
-                    
-                    <div class="guide-section">
-                        <h4><i class="fa-solid fa-comment-dots"></i> Chat</h4>
-                        <p>The chat is for real-time messages with your partner! Share your thoughts on the music.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
     </div>
     
     <div class="overlay" id="syncOverlay">
