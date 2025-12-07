@@ -1,7 +1,7 @@
 // --- CONFIGURATION ---
-// IMPORTANT: Double-check these keys against your active Firebase project and YouTube account!
+// Your Firebase Configuration (Provided by Sarthak)
 const firebaseConfig = {
-    apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co", // YOUR FIREBASE API KEY
+    apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co",
     authDomain: "our-music-player.firebaseapp.com",
     databaseURL: "https://our-music-player-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "our-music-player",
@@ -10,13 +10,28 @@ const firebaseConfig = {
     appId: "1:444208622552:web:839ca00a5797f52d1660ad",
     measurementId: "G-B4GFLNFCLL"
 };
-const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68"; // YOUR YOUTUBE API KEY
+// Your YouTube API Key (Provided by Sarthak)
+const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
 
 // Initialize Firebase
 if (typeof firebase !== 'undefined' && !firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 const db = firebase.database();
+const syncRef = db.ref('sync');
+const queueRef = db.ref('queue');
+const chatRef = db.ref('chat');
+
+// --- GLOBAL STATE ---
+let player; 
+let currentQueue = [];
+let currentSearchResults = [];
+let currentVideoId = null;
+let isPartnerPlaying = false; 
+let lastBroadcaster = "System";
+let isManualAction = false; 
+let ignoreTemporaryState = false; 
+let lastSyncState = null; 
 
 // --- USER IDENTIFICATION ---
 let myName = "Sarthak"; 
@@ -24,41 +39,17 @@ const storedName = localStorage.getItem('deepSpaceUserName');
 if (storedName) {
     myName = storedName;
 } else {
-    const enteredName = prompt("Welcome to Deep Space Sync! Please enter your name (Sarthak or Reechita):");
+    const enteredName = prompt("Welcome to Deep Space Sync! Please enter your name (Sarthak or Partner's Name):");
     if (enteredName && enteredName.trim() !== "") {
         myName = enteredName.trim();
         localStorage.setItem('deepSpaceUserName', myName);
     }
 }
+const partnerName = (myName === "Sarthak" || myName === "sarthak") ? "Partner" : "Sarthak";
 
-// CRITICAL: Ensure DB paths are consistently Sarthak/Reechita regardless of input casing
-const fixedDBName = (myName.toLowerCase().includes("sarthak")) ? "Sarthak" : "Reechita"; 
-const fixedPartnerName = (fixedDBName === "Sarthak") ? "Reechita" : "Sarthak";
-
-// --- DATABASE REFERENCES ---
-const queueRef = db.ref('queue'); 
-const mySyncRef = db.ref(`users/${fixedDBName}/sync`);
-const myChatRef = db.ref(`users/${fixedDBName}/chat`);
-const partnerSyncRef = db.ref(`users/${fixedPartnerName}/sync`);
-const partnerChatRef = db.ref(`users/${fixedPartnerName}/chat`); 
-
-const partnerDisplayLabel = fixedPartnerName; 
-
-// --- GLOBAL STATE ---
-let player; 
-let currentQueue = [];
-let currentSearchResults = [];
-let currentVideoId = null;
-let lastBroadcaster = "System";
-let isManualAction = false; 
-let isPartnerPlaying = false; 
-let lastSyncState = null; 
-let lastLocalActionTime = 0; 
-let lastSentTime = 0; 
-let timeStagnantCount = 0; 
 
 // ------------------------------------------------------------------------------------------------------
-// --- YOUTUBE PLAYER FUNCTIONS ---
+// --- YOUTUBE PLAYER FUNCTIONS (API Required) ---
 // ------------------------------------------------------------------------------------------------------
 
 function onYouTubeIframeAPIReady() {
@@ -67,7 +58,8 @@ function onYouTubeIframeAPIReady() {
         width: '100%',
         videoId: '', 
         playerVars: {
-            'controls': 1,           
+            // FIX: Changed 'controls': 0 to 'controls': 1 to enable native seek bar 
+            'controls': 1,             
             'disablekb': 0, 
             'rel': 0,
             'showinfo': 0,
@@ -87,11 +79,9 @@ function onPlayerReady(event) {
         player.setVolume(70); 
     }
     
-    // Initialize lastSentTime
-    lastSentTime = player.getCurrentTime ? player.getCurrentTime() : 0;
-    
-    // Time broadcast interval (for sync and stall detection)
+    // Time broadcast interval (for sync)
     setInterval(broadcastTimeIfPlaying, 1000); 
+
     loadInitialData(); 
 }
 
@@ -101,34 +91,15 @@ function broadcastTimeIfPlaying() {
         const currentTime = player.getCurrentTime();
         const duration = player.getDuration();
         
-        // Handle song end locally
+        // Auto play next song if ended 
         if (state === YT.PlayerState.PLAYING && duration - currentTime < 1 && duration > 0) {
             playNextSong();
             return; 
         }
 
-        let isAdStall = false;
-        
-        // NEW STALL DETECTION LOGIC: Check if player is in 'PLAYING' state but time isn't progressing
-        if (state === YT.PlayerState.PLAYING) {
-             if (Math.abs(currentTime - lastSentTime) < 0.1) {
-                timeStagnantCount++;
-            } else {
-                timeStagnantCount = 0;
-            }
-            
-            if (timeStagnantCount >= 3) { 
-                isAdStall = true;
-            }
-        } else {
-            timeStagnantCount = 0;
-        }
-        
-        lastSentTime = currentTime; 
-
-        if ((state === YT.PlayerState.PLAYING || isAdStall) && lastBroadcaster === fixedDBName) {
-            const action = isAdStall ? 'pause' : 'play';
-            broadcastState(action, currentTime, currentVideoId, isAdStall);
+        // Only broadcast state if we are the last known broadcaster and currently playing
+        if (state === YT.PlayerState.PLAYING && lastBroadcaster === myName) {
+            broadcastState('play', currentTime, currentVideoId, false);
         }
     }
 }
@@ -141,92 +112,92 @@ function onPlayerStateChange(event) {
     if (event.data === YT.PlayerState.PLAYING) {
         playPauseBtn.innerHTML = pauseIcon;
         isManualAction = false; 
-        
-        const timeSinceLastAction = Date.now() - lastLocalActionTime;
-        if (timeSinceLastAction < 500 && lastBroadcaster === fixedDBName) {
-            broadcastState('play', player.getCurrentTime(), currentVideoId, false);
-        }
+        ignoreTemporaryState = false; 
         
     } else {
         playPauseBtn.innerHTML = playIcon;
 
+        // CRITICAL AD/BUFFER LOGIC (Broadcast Ad Stall if paused unexpectedly)
         if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.BUFFERING) {
             
-            const timeSinceLastAction = Date.now() - lastLocalActionTime;
-
-            if (timeSinceLastAction < 500 && lastBroadcaster === fixedDBName) {
-                 broadcastState('pause', player.getCurrentTime(), currentVideoId, false);
+            if (!isPartnerPlaying && !isManualAction && !ignoreTemporaryState && lastBroadcaster === myName) {
+                // Local player paused on its own (ad/buffer) - Broadcast Ad Stall
+                broadcastState('pause', player.getCurrentTime(), currentVideoId, true); 
             }
         } 
         
         if (event.data === YT.PlayerState.ENDED) {
             if (!isPartnerPlaying) {
-                 broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
+                broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
             }
             playNextSong();
         }
     }
     
+    isManualAction = false;
     isPartnerPlaying = false; 
+    
+    if (ignoreTemporaryState) {
+        setTimeout(() => { ignoreTemporaryState = false; }, 500); 
+    }
+    
     updateSyncStatus();
 }
 
 function togglePlayPause() {
     if (!player || !player.getPlayerState) return;
 
-    lastLocalActionTime = Date.now(); 
-    isManualAction = true;
-    lastBroadcaster = fixedDBName; 
-    
     const state = player.getPlayerState();
     
     if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
         player.pauseVideo();
         document.getElementById('syncOverlay').classList.remove('active'); 
-        
         broadcastState('pause', player.getCurrentTime(), currentVideoId, false); 
-        
     } else {
         if (!currentVideoId && currentQueue.length > 0) {
             loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title);
         } else if (currentVideoId) {
             player.playVideo();
             document.getElementById('syncOverlay').classList.remove('active');
-            
             broadcastState('play', player.getCurrentTime(), currentVideoId, false);
         }
     }
+    isManualAction = true; 
 }
 
 function loadAndPlayVideo(videoId, title) {
     if (player && videoId) {
-        lastBroadcaster = fixedDBName; 
-        lastLocalActionTime = Date.now(); 
+        isManualAction = false; 
+        ignoreTemporaryState = true; 
+        
+        // Find the song by videoId to get the full object and key
+        const songToPlay = currentQueue.find(song => song.videoId === videoId);
         
         player.loadVideoById(videoId);
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
         
+        // Broadcast after a slight delay to confirm player state is PLAYING/BUFFERING
         setTimeout(() => {
             if(player.getPlayerState() === YT.PlayerState.PLAYING || player.getPlayerState() === YT.PlayerState.BUFFERING) {
                  broadcastState('play', player.getCurrentTime(), videoId, false); 
             }
-        }, 500); 
+        }, 300); 
         
         renderQueue(currentQueue, currentVideoId);
     }
 }
 
+
 // ------------------------------------------------------------------------------------------------------
-// --- QUEUE MANAGEMENT (Logic untouched) ---
+// --- QUEUE MANAGEMENT (FIXED & REARRANGE) ---
 // ------------------------------------------------------------------------------------------------------
+
 function playNextSong() {
     const currentIndex = currentQueue.findIndex(song => song.videoId === currentVideoId);
-    let nextIndex = (currentIndex + 1) % currentQueue.length; 
+    const nextIndex = (currentIndex + 1) % currentQueue.length; 
     
     if (currentQueue.length > 0) {
-        if (currentIndex === -1) nextIndex = 0; 
-
         const nextSong = currentQueue[nextIndex];
         loadAndPlayVideo(nextSong.videoId, nextSong.title);
     } else {
@@ -242,16 +213,16 @@ function playPreviousSong() {
     if (prevIndex < 0) { prevIndex = currentQueue.length - 1; } 
     
     if (currentQueue.length > 0) {
-        if (currentIndex === -1) prevIndex = currentQueue.length - 1;
-
         const prevSong = currentQueue[prevIndex];
         loadAndPlayVideo(prevSong.videoId, prevSong.title);
     }
 }
 
+// FIX: Ensures the new song is added to the database and queue is re-rendered
 function addToQueue(videoId, title, uploader, thumbnail, event) {
     if (event) event.stopPropagation();
     
+    // Assign a default order value (e.g., current timestamp)
     const newSong = { 
         videoId, 
         title, 
@@ -259,16 +230,17 @@ function addToQueue(videoId, title, uploader, thumbnail, event) {
         thumbnail, 
         order: Date.now() + Math.random() 
     };
-    const newKey = queueRef.push().key; 
+    const newKey = queueRef.push().key;
     
     queueRef.child(newKey).set(newSong)
         .then(() => { 
+            // The Firebase listener will re-render the queue, just switch tabs
             switchTab('queue'); 
             
+            // If the queue was empty, start playing the new song
             if (!currentVideoId && currentQueue.length === 0) {
-                setTimeout(() => {
-                    loadAndPlayVideo(videoId, title);
-                }, 300);
+                // currentQueue hasn't been updated by listener yet, so we use the new song info
+                 loadAndPlayVideo(videoId, title);
             }
         })
         .catch(error => { console.error("Error adding song to queue:", error); });
@@ -277,17 +249,10 @@ function addToQueue(videoId, title, uploader, thumbnail, event) {
 function addBatchToQueue(songs) {
     if (!songs || songs.length === 0) return;
     const updates = {};
-    const startTime = Date.now();
-
     songs.forEach((song, index) => {
+        // Assign order based on batch index + current timestamp
         const newKey = queueRef.push().key;
-        updates[newKey] = { 
-            videoId: song.videoId, 
-            title: song.title, 
-            uploader: song.uploader, 
-            thumbnail: song.thumbnail, 
-            order: startTime + index 
-        }; 
+        updates[newKey] = { ...song, order: Date.now() + index * 1000 }; 
     });
     
     queueRef.update(updates)
@@ -295,7 +260,7 @@ function addBatchToQueue(songs) {
             switchTab('queue');
             if (!currentVideoId && currentQueue.length === 0 && songs.length > 0) {
                 setTimeout(() => {
-                    const firstSong = currentQueue[0];
+                    const firstSong = songs[0];
                     if (firstSong) { loadAndPlayVideo(firstSong.videoId, firstSong.title); }
                 }, 500);
             }
@@ -303,6 +268,7 @@ function addBatchToQueue(songs) {
         .catch(error => { console.error("Error adding batch to queue:", error); });
 }
 
+// FIX: Use the 'key' (Firebase push ID) to ensure correct deletion
 function removeFromQueue(key, event) {
     if (event) event.stopPropagation();
     
@@ -322,6 +288,7 @@ function removeFromQueue(key, event) {
 function updateQueueOrder(newOrder) {
     const updates = {};
     newOrder.forEach((song, index) => {
+        // Update the 'order' field for each song in the database
         updates[`${song.key}/order`] = index;
     });
 
@@ -331,31 +298,23 @@ function updateQueueOrder(newOrder) {
 
 
 // ------------------------------------------------------------------------------------------------------
-// --- RENDERING VIEWS (Logic untouched) ---
+// --- RENDERING VIEWS (DRAG & DROP IMPLEMENTATION) ---
 // ------------------------------------------------------------------------------------------------------
+
 function switchTab(tabName) {
     document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
     document.querySelectorAll('.list-view').forEach(list => list.classList.remove('active'));
     document.getElementById(`tab-${tabName}`).classList.add('active');
-    
-    const targetList = document.getElementById(`${tabName}-list`);
-    targetList.classList.add('active');
-
-    if (tabName === 'chat') {
-         const chatMessages = document.getElementById('chat-messages');
-         setTimeout(() => {
-             chatMessages.scrollTop = chatMessages.scrollHeight;
-         }, 0);
-    }
+    document.getElementById(`${tabName}-list`).classList.add('active');
 }
 
 function renderQueue(queueArray, currentVideoId) {
     const queueList = document.getElementById('queue-list');
-    
     queueList.innerHTML = '';
     
+    // Ensure the queue is sorted by the 'order' field for consistency
     queueArray.sort((a, b) => (a.order || 0) - (b.order || 0));
-    currentQueue = queueArray; 
+    currentQueue = queueArray; // Update global state with the sorted array
 
     if (queueArray.length === 0) {
         queueList.innerHTML = '<p class="empty-state">Queue is empty. Find a song to get the party started!</p>';
@@ -365,11 +324,10 @@ function renderQueue(queueArray, currentVideoId) {
     
     queueArray.forEach((song, index) => {
         const item = document.createElement('div');
-        const itemClasses = 'song-item' + (song.videoId === currentVideoId ? ' playing' : '');
-        item.className = itemClasses;
-        item.setAttribute('draggable', 'true'); 
-        item.setAttribute('data-key', song.key); 
-        item.setAttribute('data-video-id', song.videoId); 
+        item.className = `song-item ${song.videoId === currentVideoId ? 'playing' : ''}`;
+        item.setAttribute('draggable', 'true'); // Enable dragging
+        item.setAttribute('data-key', song.key); // Store Firebase key for reordering/deletion
+        item.setAttribute('onclick', `loadAndPlayVideo('${song.videoId}', '${song.title.replace(/'/g, "\\'")}')`);
         
         item.innerHTML = `
             <i class="fa-solid fa-grip-vertical drag-handle"></i>
@@ -389,6 +347,7 @@ function renderQueue(queueArray, currentVideoId) {
     
     document.getElementById('queue-count').textContent = queueArray.length;
     
+    // Add Drag and Drop listeners after rendering
     addDragDropListeners(queueList, queueArray); 
 
     const playingItem = queueList.querySelector('.song-item.playing');
@@ -399,24 +358,11 @@ function renderQueue(queueArray, currentVideoId) {
 
 function renderSearchResults(resultsArray) {
     const resultsList = document.getElementById('results-list');
-    resultsList.querySelector('.empty-state.search-status')?.remove(); 
-    
-    const searchContainer = resultsList.querySelector('.search-container');
-    let resultContainer = resultsList.querySelector('.result-container');
-    
-    if (!resultContainer) {
-         resultContainer = document.createElement('div');
-         resultContainer.className = 'result-container';
-         resultsList.insertBefore(resultContainer, searchContainer ? searchContainer.nextSibling : null); 
-    }
-    resultContainer.innerHTML = '';
-    currentSearchResults = resultsArray;
-
+    resultsList.innerHTML = ''; 
     if (resultsArray.length === 0) {
-         resultContainer.innerHTML = '<p class="empty-state">No search results found. Try a different query!</p>';
-         return;
+        resultsList.innerHTML = '<p class="empty-state">No search results found. Try a different query!</p>';
+        return;
     }
-    
     resultsArray.forEach(song => {
         const item = document.createElement('div');
         item.className = 'song-item';
@@ -432,16 +378,20 @@ function renderSearchResults(resultsArray) {
                 <i class="fa-solid fa-plus"></i>
             </button>
         `;
-        resultContainer.appendChild(item);
+        resultsList.appendChild(item);
     });
 }
 
+
+// --- DRAG AND DROP LOGIC ---
 function addDragDropListeners(listElement, originalQueue) {
     let draggingItem = null;
 
     listElement.querySelectorAll('.song-item').forEach(item => {
         
+        // DRAG START
         item.addEventListener('dragstart', (e) => {
+            // Prevent dragging if the target is the delete button
             if (e.target.closest('.del-btn')) {
                 e.preventDefault();
                 return;
@@ -452,10 +402,12 @@ function addDragDropListeners(listElement, originalQueue) {
             e.dataTransfer.setData('text/plain', item.getAttribute('data-key'));
         });
 
+        // DRAG OVER
         item.addEventListener('dragover', (e) => {
             e.preventDefault(); 
             e.dataTransfer.dropEffect = 'move';
             if (item !== draggingItem && draggingItem) {
+                // Determine whether to insert before or after the current item
                 const rect = item.getBoundingClientRect();
                 const offsetY = e.clientY - rect.top;
                 if (offsetY < rect.height / 2) {
@@ -466,44 +418,47 @@ function addDragDropListeners(listElement, originalQueue) {
             }
         });
 
+        // DRAG END
         item.addEventListener('dragend', () => {
             if (draggingItem) {
                 draggingItem.classList.remove('dragging');
             }
             draggingItem = null;
             
+            // Re-sequence the queue based on the DOM order and broadcast the change
             const newOrderKeys = Array.from(listElement.querySelectorAll('.song-item'))
-                                         .map(el => el.getAttribute('data-key'));
+                                    .map(el => el.getAttribute('data-key'));
             
-            const newOrder = newOrderKeys.map(key => currentQueue.find(song => song.key === key)).filter(Boolean);
+            // Filter the original queue by keys to maintain song data
+            const newOrder = newOrderKeys.map(key => originalQueue.find(song => song.key === key));
             
+            // Send the updated ordered list to Firebase
             updateQueueOrder(newOrder); 
         });
         
-        item.querySelector('.item-controls')?.addEventListener('click', (e) => {
+        // Prevent click action when deleting
+        item.querySelector('.item-controls').addEventListener('click', (e) => {
             e.stopPropagation();
         });
         
-        item.querySelector('.drag-handle')?.addEventListener('click', (e) => {
-            e.stopPropagation();
-        });
-        
+        // Prevent default click behavior on the item itself if we are moving the item
         item.addEventListener('click', (e) => {
-            if (e.defaultPrevented || e.target.closest('.drag-handle') || e.target.closest('.item-controls')) return; 
-            
-            const videoId = item.getAttribute('data-video-id');
-            const song = originalQueue.find(s => s.videoId === videoId);
+            if (e.defaultPrevented) return;
+            const key = item.getAttribute('data-key');
+            const song = originalQueue.find(s => s.key === key);
             if (song) {
                 loadAndPlayVideo(song.videoId, song.title);
             }
         });
     });
 }
+// ------------------------------------------------------------------------------------------------------
 
 
 // ------------------------------------------------------------------------------------------------------
-// --- SEARCH & LINK HANDLERS (Logic untouched) ---
+// --- SEARCH & LINK HANDLERS ---
 // ------------------------------------------------------------------------------------------------------
+
 async function searchYouTube(query, maxResults = 10, type = 'video') {
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=${type}&maxResults=${maxResults}&key=${YOUTUBE_API_KEY}`;
     
@@ -544,29 +499,18 @@ function extractPlaylistId(url) {
 
 async function fetchPlaylist(playlistId, pageToken = null, allSongs = []) {
     switchTab('results');
-    const resultsList = document.getElementById('results-list');
+    const statusDiv = document.getElementById('results-list');
     
-    resultsList.querySelector('.result-container')?.remove(); 
-    
-    let statusEl = resultsList.querySelector('.playlist-status');
-    if (!statusEl) {
-        statusEl = document.createElement('p');
-        statusEl.className = 'empty-state playlist-status';
-        resultsList.insertBefore(statusEl, resultsList.querySelector('.search-container') ? resultsList.querySelector('.search-container').nextSibling : null);
-    }
-    statusEl.innerHTML = `Fetching playlist (Total songs: ${allSongs.length})... Please wait.`;
-    statusEl.style.color = 'var(--text-dim)';
-
-
     const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${YOUTUBE_API_KEY}${pageToken ? `&pageToken=${pageToken}` : ''}`;
     
     try {
+        statusDiv.innerHTML = `<p class="empty-state">Fetching playlist (Total songs: ${allSongs.length})... Please wait.</p>`;
+        
         const response = await fetch(url);
         const data = await response.json();
 
         if (data.error) {
-            statusEl.innerHTML = `Error fetching playlist: ${data.error.message}. Check the link or your API key.`;
-            statusEl.style.color = 'var(--text-error)';
+            statusDiv.innerHTML = `<p class="empty-state" style="color: var(--text-error);">Error fetching playlist: ${data.error.message}. Check the link or your API key.</p>`;
             return;
         }
 
@@ -582,21 +526,17 @@ async function fetchPlaylist(playlistId, pageToken = null, allSongs = []) {
         allSongs = allSongs.concat(newSongs);
 
         if (data.nextPageToken) {
+            // Recursive call for next page
             return await fetchPlaylist(playlistId, data.nextPageToken, allSongs);
         } else {
-            statusEl.innerHTML = `✅ Found ${allSongs.length} songs from the playlist. Adding to queue...`;
-            statusEl.style.color = 'var(--primary)';
+            statusDiv.innerHTML = `<p class="empty-state" style="color: var(--primary);">✅ Found ${allSongs.length} songs from the playlist. Adding to queue...</p>`;
             addBatchToQueue(allSongs);
-            setTimeout(() => {
-                switchTab('queue');
-                statusEl.remove();
-            }, 3000); 
+            setTimeout(() => switchTab('queue'), 3000); 
         }
 
     } catch (error) {
         console.error("Playlist Fetch Error:", error);
-        statusEl.innerHTML = 'Failed to fetch playlist items. Network error or invalid ID.';
-        statusEl.style.color = 'var(--text-error)';
+        statusDiv.innerHTML = '<p class="empty-state" style="color: var(--text-error);">Failed to fetch playlist items. Network error or invalid ID.</p>';
     }
 }
 
@@ -609,18 +549,10 @@ function extractSpotifyId(url) {
 }
 
 async function fetchSpotifyData(link) {
-    switchTab('results');
-    const resultsList = document.getElementById('results-list');
-     let statusEl = resultsList.querySelector('.spotify-status');
-     if (!statusEl) {
-        statusEl = document.createElement('p');
-        statusEl.className = 'empty-state spotify-status';
-        resultsList.insertBefore(statusEl, resultsList.querySelector('.search-container') ? resultsList.querySelector('.search-container').nextSibling : null);
-    }
-    statusEl.innerHTML = 'Attempting to fetch Spotify data and find YouTube matches (This may take a moment)...';
-    statusEl.style.color = 'var(--text-dim)';
-    resultsList.querySelector('.result-container')?.remove();
+    const statusDiv = document.getElementById('results-list');
+    statusDiv.innerHTML = '<p class="empty-state">Attempting to fetch Spotify data and find YouTube matches (This may take a moment)...</p>';
 
+    // NOTE: This relies on a separate proxy server for Spotify API access. 
     const proxyUrl = `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`;
 
     try {
@@ -628,15 +560,14 @@ async function fetchSpotifyData(link) {
         const data = await response.json();
 
         if (!data || data.error || !data.tracks || data.tracks.length === 0) {
-            statusEl.innerHTML = `Failed to fetch Spotify data or playlist is empty. (Error: ${data.error || 'Unknown'})`;
-            statusEl.style.color = 'var(--text-error)';
+            statusDiv.innerHTML = `<p class="empty-state" style="color: var(--text-error);">Failed to fetch Spotify data or playlist is empty. (Error: ${data.error || 'Unknown'})</p>`;
             return;
         }
         
-        const tracksToSearch = data.tracks.slice(0, 30); 
+        const tracksToSearch = data.tracks.slice(0, 50); 
         const foundSongs = [];
         
-        statusEl.innerHTML = `Found ${tracksToSearch.length} tracks. Searching YouTube for matches...`;
+        statusDiv.innerHTML = `<p class="empty-state">Found ${tracksToSearch.length} tracks. Searching YouTube for matches...</p>`;
 
         for (const track of tracksToSearch) {
             const query = `${track.artist} - ${track.title}`;
@@ -645,26 +576,21 @@ async function fetchSpotifyData(link) {
             if (results.length > 0) {
                 foundSongs.push(results[0]);
             }
-            statusEl.innerHTML = `Searching YouTube... Found ${foundSongs.length} matches out of ${tracksToSearch.length} tracks.`;
+            statusDiv.innerHTML = `<p class="empty-state">Searching YouTube... Found ${foundSongs.length} matches out of ${tracksToSearch.length} tracks.</p>`;
         }
         
         if (foundSongs.length > 0) {
-            statusEl.innerHTML = `✅ Added ${foundSongs.length} songs from Spotify link to the queue!`;
-            statusEl.style.color = 'var(--primary)';
+            // Updated message to use <strong> for bolding
+            statusDiv.innerHTML = `<p class="empty-state" style="color: var(--primary);">✅ Added <strong>${foundSongs.length}</strong> songs from Spotify link to the queue!</p>`;
             addBatchToQueue(foundSongs);
         } else {
-            statusEl.innerHTML = `Could not find matching YouTube videos for the Spotify tracks.`;
-            statusEl.style.color = 'var(--text-error)';
+            statusDiv.innerHTML = `<p class="empty-state" style="color: var(--text-error);">Could not find matching YouTube videos for the Spotify tracks.</p>`;
         }
-        setTimeout(() => {
-            switchTab('queue');
-            statusEl.remove();
-        }, 3000); 
+        setTimeout(() => switchTab('queue'), 3000); 
         
     } catch (error) {
         console.error("Spotify Proxy Error:", error);
-        statusEl.innerHTML = 'Connection error while fetching Spotify data. The proxy may be down.';
-        statusEl.style.color = 'var(--text-error)';
+        statusDiv.innerHTML = '<p class="empty-state" style="color: var(--text-error);">Connection error while fetching Spotify data. The proxy may be down.</p>';
     }
 }
 
@@ -673,12 +599,7 @@ async function handleSearchAndLinks() {
     const query = inputElement.value.trim();
     if (!query) return;
 
-    const resultsList = document.getElementById('results-list');
-    resultsList.querySelector('.empty-state.search-status')?.remove();
-    resultsList.querySelector('.playlist-status')?.remove();
-    resultsList.querySelector('.spotify-status')?.remove();
-    resultsList.querySelector('.result-container')?.remove();
-    
+    // 1. Check for YouTube Playlist Link (including YouTube Music)
     const playlistId = extractPlaylistId(query);
     if (playlistId) {
         await fetchPlaylist(playlistId);
@@ -686,6 +607,7 @@ async function handleSearchAndLinks() {
         return;
     }
     
+    // 2. Check for Spotify Link (Track, Album, or Playlist)
     const spotifyLink = extractSpotifyId(query);
     if (spotifyLink) {
         await fetchSpotifyData(spotifyLink); 
@@ -693,23 +615,15 @@ async function handleSearchAndLinks() {
         return;
     }
 
+    // 3. Perform Standard YouTube Search
     switchTab('results');
-    
-    let searchStatusEl = resultsList.querySelector('.search-status');
-    if (!searchStatusEl) {
-        searchStatusEl = document.createElement('p');
-        searchStatusEl.className = 'empty-state search-status';
-        resultsList.insertBefore(searchStatusEl, resultsList.querySelector('.search-container') ? resultsList.querySelector('.search-container').nextSibling : null);
-    }
-    searchStatusEl.innerHTML = 'Searching...';
+    document.getElementById('results-list').innerHTML = '<p class="empty-state">Searching...</p>';
 
     currentSearchResults = await searchYouTube(query, 10);
     
     if (currentSearchResults.length === 0) {
-        searchStatusEl.innerHTML = 'Search failed! Check your API key, network, or try a simpler query.';
-        searchStatusEl.style.color = 'var(--text-error)';
+        document.getElementById('results-list').innerHTML = '<p class="empty-state" style="color: var(--text-error);">Search failed! Check your API key, network, or try a simpler query.</p>';
     } else {
-        searchStatusEl.remove(); 
         renderSearchResults(currentSearchResults);
     }
     
@@ -718,11 +632,11 @@ async function handleSearchAndLinks() {
 
 
 // ------------------------------------------------------------------------------------------------------
-// --- FIREBASE SYNC (Core Logic) ---
+// --- FIREBASE SYNC (REALTIME DATABASE) ---
 // ------------------------------------------------------------------------------------------------------
 
 function loadInitialData() {
-    // 1. Queue Listener 
+    // 1. Queue Listener (Sorted by 'order' or default push key if 'order' is missing)
     queueRef.orderByChild('order').on('value', (snapshot) => {
         const queueData = snapshot.val();
         let fetchedQueue = [];
@@ -732,20 +646,22 @@ function loadInitialData() {
             });
         }
         
+        // Sort and update global state and render
         fetchedQueue.sort((a, b) => (a.order || 0) - (b.order || 0));
         currentQueue = fetchedQueue;
         renderQueue(currentQueue, currentVideoId);
     });
 
-    // 2. Sync Command Listener (Listens to the PARTNER's sync node)
-    partnerSyncRef.on('value', (snapshot) => {
+    // 2. Sync Command Listener (STRICT AD HALT IMPLEMENTATION)
+    syncRef.on('value', (snapshot) => {
         const syncState = snapshot.val();
         lastSyncState = syncState; 
 
         if (syncState) {
             lastBroadcaster = syncState.lastUpdater; 
 
-            if (syncState.lastUpdater !== fixedDBName) {
+            // Only apply command if the update is from the partner
+            if (syncState.lastUpdater !== myName) {
                 applyRemoteCommand(syncState);
             }
         } else {
@@ -755,32 +671,22 @@ function loadInitialData() {
         updateSyncStatus();
     });
 
-    // 3. Chat Listener (Listens to MY chatRef for local messages)
-    myChatRef.limitToLast(50).on('child_added', (snapshot) => {
+    // 3. Chat Listener
+    chatRef.limitToLast(20).on('child_added', (snapshot) => {
         const message = snapshot.val();
-        if (message.user === myName) { 
-             displayChatMessage(message.user, message.text, message.timestamp);
-        }
-    });
-    
-    // 4. Chat Listener (Listens to PARTNER's chat path for their messages)
-    partnerChatRef.limitToLast(50).on('child_added', (snapshot) => {
-        const message = snapshot.val();
-        if (message.user !== myName) { 
-             displayChatMessage(message.user, message.text, message.timestamp);
-        }
+        displayChatMessage(message.user, message.text, message.timestamp);
     });
 }
 
 function broadcastState(action, time, videoId = currentVideoId, isAdStall = false) {
     if (!videoId) return;
 
-    mySyncRef.set({
+    syncRef.set({
         action: action, 
         time: time,
         videoId: videoId,
-        lastUpdater: fixedDBName,
-        isAdStall: isAdStall,
+        lastUpdater: myName, 
+        isAdStall: isAdStall, 
         timestamp: Date.now()
     });
 }
@@ -790,27 +696,23 @@ function applyRemoteCommand(state) {
     
     const partnerIsPlaying = state.action === 'play';
     isPartnerPlaying = true; 
+    
     const localTime = player.getCurrentTime ? player.getCurrentTime() : 0; 
     
-    // CRITICAL FIX: Ignore remote signal if we just performed a manual action (within 500ms)
-    const timeSinceLastLocalAction = Date.now() - lastLocalActionTime;
-    if (timeSinceLastLocalAction < 500) { 
-        return; 
+    // CRITICAL: STRICT AD STALL LOGIC ENFORCEMENT
+    if (!partnerIsPlaying && state.isAdStall) {
+         // Partner is reporting an ad stall -> PAUSE my player and show overlay
+         document.getElementById('syncOverlay').classList.add('active');
+         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+            player.pauseVideo();
+         }
+         updateSyncStatus();
+         return; 
     }
     
-    // SCENARIO 1: PARTNER IS STALLED (Ad/Buffer - New logic)
-    if (state.isAdStall) {
-           document.getElementById('syncOverlay').classList.add('active');
-           if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-             player.pauseVideo();
-           }
-           updateSyncStatus();
-           return; 
-    }
-    
+    // Command is not an ad stall, so remove the overlay if it was showing
     document.getElementById('syncOverlay').classList.remove('active');
     
-    // SCENARIO 2: PARTNER CHANGED SONG
     if (state.videoId !== currentVideoId) {
         const song = currentQueue.find(s => s.videoId === state.videoId);
         const title = song ? song.title : 'External Sync';
@@ -820,86 +722,66 @@ function applyRemoteCommand(state) {
         document.getElementById('current-song-title').textContent = title;
         renderQueue(currentQueue, currentVideoId);
         
-        if (partnerIsPlaying) {
-            player.playVideo();
-        } else {
-            player.pauseVideo();
-        }
-        
     } else {
-        // SCENARIO 3: SAME SONG, HANDLE PLAY/PAUSE AND SEEK
-        
-        if (partnerIsPlaying) {
-            if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
-                player.playVideo();
-            }
-        } else {
-            if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-                player.pauseVideo();
-            }
-        }
-        
-        // Handle Time Sync (Automatic Resync)
-        const localPlayerState = player.getPlayerState();
+        // TIME CORRECTION: Only seek if the difference is significant (> 2s)
         const timeDiff = Math.abs(localTime - state.time);
-        
-        // Only seek if the difference is significant (> 1.5 seconds) AND the partner is playing
-        if (partnerIsPlaying && localPlayerState === YT.PlayerState.PLAYING && timeDiff > 1.5) { 
+        if (timeDiff > 2) {
             player.seekTo(state.time, true);
+        }
+    }
+    
+    // Play/Pause Command Logic
+    if (partnerIsPlaying) {
+        if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
+            player.playVideo();
+        }
+    } else {
+        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+            player.pauseVideo();
         }
     }
     updateSyncStatus();
 }
 
 function forcePlay() {
+    // This button overrides the ad stall status
     document.getElementById('syncOverlay').classList.remove('active');
-    lastBroadcaster = fixedDBName; 
-    lastLocalActionTime = Date.now();
     if (currentVideoId) {
         player.playVideo();
+        // Broadcast that we are resuming, removing the ad stall flag
         broadcastState('play', player.getCurrentTime(), currentVideoId, false);
     }
 }
 
 function updateSyncStatus() {
     const msgEl = document.getElementById('sync-status-msg');
+    const overlayIsActive = document.getElementById('syncOverlay').classList.contains('active');
     
-    if (!lastSyncState) {
-        msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> PAUSED`;
-        msgEl.style.color = 'var(--text-dim)';
-        return;
-    }
-
-    const broadcasterName = (lastBroadcaster === fixedDBName) ? myName : partnerDisplayLabel; 
-
-    if (lastSyncState.videoId !== currentVideoId && lastSyncState.action === 'play') {
-        const title = currentQueue.find(song => song.videoId === lastSyncState.videoId)?.title || 'A New Track';
-        msgEl.innerHTML = `<i class="fa-solid fa-shuffle"></i> SWITCHING TO: ${broadcasterName}'s Track (${title})`;
-        msgEl.style.color = 'var(--accent)';
-    } else if (lastSyncState.videoId === currentVideoId && lastSyncState.action === 'play' && Math.abs(player.getCurrentTime() - lastSyncState.time) > 2) {
-        msgEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> OUT OF SYNC`;
-        msgEl.style.color = 'var(--text-error)';
-    } else if (player && (player.getPlayerState() === YT.PlayerState.PAUSED || player.getPlayerState() === YT.PlayerState.BUFFERING)) {
-        
-        if (!isPartnerPlaying && lastSyncState.isAdStall) {
-            msgEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> AD STALL (Waiting for ${broadcasterName})`;
-            msgEl.style.color = 'var(--text-error)';
-        } else {
-            msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> PAUSED`;
-            msgEl.style.color = 'var(--text-dim)';
-        }
-        
+    if (overlayIsActive) {
+         // Show specific ad stall warning details
+         document.getElementById('overlayTitle').textContent = `⚠️ PAUSED by ${lastBroadcaster}`;
+         
+         // Updated overlayText to use <strong> instead of **
+         document.getElementById('overlayText').innerHTML = `Playback paused because <strong>${lastBroadcaster}</strong> is experiencing an <strong>Ad/Buffer stall</strong>. Please wait for them to resume or use <strong>Force Play & Sync</strong> to override.`;
+         
+         // Updated msgEl to use <strong> instead of **
+         msgEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation pulse"></i> <strong>STALL HALT</strong> (Waiting for ${lastBroadcaster})`;
+         msgEl.style.color = 'var(--text-error)';
+         
     } else if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
-        msgEl.innerHTML = `<i class="fa-solid fa-satellite-dish"></i> DEEP SYNC ACTIVE`;
+        // Updated msgEl to use <strong> instead of **
+        msgEl.innerHTML = `<i class="fa-solid fa-satellite-dish"></i> <strong>DEEP SYNC ACTIVE</strong>`;
         msgEl.style.color = 'var(--primary)';
     } else {
-        msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> PAUSED`;
+        // Standard paused state
+        // Updated msgEl to use <strong> instead of **
+        msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> <strong>PAUSED</strong>`;
         msgEl.style.color = 'var(--text-dim)';
     }
 }
 
 // ------------------------------------------------------------------------------------------------------
-// --- CHAT FUNCTIONS (Logic untouched) ---
+// --- CHAT FUNCTIONS ---
 // ------------------------------------------------------------------------------------------------------
 
 function sendChatMessage() {
@@ -907,14 +789,11 @@ function sendChatMessage() {
     const text = input.value.trim();
     if (!text) return;
 
-    const messagePayload = {
+    chatRef.push({
         user: myName,
         text: text,
         timestamp: Date.now()
-    };
-
-    partnerChatRef.push(messagePayload).then(() => {
-        myChatRef.push(messagePayload);
+    }).then(() => {
         input.value = ''; 
     }).catch(error => {
         console.error("Error sending message:", error);
@@ -924,7 +803,6 @@ function sendChatMessage() {
 function displayChatMessage(user, text, timestamp) {
     const chatMessages = document.getElementById('chat-messages');
     const isMe = user === myName;
-    
     const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     const msgDiv = document.createElement('div');
@@ -932,17 +810,13 @@ function displayChatMessage(user, text, timestamp) {
     
     const safeText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-    if (chatMessages.querySelector('.empty-state')) {
-        chatMessages.innerHTML = '';
-    }
-
     msgDiv.innerHTML = `
         <strong>${user}:</strong> ${safeText}
         <small>${time}</small>
     `;
     
     chatMessages.appendChild(msgDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight; 
+    chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
 
@@ -951,12 +825,14 @@ function displayChatMessage(user, text, timestamp) {
 // ------------------------------------------------------------------------------------------------------
 
 function initializeAppListeners() {
-    console.log("Setting up application event listeners (Verified)...");
+    console.log("Setting up application event listeners (Updated)...");
     
+    // 1. Player Controls
     document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
     document.getElementById('prev-btn').addEventListener('click', playPreviousSong);
     document.getElementById('next-btn').addEventListener('click', playNextSong);
 
+    // 2. Search Handlers 
     document.getElementById('search-btn').addEventListener('click', handleSearchAndLinks);
     document.getElementById('searchInput').addEventListener('keypress', function (e) {
         if (e.key === 'Enter') {
@@ -964,22 +840,25 @@ function initializeAppListeners() {
         }
     });
     
+    // 3. Tab Switches 
     document.getElementById('tab-results').addEventListener('click', () => switchTab('results'));
     document.getElementById('tab-queue').addEventListener('click', () => switchTab('queue'));
-    document.getElementById('tab-chat').addEventListener('click', () => switchTab('chat')); // Ensure this exists
 
-    // FIX: Corrected ID to 'chatSendBtn' (This was the issue I previously fixed)
+    // 4. Chat Handlers
     document.getElementById('chatSendBtn').addEventListener('click', sendChatMessage);
-    document.getElementById('chatInput').addEventListener('keypress', function(e) {
+    document.getElementById('chatInput').addEventListener('keypress', function (e) {
         if (e.key === 'Enter') {
+            e.preventDefault(); 
             sendChatMessage();
         }
     });
-    
+
+    // 5. Sync Overlay Control
     document.getElementById('forceSyncBtn').addEventListener('click', forcePlay);
     
-    // Initialize to the queue tab
+    // 6. Initial Tab Load
     switchTab('queue');
 }
 
-document.addEventListener('DOMContentLoaded', initializeAppListeners);
+// Execute the listener setup when the script loads
+initializeAppListeners();
