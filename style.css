@@ -26,11 +26,16 @@
 
 * { box-sizing: border-box; outline: none; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 10px; }
+/* --- COLORFUL SCROLLBARS --- */
+::-webkit-scrollbar { width: 10px; }
+::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); border-radius: 10px; }
 ::-webkit-scrollbar-thumb { 
-    background: linear-gradient(180deg, var(--primary), #7b1fa2); 
+    background: linear-gradient(180deg, #00d2ff, #928DAB, #f50057); 
     border-radius: 10px; 
+    border: 2px solid var(--bg-dark); /* Creates a floating effect */
+}
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #00C9FF, #92FE9D); 
 }
 
 body {
@@ -275,9 +280,13 @@ body {
     display: flex; align-items: center; gap: 20px; padding: 18px; /* More Space */
     background: rgba(255,255,255,0.05); 
     border-radius: 20px; 
-    margin-bottom: 15px; cursor: pointer; transition: 0.3s; position: relative;
+    margin-bottom: 15px; cursor: pointer; 
+    position: relative;
     border: 1px solid rgba(255,255,255,0.05);
     backdrop-filter: blur(10px);
+    
+    /* Animation for Dragging & Hover */
+    transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s, background 0.2s;
 }
 .song-item:hover { 
     background: rgba(255,255,255,0.12); 
@@ -285,6 +294,17 @@ body {
     border-color: rgba(255,255,255,0.3); 
     box-shadow: 0 10px 25px rgba(0,0,0,0.3);
 }
+
+/* Dragging State */
+.song-item.dragging {
+    opacity: 0.6;
+    background: var(--primary);
+    transform: scale(0.95);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+    border: 2px dashed rgba(255,255,255,0.5);
+    cursor: grabbing;
+}
+
 .song-item.playing { 
     background: linear-gradient(90deg, rgba(245, 0, 87, 0.25), rgba(245, 0, 87, 0.05));
     border: 1px solid var(--primary);
