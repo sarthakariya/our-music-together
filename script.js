@@ -30,8 +30,7 @@ function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
         height: '100%', width: '100%', videoId: '',
         playerVars: { 
-            'controls': 1, // ENABLED SEEK BAR
-            'disablekb': 0, 'rel': 0, 'modestbranding': 1, 'autoplay': 0, 'origin': window.location.origin 
+            'controls': 1, 'disablekb': 0, 'rel': 0, 'modestbranding': 1, 'autoplay': 0, 'origin': window.location.origin 
         },
         events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
     });
@@ -61,11 +60,19 @@ function onPlayerStateChange(event) {
     if (event.data === YT.PlayerState.PLAYING) {
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
         isManualAction = false;
+        document.getElementById('syncOverlay').classList.remove('active'); // Clear overlay if playing
     } else {
         btn.innerHTML = '<i class="fa-solid fa-play"></i>';
-        if ((event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.BUFFERING) && !isPartnerPlaying && !isManualAction && lastBroadcaster === myName) {
+        
+        // --- STRICT AD & BUFFERING LOGIC ---
+        // If state is BUFFERING (3) or PAUSED (2) and it wasn't a manual action or partner action:
+        if ((event.data === YT.PlayerState.BUFFERING || event.data === YT.PlayerState.PAUSED) 
+            && !isPartnerPlaying && !isManualAction && lastBroadcaster === myName) {
+            
+            // Broadcast a STALL event so the partner pauses
             broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
         }
+        
         if (event.data === YT.PlayerState.ENDED && !isPartnerPlaying) playNextSong();
     }
     updateSyncStatus();
@@ -98,7 +105,7 @@ function loadAndPlayVideo(videoId, title) {
     }
 }
 
-// --- QUEUE & DATA LISTENERS ---
+// --- QUEUE & DATA ---
 function loadInitialData() {
     queueRef.orderByChild('order').on('value', (snapshot) => {
         const data = snapshot.val();
@@ -125,7 +132,7 @@ function loadInitialData() {
         displayChatMessage(msg.user, msg.text, msg.timestamp);
     });
 }
-loadInitialData(); // Load immediately
+loadInitialData();
 
 function addToQueue(videoId, title, uploader, thumbnail) {
     const newKey = queueRef.push().key;
@@ -167,14 +174,14 @@ function playNextSong() {
     if (next) loadAndPlayVideo(next.videoId, next.title);
 }
 
-// --- RENDER & DRAG DROP ---
+// --- UI RENDER ---
 function renderQueue(queueArray, currentVideoId) {
     const list = document.getElementById('queue-list');
     list.innerHTML = '';
     document.getElementById('queue-count').textContent = queueArray.length;
 
     if (queueArray.length === 0) {
-        list.innerHTML = '<p style="text-align:center; padding:20px; color:var(--text-dim);">Queue is empty, my love.</p>';
+        list.innerHTML = '<p style="text-align:center; padding:20px; color:var(--text-dim); font-size:0.9rem;">The queue is empty. Start the party!</p>';
         return;
     }
 
@@ -186,10 +193,10 @@ function renderQueue(queueArray, currentVideoId) {
         item.onclick = () => loadAndPlayVideo(song.videoId, song.title);
         
         item.innerHTML = `
-            <span class="song-number">${index + 1}.</span>
+            <i class="fa-solid fa-grip-vertical grip-handle" title="Drag to move"></i>
             <img src="${song.thumbnail}" class="song-thumb">
             <div class="song-details"><h4>${song.title}</h4><p>${song.uploader}</p></div>
-            <button class="emoji-btn" style="font-size:0.9rem;" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
+            <button class="emoji-trigger" style="font-size:0.9rem; color: #ff4d4d;" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
         `;
         list.appendChild(item);
     });
@@ -227,25 +234,22 @@ function getDragAfterElement(container, y) {
     }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
-// --- SEARCH & LINKS (RESTORED PLAYLIST LOGIC) ---
+// --- SEARCH ---
 async function handleSearch() {
     const input = document.getElementById('searchInput');
     const query = input.value.trim();
     if (!query) return;
 
-    // 1. YouTube Playlist
     if (query.includes('list=')) {
         const listId = query.split('list=')[1].split('&')[0];
         fetchPlaylist(listId);
         input.value = ''; return;
     }
-    // 2. Spotify
     if (query.includes('spotify.com')) {
         fetchSpotifyData(query);
         input.value = ''; return;
     }
 
-    // 3. Regular Search
     switchTab('results');
     document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:20px;">Searching...</p>';
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
@@ -261,7 +265,7 @@ async function handleSearch() {
             div.innerHTML = `
                 <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
                 <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
-                <button class="emoji-btn" style="color:var(--primary);"><i class="fa-solid fa-plus"></i></button>
+                <button class="emoji-trigger" style="color:var(--primary); font-size:1.1rem;"><i class="fa-solid fa-plus"></i></button>
             `;
             div.onclick = () => addToQueue(item.id.videoId, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
             list.appendChild(div);
@@ -292,7 +296,7 @@ async function fetchSpotifyData(link) {
         const data = await res.json();
         if(data.tracks) {
             const songs = [];
-            for (const t of data.tracks.slice(0, 10)) { // Limit to 10 for API quota safety
+            for (const t of data.tracks.slice(0, 10)) { 
                 const sRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(t.artist + ' ' + t.title)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`);
                 const sData = await sRes.json();
                 if(sData.items.length) {
@@ -305,7 +309,7 @@ async function fetchSpotifyData(link) {
     } catch(e) { console.error(e); }
 }
 
-// --- CHAT & EMOJIS ---
+// --- CHAT ---
 function displayChatMessage(user, text, timestamp) {
     const box = document.getElementById('chat-messages');
     const isMe = user === myName;
@@ -316,16 +320,7 @@ function displayChatMessage(user, text, timestamp) {
     box.scrollTop = box.scrollHeight;
 }
 
-const emojis = ['❤️','💖','🌹','😘','🥰','✨','😍','💕','💍','🧸','🌙','🔥','😂','🥺','🦋','🎶','🥂','💯'];
-const picker = document.getElementById('emojiPicker');
-emojis.forEach(e => {
-    const s = document.createElement('div');
-    s.className = 'emoji-item'; s.textContent = e;
-    s.onclick = () => { document.getElementById('chatInput').value += e; picker.classList.remove('active'); }
-    picker.appendChild(s);
-});
-
-// --- EVENT LISTENERS ---
+// --- LISTENERS ---
 document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
 document.getElementById('prev-btn').addEventListener('click', () => {
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
@@ -340,11 +335,15 @@ document.getElementById('chatSendBtn').addEventListener('click', () => {
     const val = document.getElementById('chatInput').value.trim();
     if(val) { chatRef.push({ user: myName, text: val, timestamp: Date.now() }); document.getElementById('chatInput').value=''; }
 });
-document.getElementById('toggleEmojiBtn').addEventListener('click', () => picker.classList.toggle('active'));
+
+// NATIVE EMOJI TRIGGER
+document.getElementById('nativeEmojiBtn').addEventListener('click', () => {
+    document.getElementById('chatInput').focus();
+});
 
 document.getElementById('tab-queue').addEventListener('click', () => switchTab('queue'));
 document.getElementById('tab-results').addEventListener('click', () => switchTab('results'));
-document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear All?")) queueRef.remove(); });
+document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
 document.getElementById('forceSyncBtn').addEventListener('click', () => {
     document.getElementById('syncOverlay').classList.remove('active');
     player.playVideo(); broadcastState('play', player.getCurrentTime(), currentVideoId, false);
@@ -352,34 +351,40 @@ document.getElementById('forceSyncBtn').addEventListener('click', () => {
 document.getElementById('infoBtn').addEventListener('click', () => document.getElementById('infoOverlay').classList.add('active'));
 document.getElementById('closeInfoBtn').addEventListener('click', () => document.getElementById('infoOverlay').classList.remove('active'));
 
-// Helper
 function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
     document.getElementById('tab-'+tab).classList.add('active');
     document.getElementById('queue-list').style.display = tab==='queue'?'block':'none';
     document.getElementById('results-list').style.display = tab==='results'?'block':'none';
 }
+
 function broadcastState(action, time, videoId, isAdStall) {
     syncRef.set({ action, time, videoId, isAdStall, lastUpdater: myName, timestamp: Date.now() });
 }
+
 function applyRemoteCommand(state) {
     if (!player || !state.videoId) return;
     isPartnerPlaying = true;
+    
+    // Strict Stall Check
     if (state.isAdStall && state.action !== 'play') {
         document.getElementById('syncOverlay').classList.add('active');
-        document.getElementById('overlayText').textContent = `${partnerName} is waiting for an ad...`;
+        document.getElementById('overlayText').textContent = `${partnerName} is having connection issues or watching an Ad.`;
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
         return;
     }
+    
     document.getElementById('syncOverlay').classList.remove('active');
     if (state.videoId !== currentVideoId) loadAndPlayVideo(state.videoId, "Syncing...");
     else if (Math.abs(player.getCurrentTime() - state.time) > 2) player.seekTo(state.time, true);
+    
     if (state.action === 'play' && player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
     else if (state.action === 'pause' && player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
 }
+
 function updateSyncStatus() {
     const msg = document.getElementById('sync-status-msg');
     if (document.getElementById('syncOverlay').classList.contains('active')) msg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Stalled';
-    else if (player && player.getPlayerState() === YT.PlayerState.PLAYING) msg.innerHTML = `<i class="fa-solid fa-infinity"></i> Connected`;
+    else if (player && player.getPlayerState() === YT.PlayerState.PLAYING) msg.innerHTML = `<i class="fa-solid fa-wifi"></i> Synced`;
     else msg.innerHTML = `<i class="fa-solid fa-pause"></i> Paused`;
 }
