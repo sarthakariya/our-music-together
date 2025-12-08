@@ -18,16 +18,16 @@ const queueRef = db.ref('queue');
 const chatRef = db.ref('chat');
 
 let player, currentQueue = [], currentVideoId = null;
-let lastBroadcaster = "System"; // Tracks who performed the last action
+let lastBroadcaster = "System"; 
 let isPartnerPlaying = false;
 let isManualPause = false;
+let activeTab = 'queue'; // Default Tab
 
 let myName = localStorage.getItem('deepSpaceUserName');
 if (!myName) {
     myName = prompt("Enter your name (Sarthak or Reechita):") || "Guest";
     localStorage.setItem('deepSpaceUserName', myName);
 }
-// Normalize Name Capitalization
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
 
 const partnerName = (myName.toLowerCase().includes("sarthak")) ? "Reechita" : "Sarthak";
@@ -46,8 +46,6 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(85);
     setInterval(heartbeatSync, 1000);
-    
-    // Initial sync check
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
         if(state) applyRemoteCommand(state, true);
@@ -75,10 +73,18 @@ function onPlayerStateChange(event) {
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
         isManualPause = false;
         
-        if(!isPartnerPlaying) {
+        // AUTO-RESTART LOGIC (Ad Recovery)
+        // If we start playing from the beginning (e.g. Ad finished, or new song), enforce sync at 0.
+        // This ensures if partner was stuck waiting for Ad, they now jump to 0.
+        if (player.getCurrentTime() < 2) {
+             broadcastState('play', 0, currentVideoId);
+             lastBroadcaster = myName;
+        } 
+        else if(!isPartnerPlaying) {
             lastBroadcaster = myName;
             broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
+
     } else {
         btn.innerHTML = '<i class="fa-solid fa-play"></i>';
         
@@ -105,7 +111,6 @@ function togglePlayPause() {
     const btn = document.getElementById('play-pause-btn');
     const state = player.getPlayerState();
     
-    // When we toggle, WE become the broadcaster immediately
     lastBroadcaster = myName; 
     
     if (state === YT.PlayerState.PLAYING) {
@@ -143,7 +148,20 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0) {
     }
 }
 
-// --- QUEUE & DATA ---
+// --- TAB SYSTEM (Unified) ---
+function switchTab(tabName) {
+    activeTab = tabName;
+    
+    // Update Tab Buttons
+    document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('tab-btn-' + tabName).classList.add('active');
+    
+    // Update Content
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    document.getElementById('view-' + tabName).classList.add('active');
+}
+
+// --- DATA LISTENERS ---
 function loadInitialData() {
     queueRef.orderByChild('order').on('value', (snapshot) => {
         const data = snapshot.val();
@@ -157,9 +175,7 @@ function loadInitialData() {
     syncRef.on('value', (snapshot) => {
         const state = snapshot.val();
         if (state) {
-            // Update who touched it last
             lastBroadcaster = state.lastUpdater; 
-            
             if (state.lastUpdater !== myName) {
                 applyRemoteCommand(state);
             }
@@ -170,10 +186,16 @@ function loadInitialData() {
     chatRef.limitToLast(50).on('child_added', (snapshot) => {
         const msg = snapshot.val();
         displayChatMessage(msg.user, msg.text, msg.timestamp);
+        
+        // Chat Notification Logic
+        if (msg.user !== myName && activeTab !== 'chat') {
+            showToast(msg.user, msg.text);
+        }
     });
 }
 loadInitialData();
 
+// --- QUEUE LOGIC ---
 function addToQueue(videoId, title, uploader, thumbnail) {
     const newKey = queueRef.push().key;
     queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, addedBy: myName, order: Date.now() })
@@ -214,14 +236,15 @@ function playNextSong() {
     if (next) loadAndPlayVideo(next.videoId, next.title, next.uploader);
 }
 
-// --- UI RENDER ---
+// --- RENDER ---
 function renderQueue(queueArray, currentVideoId) {
     const list = document.getElementById('queue-list');
+    const badge = document.getElementById('queue-badge');
     list.innerHTML = '';
-    document.getElementById('queue-count').textContent = queueArray.length;
+    badge.textContent = queueArray.length;
 
     if (queueArray.length === 0) {
-        list.innerHTML = '<p style="text-align:center; padding:20px; color:#fff; font-size:1rem;">Queue is empty.</p>';
+        list.innerHTML = '<div class="empty-state">Your queue is empty. Add songs from Results!</div>';
         return;
     }
 
@@ -235,7 +258,6 @@ function renderQueue(queueArray, currentVideoId) {
         const subtitle = `Added by ${song.addedBy || 'System'}`;
         const number = index + 1;
         
-        // MOVED DRAG HANDLE TO THE LEFT
         item.innerHTML = `
             <i class="fa-solid fa-bars drag-handle" title="Drag to order"></i>
             <div class="song-index">${number}</div>
@@ -279,7 +301,7 @@ function getDragAfterElement(container, y) {
     }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
-// --- SEARCH ---
+// --- SEARCH & CHAT ---
 async function handleSearch() {
     const input = document.getElementById('searchInput');
     const query = input.value.trim();
@@ -296,7 +318,7 @@ async function handleSearch() {
     }
 
     switchTab('results');
-    document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:20px; color:white;">Searching...</p>';
+    document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
     
     try {
@@ -354,7 +376,6 @@ async function fetchSpotifyData(link) {
     } catch(e) { console.error(e); }
 }
 
-// --- CHAT ---
 function displayChatMessage(user, text, timestamp) {
     const box = document.getElementById('chat-messages');
     const isMe = user === myName;
@@ -364,6 +385,22 @@ function displayChatMessage(user, text, timestamp) {
     div.innerHTML = `<div class="msg-header">${user} <span style="font-size:0.85em;">${time}</span></div>${text}`;
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
+}
+
+function showToast(user, text) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `
+        <i class="fa-solid fa-comment-dots"></i>
+        <div class="toast-body">
+            <h4>${user}</h4>
+            <p>${text.substring(0, 30)}${text.length>30?'...':''}</p>
+        </div>
+    `;
+    toast.onclick = () => { switchTab('chat'); toast.remove(); };
+    container.appendChild(toast);
+    setTimeout(() => { toast.style.opacity='0'; setTimeout(()=>toast.remove(), 400); }, 4000);
 }
 
 document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
@@ -388,8 +425,6 @@ document.getElementById('nativeEmojiBtn').addEventListener('click', () => {
     document.getElementById('chatInput').focus();
 });
 
-document.getElementById('tab-queue').addEventListener('click', () => switchTab('queue'));
-document.getElementById('tab-results').addEventListener('click', () => switchTab('results'));
 document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
 document.getElementById('forceSyncBtn').addEventListener('click', () => {
     document.getElementById('syncOverlay').classList.remove('active');
@@ -397,13 +432,6 @@ document.getElementById('forceSyncBtn').addEventListener('click', () => {
 });
 document.getElementById('infoBtn').addEventListener('click', () => document.getElementById('infoOverlay').classList.add('active'));
 document.getElementById('closeInfoBtn').addEventListener('click', () => document.getElementById('infoOverlay').classList.remove('active'));
-
-function switchTab(tab) {
-    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-    document.getElementById('tab-'+tab).classList.add('active');
-    document.getElementById('queue-list').style.display = tab==='queue'?'block':'none';
-    document.getElementById('results-list').style.display = tab==='results'?'block':'none';
-}
 
 function broadcastState(action, time, videoId) {
     syncRef.set({ 
@@ -443,7 +471,8 @@ function applyRemoteCommand(state, initialLoad = false) {
         } 
         else if (state.action === 'play') {
             const timeDiff = Math.abs(player.getCurrentTime() - state.time);
-            if (timeDiff > 1.5) player.seekTo(state.time, true);
+            // If significant diff OR starting from 0 (restart), seek
+            if (timeDiff > 1.5 || state.time === 0) player.seekTo(state.time, true);
             if (playerState !== YT.PlayerState.PLAYING) player.playVideo();
         }
     }
@@ -460,7 +489,6 @@ function updateSyncStatus() {
         msg.style.color = "#000";
     } else {
         if (!msg.innerHTML.includes("Ad")) {
-            // Determine who paused it based on lastBroadcaster
             const pausedBy = (lastBroadcaster === myName) ? "You" : lastBroadcaster;
             const displayText = (lastBroadcaster === "System") ? "Paused" : `Paused by ${pausedBy}`;
             
