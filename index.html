@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Our Heart's Rhythm | Sarthak ♥️ Reechita</title>
+    <title>Sarthak's ❤️ Reechita's Heart's Rhythm</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- Added 'Play' font as requested -->
-    <link href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Imported Luxury Fonts: Cinzel (Headers) and Quicksand (Body/Elegant) -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;800&family=Quicksand:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -25,7 +25,7 @@
         
         <div class="top-bar glass-panel">
             <div class="logo">
-                <h1>Sarthak <i class="fa-solid fa-heart pulse"></i> Reechita</h1>
+                <h1>Sarthak's ❤️ Reechita's Heart's Rhythm</h1>
             </div>
             <button class="info-btn" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
         </div>
@@ -39,13 +39,16 @@
                 </div>
 
                 <div class="song-info-container">
-                    <div class="sync-status" id="sync-status-msg">
-                        <i class="fa-solid fa-link"></i> Waiting for connection...
+                    <!-- 3D Yellow Sync Status Button -->
+                    <div class="sync-badge-container">
+                        <div class="sync-status-3d" id="sync-status-msg">
+                            <i class="fa-solid fa-link"></i> Connecting...
+                        </div>
                     </div>
-                    <!-- Updated structure for Title and Artist -->
+                    
                     <div class="track-details">
-                        <div class="song-title truncate-text" id="current-song-title">Our Heart's Rhythm</div>
-                        <div class="artist-name truncate-text" id="current-song-artist">Select a song to start</div>
+                        <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
+                        <div class="artist-name truncate-text" id="current-song-artist">Choose a song</div>
                     </div>
                 </div>
 
@@ -67,13 +70,15 @@
                 
                 <div class="panel-container library-panel active" id="view-library">
                     <div class="header-row">
-                        <span class="section-title">Playlist</span>
-                        <button class="clear-btn btn-3d" id="clearQueueBtn">Clear</button>
+                        <span class="section-title">Your Playlist</span>
+                        <button class="clear-btn btn-3d" id="clearQueueBtn">Clear All</button>
                     </div>
 
-                    <div class="search-box">
-                        <input type="text" id="searchInput" placeholder="Search or paste Playlist/Spotify link...">
-                        <button class="search-submit btn-3d" id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
+                    <div class="search-wrapper">
+                        <div class="search-box-elegant">
+                            <input type="text" id="searchInput" placeholder="Search songs or paste link...">
+                            <button class="search-submit" id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
+                        </div>
                     </div>
 
                     <div class="tabs">
@@ -89,14 +94,14 @@
 
                 <div class="panel-container chat-panel" id="view-chat">
                     <div class="header-row">
-                        <span class="section-title">Messages</span>
+                        <span class="section-title">Private Chat</span>
                     </div>
                     
                     <div class="chat-messages" id="chat-messages"></div>
 
                     <div class="chat-input-area">
                         <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
-                        <input type="text" class="chat-input" id="chatInput" placeholder="Type something sweet...">
+                        <input type="text" class="chat-input" id="chatInput" placeholder="Write a note...">
                         <button class="send-btn btn-3d" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
                     </div>
                 </div>
@@ -111,34 +116,42 @@
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
             <h2>Our Heart's Rhythm</h2>
             <div class="guide-content">
-                <p class="guide-intro">A dedicated space for <strong>Sarthak</strong> & <strong>Reechita</strong> to share music, moments, and rhythm, no matter the distance.</p>
+                <p class="guide-intro">A sanctuary where music bridges the distance between hearts.</p>
                 
                 <div class="guide-item">
-                    <i class="fa-solid fa-heart-pulse"></i>
+                    <i class="fa-solid fa-infinity"></i>
                     <div>
-                        <strong>Heartbeat Sync</strong>
-                        <p>When one pauses, the other pauses. When one plays, we resume together at the exact same second.</p>
+                        <strong>Always Connected</strong>
+                        <p>Whether you are miles apart or side by side, the music plays in perfect unison. When one pauses, the world stops for both.</p>
                     </div>
                 </div>
 
                 <div class="guide-item">
                     <i class="fa-solid fa-wand-magic-sparkles"></i>
                     <div>
-                        <strong>Magic Features</strong>
-                        <p>Drag songs to reorder the queue. Import entire playlists from YouTube or Spotify links.</p>
+                        <strong>Seamless Control</strong>
+                        <p>Search for any song, drag to reorder your queue, or import your favorite playlists directly.</p>
                     </div>
                 </div>
 
                 <div class="guide-item">
-                    <i class="fa-solid fa-laptop"></i>
+                    <i class="fa-solid fa-comment-heart"></i>
                     <div>
-                        <strong>Laptop Friendly</strong>
-                        <p>Optimized for laptop screens. Scroll naturally and enjoy the view.</p>
+                        <strong>Whispers</strong>
+                        <p>Use the Private Chat to send messages that only the two of you can see.</p>
+                    </div>
+                </div>
+                
+                <div class="guide-item">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <div>
+                        <strong>Sync Status</strong>
+                        <p>Look for the yellow badge. When it says "Heartbeat Synced", you are listening to the same beat at the same second.</p>
                     </div>
                 </div>
 
                 <div class="guide-footer">
-                    Created with love. Enjoy the vibes! 🎶
+                    Sarthak ❤️ Reechita
                 </div>
             </div>
         </div>
@@ -148,9 +161,9 @@
     <div class="overlay" id="syncOverlay">
         <div class="modal-card" style="text-align: center;">
             <h2>Sync Paused</h2>
-            <p id="overlayText" style="color:var(--text-dim); margin-bottom:20px;">Re-establishing connection with partner...</p>
-            <div style="margin:0 auto 20px; width:40px; height:40px; border:4px solid rgba(255,255,255,0.1); border-top:4px solid var(--primary); border-radius:50%; animation: spin 1s infinite linear;"></div>
-            <button class="clear-btn btn-3d" style="width:auto; padding:10px 25px;" id="forceSyncBtn">Force Resume</button>
+            <p id="overlayText" style="color:var(--text-dim); margin-bottom:20px;">Waiting for partner...</p>
+            <div style="margin:0 auto 20px; width:40px; height:40px; border:4px solid rgba(255,215,0,0.2); border-top:4px solid var(--gold); border-radius:50%; animation: spin 1s infinite linear;"></div>
+            <button class="clear-btn btn-3d" style="width:auto; padding:10px 25px; background:var(--gold); color:#000; border-bottom-color:#b29700;" id="forceSyncBtn">Resume</button>
         </div>
     </div>
 
