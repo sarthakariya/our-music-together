@@ -20,13 +20,16 @@ const chatRef = db.ref('chat');
 let player, currentQueue = [], currentVideoId = null, currentArtist = "";
 let lastBroadcaster = "System";
 let isPartnerPlaying = false;
-let ignoreNextSeek = false; // Flag to prevent feedback loops
+let ignoreNextSeek = false; 
 
 let myName = localStorage.getItem('deepSpaceUserName');
 if (!myName) {
     myName = prompt("Enter your name (Sarthak or Reechita):") || "Guest";
     localStorage.setItem('deepSpaceUserName', myName);
 }
+// Normalize Name Capitalization
+myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
+
 const partnerName = (myName.toLowerCase().includes("sarthak")) ? "Reechita" : "Sarthak";
 
 // --- YOUTUBE PLAYER ---
@@ -67,7 +70,6 @@ function onPlayerStateChange(event) {
 
     if (state === YT.PlayerState.PLAYING) {
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-        // IMMEDIATELY broadcast play with timestamp
         if (lastBroadcaster === myName || lastBroadcaster === 'System') {
             broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
@@ -75,7 +77,6 @@ function onPlayerStateChange(event) {
         btn.innerHTML = '<i class="fa-solid fa-play"></i>';
         
         if (state === YT.PlayerState.PAUSED) {
-            // IMMEDIATELY broadcast pause
             if (!isPartnerPlaying && lastBroadcaster === myName) {
                 broadcastState('pause', player.getCurrentTime(), currentVideoId);
             }
@@ -92,7 +93,6 @@ function togglePlayPause() {
     if (!player) return;
     const state = player.getPlayerState();
     
-    // Explicit manual action sets me as broadcaster
     lastBroadcaster = myName; 
     
     if (state === YT.PlayerState.PLAYING) {
@@ -108,18 +108,39 @@ function togglePlayPause() {
     }
 }
 
+// --- INTELLIGENT ARTIST EXTRACTION ---
+function getBetterArtistName(title, channel) {
+    // Try to split "Artist - Title" format
+    if (title.includes('-')) {
+        const parts = title.split('-');
+        // Assume first part is artist if it's reasonably short
+        if (parts[0].length < 30) {
+            return parts[0].trim();
+        }
+    }
+    // Try to split "Artist : Title" format
+    if (title.includes(':')) {
+        const parts = title.split(':');
+        if (parts[0].length < 30) {
+            return parts[0].trim();
+        }
+    }
+    // Fallback to channel title, but clean it up (remove VEVO, etc)
+    return channel.replace('VEVO', '').replace('Official', '').trim();
+}
+
 function loadAndPlayVideo(videoId, title, uploader) {
     if (player && videoId) {
-        lastBroadcaster = myName; // Assuming I loaded it
+        lastBroadcaster = myName; 
         player.loadVideoById(videoId);
         currentVideoId = videoId;
-        currentArtist = uploader;
         
-        // Update Info Display
+        // Use intelligent extraction
+        const displayArtist = getBetterArtistName(title, uploader);
+        
         document.getElementById('current-song-title').textContent = title;
-        document.getElementById('current-song-artist').textContent = uploader || "Unknown Artist";
+        document.getElementById('current-song-artist').textContent = displayArtist;
         
-        // Broadcast new song start
         setTimeout(() => { 
             broadcastState('play', 0, videoId); 
         }, 800);
@@ -142,10 +163,7 @@ function loadInitialData() {
     syncRef.on('value', (snapshot) => {
         const state = snapshot.val();
         if (state) {
-            // Update UI regarding who is broadcasting
             lastBroadcaster = state.lastUpdater;
-            
-            // Only apply changes if they come from the PARTNER
             if (state.lastUpdater !== myName) {
                 applyRemoteCommand(state);
             }
@@ -162,6 +180,7 @@ loadInitialData();
 
 function addToQueue(videoId, title, uploader, thumbnail) {
     const newKey = queueRef.push().key;
+    // We store the raw uploader (Channel Title) here, parsing happens on display
     queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, order: Date.now() })
         .then(() => {
             switchTab('queue');
@@ -218,11 +237,14 @@ function renderQueue(queueArray, currentVideoId) {
         item.dataset.key = song.key;
         item.onclick = () => loadAndPlayVideo(song.videoId, song.title, song.uploader);
         
+        // Extract artist for list view too
+        const artist = getBetterArtistName(song.title, song.uploader);
+        
         item.innerHTML = `
             <i class="fa-solid fa-grip-vertical grip-handle" title="Drag to move"></i>
             <img src="${song.thumbnail}" class="song-thumb">
-            <div class="song-details"><h4>${song.title}</h4><p>${song.uploader}</p></div>
-            <button class="emoji-trigger" style="font-size:0.9rem; color: #ff4d4d;" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
+            <div class="song-details"><h4>${song.title}</h4><p>${artist}</p></div>
+            <button class="emoji-trigger" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
         `;
         list.appendChild(item);
     });
@@ -291,7 +313,7 @@ async function handleSearch() {
             div.innerHTML = `
                 <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
                 <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
-                <button class="emoji-trigger" style="color:var(--primary); font-size:1.1rem;"><i class="fa-solid fa-plus"></i></button>
+                <button class="emoji-trigger" style="color:var(--gold); font-size:1.1rem;"><i class="fa-solid fa-plus"></i></button>
             `;
             div.onclick = () => addToQueue(item.id.videoId, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
             list.appendChild(div);
@@ -341,14 +363,12 @@ function displayChatMessage(user, text, timestamp) {
     const isMe = user === myName;
     const div = document.createElement('div');
     div.className = `message ${isMe ? 'me' : 'partner'}`;
-    // Formatting timestamp
     const time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     div.innerHTML = `<div class="msg-header">${user} <span style="font-size:0.6em; opacity:0.6; float:right; margin-top:3px;">${time}</span></div>${text}`;
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
 
-// --- LISTENERS ---
 document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
 document.getElementById('prev-btn').addEventListener('click', () => {
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
@@ -367,7 +387,6 @@ document.getElementById('chatInput').addEventListener('keypress', (e) => {
     if(e.key === 'Enter') document.getElementById('chatSendBtn').click();
 });
 
-// NATIVE EMOJI TRIGGER
 document.getElementById('nativeEmojiBtn').addEventListener('click', () => {
     document.getElementById('chatInput').focus();
 });
@@ -390,7 +409,6 @@ function switchTab(tab) {
 }
 
 function broadcastState(action, time, videoId) {
-    // Basic debounce could go here, but for "immediate" stop we send directly
     syncRef.set({ 
         action, 
         time, 
@@ -403,22 +421,18 @@ function broadcastState(action, time, videoId) {
 function applyRemoteCommand(state) {
     if (!player || !state.videoId) return;
     
-    // Remote is acting, so I am just listening
     isPartnerPlaying = true;
     
     document.getElementById('syncOverlay').classList.remove('active');
 
-    // 1. Check Video Match
     if (state.videoId !== currentVideoId) {
-        // Need to find the song title/artist from queue to display correctly
         const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
         const title = songInQueue ? songInQueue.title : "Syncing Song...";
         const uploader = songInQueue ? songInQueue.uploader : "";
         loadAndPlayVideo(state.videoId, title, uploader);
-        return; // loadAndPlay will handle the play state
+        return; 
     }
 
-    // 2. Check Play/Pause State
     const playerState = player.getPlayerState();
     
     if (state.action === 'pause') {
@@ -426,7 +440,6 @@ function applyRemoteCommand(state) {
             player.pauseVideo();
         }
     } else if (state.action === 'play') {
-        // Sync Time: If difference is > 1.5 seconds, seek.
         const timeDiff = Math.abs(player.getCurrentTime() - state.time);
         if (timeDiff > 1.5) {
             player.seekTo(state.time, true);
@@ -437,22 +450,19 @@ function applyRemoteCommand(state) {
         }
     }
     
-    // Reset listener flag after a short delay
     setTimeout(() => { isPartnerPlaying = false; }, 500);
 }
 
 function updateSyncStatus() {
     const msg = document.getElementById('sync-status-msg');
-    const container = document.getElementById('syncOverlay');
-    
-    // Only show "Stalled" if explicitly triggered by logic (removed for now to prioritize smooth flow)
-    // keeping "Paused" or "Synced"
     
     if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
         msg.innerHTML = `<i class="fa-solid fa-heart-pulse"></i> Heartbeat Synced`;
-        msg.style.color = "#fff9c4"; // Light Yellow
+        msg.style.background = "#ffd700"; // Gold
+        msg.style.color = "#000";
     } else {
         msg.innerHTML = `<i class="fa-solid fa-pause"></i> Paused`;
-        msg.style.color = "#ff85c0"; // Pink soft
+        msg.style.background = "#444";
+        msg.style.color = "#fff";
     }
 }
