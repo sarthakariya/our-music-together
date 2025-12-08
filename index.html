@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sarthak's ❤️ Reechita's Heart's Rhythm</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- Imported Professional Fonts: Roboto (YouTube), Inter (Instagram/UI), Montserrat (Headers) -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800&family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     
@@ -38,14 +37,12 @@
                     <div id="player"></div>
                 </div>
 
-                <!-- Reordered: Title First, then Status, then Controls -->
                 <div class="song-info-container">
                     <div class="track-details">
                         <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
                         <div class="artist-name truncate-text" id="current-song-artist">Choose a song</div>
                     </div>
 
-                    <!-- 3D Yellow Sync Status Button -->
                     <div class="sync-badge-container">
                         <div class="sync-status-3d" id="sync-status-msg">
                             <i class="fa-solid fa-link"></i> Connecting...
@@ -60,56 +57,64 @@
                 </div>
             </div>
 
-            <!-- Mobile Navigation -->
-            <div class="mobile-nav">
-                <button class="nav-btn active" onclick="switchMobileView('library')"><i class="fa-solid fa-music"></i> Queue</button>
-                <button class="nav-btn" onclick="switchMobileView('chat')"><i class="fa-solid fa-comments"></i> Chat</button>
-            </div>
-
-            <!-- Right Side: Sidebar -->
-            <div class="sidebar">
+            <!-- Right Side: Unified Sidebar with 3 Tabs -->
+            <div class="sidebar glass-panel">
                 
-                <div class="panel-container library-panel active" id="view-library">
-                    <div class="header-row">
-                        <span class="section-title">Our Playlist</span>
-                        <button class="clear-btn btn-3d" id="clearQueueBtn">Clear All</button>
+                <!-- Unified Navigation Tabs -->
+                <div class="sidebar-tabs">
+                    <button class="nav-tab active" id="tab-btn-queue" onclick="switchTab('queue')">
+                        <i class="fa-solid fa-list-ol"></i> Queue <span id="queue-badge" class="badge">0</span>
+                    </button>
+                    <button class="nav-tab" id="tab-btn-results" onclick="switchTab('results')">
+                        <i class="fa-solid fa-magnifying-glass"></i> Results
+                    </button>
+                    <button class="nav-tab" id="tab-btn-chat" onclick="switchTab('chat')">
+                        <i class="fa-solid fa-comments"></i> Chat
+                    </button>
+                </div>
+
+                <!-- Content Area -->
+                <div class="sidebar-content">
+                    
+                    <!-- View: Queue -->
+                    <div id="view-queue" class="tab-content active">
+                        <div class="action-row">
+                             <h3 class="view-title">Up Next</h3>
+                             <button class="clear-btn btn-3d" id="clearQueueBtn">Clear All</button>
+                        </div>
+                        <div class="list-content" id="queue-list"></div>
                     </div>
 
-                    <div class="search-wrapper">
-                        <div class="search-box-elegant">
-                            <input type="text" id="searchInput" placeholder="Search song or paste YouTube/Spotify link...">
-                            <button class="search-submit" id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
+                    <!-- View: Results (Search) -->
+                    <div id="view-results" class="tab-content">
+                        <div class="search-wrapper">
+                            <div class="search-box-elegant">
+                                <input type="text" id="searchInput" placeholder="Search YouTube or paste Link...">
+                                <button class="search-submit" id="search-btn"><i class="fa-solid fa-arrow-right"></i></button>
+                            </div>
+                        </div>
+                        <div class="list-content" id="results-list">
+                            <div class="empty-state">Search for songs to add them here.</div>
                         </div>
                     </div>
 
-                    <div class="tabs">
-                        <button class="tab active" id="tab-queue">Queue (<span id="queue-count">0</span>)</button>
-                        <button class="tab" id="tab-results">Results</button>
+                    <!-- View: Chat -->
+                    <div id="view-chat" class="tab-content chat-layout">
+                        <div class="chat-messages" id="chat-messages"></div>
+                        <div class="chat-input-area">
+                            <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
+                            <input type="text" class="chat-input" id="chatInput" placeholder="Message...">
+                            <button class="send-btn btn-3d" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+                        </div>
                     </div>
 
-                    <div class="list-content active" id="queue-list">
-                        <!-- Queue Items Injected Here -->
-                    </div>
-                    <div class="list-content" id="results-list" style="display: none;"></div>
                 </div>
-
-                <div class="panel-container chat-panel" id="view-chat">
-                    <div class="header-row">
-                        <span class="section-title">Private Chat</span>
-                    </div>
-                    
-                    <div class="chat-messages" id="chat-messages"></div>
-
-                    <div class="chat-input-area">
-                        <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
-                        <input type="text" class="chat-input" id="chatInput" placeholder="Message...">
-                        <button class="send-btn btn-3d" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
-                    </div>
-                </div>
-
             </div>
         </div>
     </div>
+
+    <!-- Notification Toast -->
+    <div id="toast-container"></div>
 
     <!-- Info Overlay -->
     <div class="overlay" id="infoOverlay">
@@ -118,34 +123,9 @@
             <h2>Our Heart's Rhythm</h2>
             <div class="guide-content">
                 <p class="guide-intro">A sanctuary where music bridges the distance between hearts.</p>
-                
-                <div class="guide-item">
-                    <i class="fa-solid fa-infinity"></i>
-                    <div>
-                        <strong>Always Connected</strong>
-                        <p>Whether you are miles apart or side by side, the music plays in perfect unison. When one pauses, the world stops for both.</p>
-                    </div>
-                </div>
-
-                <div class="guide-item">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i>
-                    <div>
-                        <strong>Seamless Control</strong>
-                        <p>Search for any song, drag to reorder your queue, or import your favorite playlists directly from YouTube or Spotify.</p>
-                    </div>
-                </div>
-
-                <div class="guide-item">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                    <div>
-                        <strong>Ad Protection</strong>
-                        <p>If one partner experiences an ad, the system will notify the other to wait. We stay in sync, always.</p>
-                    </div>
-                </div>
-                
-                <div class="guide-footer">
-                    Sarthak ❤️ Reechita
-                </div>
+                <div class="guide-item"><i class="fa-solid fa-infinity"></i><div><strong>Always Connected</strong><p>When one pauses, the world stops for both.</p></div></div>
+                <div class="guide-item"><i class="fa-solid fa-wand-magic-sparkles"></i><div><strong>Seamless Control</strong><p>Search, Drag & Drop Queue, Auto-Sync.</p></div></div>
+                <div class="guide-footer">Sarthak ❤️ Reechita</div>
             </div>
         </div>
     </div>
@@ -161,23 +141,5 @@
     </div>
 
     <script src="script.js"></script>
-    <script>
-        // Mobile View Switcher
-        function switchMobileView(view) {
-            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.panel-container').forEach(panel => {
-                panel.classList.remove('active'); 
-                if(window.innerWidth <= 1000) panel.style.display = 'none';
-            });
-            const btnIndex = view === 'library' ? 0 : 1;
-            document.querySelectorAll('.nav-btn')[btnIndex].classList.add('active');
-            const panel = document.getElementById('view-' + view);
-            panel.classList.add('active');
-            if(window.innerWidth <= 1000) panel.style.display = 'flex';
-        }
-        window.addEventListener('resize', () => {
-            if(window.innerWidth > 1000) document.querySelectorAll('.panel-container').forEach(p => p.style.display = 'flex');
-        });
-    </script>
 </body>
 </html>
