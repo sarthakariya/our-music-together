@@ -2,61 +2,144 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sarthak & Reechita | Heart's Rhythm</title>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Tailwind Configuration -->
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              primary: '#ff0a78',
-              'primary-soft': '#ff85c0',
-              'bg-dark': '#05020a',
-              'glass-bg': 'rgba(255, 255, 255, 0.05)',
-            },
-            fontFamily: {
-              sans: ['Montserrat', 'sans-serif'],
-              cursive: ['Dancing Script', 'cursive'],
-            }
-          }
-        }
-      }
-    </script>
-
-    <!-- FontAwesome & Google Fonts -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Custom CSS -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sarthak's ❤️ Reechita's Heart's Rhythm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800&family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-
-    <!-- Babel for JSX -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <!-- Import Map for Modules -->
-    <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.2.0",
-    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-    "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
-    "firebase/database": "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
-    "react/": "https://aistudiocdn.com/react@^19.2.1/",
-    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/"
-  }
-}
-</script>
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
 </head>
-<body class="bg-[#05020a] text-white overflow-hidden h-screen w-screen relative">
-    <div id="root"></div>
+<body>
 
-    <!-- Main Script (Babel + Module) -->
-    <script type="text/babel" data-type="module" src="script.js"></script>
+    <div class="liquid-container">
+        <div class="liquid-blob blob-1"></div>
+        <div class="liquid-blob blob-2"></div>
+        <div class="liquid-blob blob-3"></div>
+    </div>
+
+    <div class="app-container">
+        
+        <div class="top-bar glass-panel">
+            <div class="logo">
+                <h1>Sarthak's ❤️ Reechita's Heart's Rhythm</h1>
+            </div>
+            <button class="info-btn" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
+        </div>
+
+        <div class="main-layout">
+            
+            <!-- Left Side: Player -->
+            <div class="player-card glass-panel">
+                <div class="video-wrapper">
+                    <div id="player"></div>
+                </div>
+
+                <div class="song-info-container">
+                    <div class="track-details">
+                        <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
+                        <div class="artist-name truncate-text" id="current-song-artist">Choose a song</div>
+                    </div>
+
+                    <div class="sync-badge-container">
+                        <div class="sync-status-3d" id="sync-status-msg">
+                            <i class="fa-solid fa-link"></i> Connecting...
+                        </div>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button class="ctrl-btn small btn-3d" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
+                    <button class="ctrl-btn play btn-3d" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
+                    <button class="ctrl-btn small btn-3d" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
+                </div>
+            </div>
+
+            <!-- Right Side: Unified Sidebar with 3 Tabs -->
+            <div class="sidebar glass-panel">
+                
+                <!-- Unified Navigation Tabs -->
+                <div class="sidebar-tabs">
+                    <button class="nav-tab active" id="tab-btn-queue" onclick="switchTab('queue')">
+                        <i class="fa-solid fa-list-ol"></i> Queue <span id="queue-badge" class="badge">0</span>
+                    </button>
+                    <button class="nav-tab" id="tab-btn-results" onclick="switchTab('results')">
+                        <i class="fa-solid fa-magnifying-glass"></i> Results
+                    </button>
+                    <button class="nav-tab" id="tab-btn-chat" onclick="switchTab('chat')">
+                        <i class="fa-solid fa-comments"></i> Chat
+                    </button>
+                </div>
+
+                <!-- Content Area -->
+                <div class="sidebar-content">
+                    
+                    <!-- View: Queue -->
+                    <div id="view-queue" class="tab-content active">
+                        <div class="action-row">
+                             <h3 class="view-title">Up Next</h3>
+                             <button class="clear-btn btn-3d" id="clearQueueBtn">Clear All</button>
+                        </div>
+                        <div class="list-content" id="queue-list"></div>
+                    </div>
+
+                    <!-- View: Results (Search) -->
+                    <div id="view-results" class="tab-content">
+                        <div class="search-wrapper">
+                            <div class="search-box-elegant">
+                                <input type="text" id="searchInput" placeholder="Search YouTube or paste Link...">
+                                <button class="search-submit" id="search-btn"><i class="fa-solid fa-arrow-right"></i></button>
+                            </div>
+                        </div>
+                        <div class="list-content" id="results-list">
+                            <div class="empty-state">Search for songs to add them here.</div>
+                        </div>
+                    </div>
+
+                    <!-- View: Chat -->
+                    <div id="view-chat" class="tab-content chat-layout">
+                        <div class="chat-messages" id="chat-messages"></div>
+                        <div class="chat-input-area">
+                            <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
+                            <input type="text" class="chat-input" id="chatInput" placeholder="Message...">
+                            <button class="send-btn btn-3d" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast-container"></div>
+
+    <!-- Info Overlay -->
+    <div class="overlay" id="infoOverlay">
+        <div class="modal-card">
+            <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
+            <h2>Our Heart's Rhythm</h2>
+            <div class="guide-content">
+                <p class="guide-intro">A sanctuary where music bridges the distance between hearts.</p>
+                <div class="guide-item"><i class="fa-solid fa-infinity"></i><div><strong>Always Connected</strong><p>When one pauses, the world stops for both.</p></div></div>
+                <div class="guide-item"><i class="fa-solid fa-wand-magic-sparkles"></i><div><strong>Seamless Control</strong><p>Search, Drag & Drop Queue, Auto-Sync.</p></div></div>
+                <div class="guide-footer">Sarthak ❤️ Reechita</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sync Stalled Overlay -->
+    <div class="overlay" id="syncOverlay">
+        <div class="modal-card" style="text-align: center;">
+            <h2>Sync Paused</h2>
+            <p id="overlayText" style="color:var(--text-dim); margin-bottom:20px;">Waiting for partner...</p>
+            <div style="margin:0 auto 20px; width:40px; height:40px; border:4px solid rgba(255,215,0,0.2); border-top:4px solid var(--gold); border-radius:50%; animation: spin 1s infinite linear;"></div>
+            <button class="clear-btn btn-3d" style="width:auto; padding:10px 25px; background:var(--gold); color:#000; border-bottom-color:#b29700;" id="forceSyncBtn">Resume</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
 </body>
 </html>
