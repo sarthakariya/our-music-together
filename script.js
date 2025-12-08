@@ -18,10 +18,9 @@ const queueRef = db.ref('queue');
 const chatRef = db.ref('chat');
 
 let player, currentQueue = [], currentVideoId = null;
-let lastBroadcaster = "System";
+let lastBroadcaster = "System"; // Tracks who performed the last action
 let isPartnerPlaying = false;
 let isManualPause = false;
-let hasInitialSyncHappened = false;
 
 let myName = localStorage.getItem('deepSpaceUserName');
 if (!myName) {
@@ -46,10 +45,9 @@ function onYouTubeIframeAPIReady() {
 
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(85);
-    // Start heartbeat
     setInterval(heartbeatSync, 1000);
     
-    // Trigger an initial sync check in case partner is already playing
+    // Initial sync check
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
         if(state) applyRemoteCommand(state, true);
@@ -57,7 +55,6 @@ function onPlayerReady(event) {
 }
 
 function heartbeatSync() {
-    // Only broadcast if WE are the ones playing/controlling
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName) {
         const state = player.getPlayerState();
         if (state === YT.PlayerState.PLAYING) {
@@ -78,7 +75,6 @@ function onPlayerStateChange(event) {
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
         isManualPause = false;
         
-        // If we started playing, we become the broadcaster
         if(!isPartnerPlaying) {
             lastBroadcaster = myName;
             broadcastState('play', player.getCurrentTime(), currentVideoId);
@@ -87,7 +83,6 @@ function onPlayerStateChange(event) {
         btn.innerHTML = '<i class="fa-solid fa-play"></i>';
         
         if (state === YT.PlayerState.PAUSED) {
-            // Only broadcast pause if we initiated it (not a remote command)
             if (!isPartnerPlaying && lastBroadcaster === myName) {
                 if (isManualPause) {
                     broadcastState('pause', player.getCurrentTime(), currentVideoId);
@@ -110,6 +105,7 @@ function togglePlayPause() {
     const btn = document.getElementById('play-pause-btn');
     const state = player.getPlayerState();
     
+    // When we toggle, WE become the broadcaster immediately
     lastBroadcaster = myName; 
     
     if (state === YT.PlayerState.PLAYING) {
@@ -131,7 +127,6 @@ function togglePlayPause() {
 // --- HELPER FUNCTIONS ---
 function loadAndPlayVideo(videoId, title, uploader, startTime = 0) {
     if (player && videoId) {
-        // If the same video is already loaded, just seek
         if(currentVideoId === videoId && player.cueVideoById) {
              if(Math.abs(player.getCurrentTime() - startTime) > 2) player.seekTo(startTime, true);
              player.playVideo();
@@ -162,9 +157,10 @@ function loadInitialData() {
     syncRef.on('value', (snapshot) => {
         const state = snapshot.val();
         if (state) {
-            // Check if this update comes from the partner
+            // Update who touched it last
+            lastBroadcaster = state.lastUpdater; 
+            
             if (state.lastUpdater !== myName) {
-                lastBroadcaster = state.lastUpdater;
                 applyRemoteCommand(state);
             }
         }
@@ -225,7 +221,7 @@ function renderQueue(queueArray, currentVideoId) {
     document.getElementById('queue-count').textContent = queueArray.length;
 
     if (queueArray.length === 0) {
-        list.innerHTML = '<p style="text-align:center; padding:20px; color:var(--text-dim); font-size:0.9rem;">Queue is empty.</p>';
+        list.innerHTML = '<p style="text-align:center; padding:20px; color:#fff; font-size:1rem;">Queue is empty.</p>';
         return;
     }
 
@@ -239,12 +235,12 @@ function renderQueue(queueArray, currentVideoId) {
         const subtitle = `Added by ${song.addedBy || 'System'}`;
         const number = index + 1;
         
-        // Added Number and Drag Handle
+        // MOVED DRAG HANDLE TO THE LEFT
         item.innerHTML = `
+            <i class="fa-solid fa-bars drag-handle" title="Drag to order"></i>
             <div class="song-index">${number}</div>
             <img src="${song.thumbnail}" class="song-thumb">
             <div class="song-details"><h4>${song.title}</h4><p>${subtitle}</p></div>
-            <i class="fa-solid fa-bars drag-handle" title="Drag to order"></i>
             <button class="emoji-trigger" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
         `;
         list.appendChild(item);
@@ -300,7 +296,7 @@ async function handleSearch() {
     }
 
     switchTab('results');
-    document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:20px;">Searching...</p>';
+    document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:20px; color:white;">Searching...</p>';
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
     
     try {
@@ -422,25 +418,17 @@ function broadcastState(action, time, videoId) {
 function applyRemoteCommand(state, initialLoad = false) {
     if (!player) return;
     
-    // Set flag that partner is manipulating playback
     isPartnerPlaying = true;
     document.getElementById('syncOverlay').classList.remove('active');
 
-    // Case 1: Video Changed
     if (state.videoId !== currentVideoId) {
-        // Find song info if available in queue
         const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
         const title = songInQueue ? songInQueue.title : "Syncing Song...";
         const uploader = songInQueue ? songInQueue.uploader : "";
-        
         loadAndPlayVideo(state.videoId, title, uploader, state.time);
         
-        // If the state is PLAY, ensure we play
-        if(state.action === 'play') {
-            player.playVideo();
-        }
+        if(state.action === 'play') player.playVideo();
     } 
-    // Case 2: Same Video, Sync State
     else {
         const playerState = player.getPlayerState();
         
@@ -448,27 +436,18 @@ function applyRemoteCommand(state, initialLoad = false) {
             if (playerState !== YT.PlayerState.PAUSED) player.pauseVideo();
         } 
         else if (state.action === 'ad_pause') {
-            // Partner ad logic...
             const msg = document.getElementById('sync-status-msg');
             msg.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Partner has Ad`;
             msg.style.background = "#ff9800"; 
             if (playerState !== YT.PlayerState.PAUSED) player.pauseVideo();
         } 
         else if (state.action === 'play') {
-            // Sync time if significantly off
             const timeDiff = Math.abs(player.getCurrentTime() - state.time);
-            if (timeDiff > 1.5) {
-                player.seekTo(state.time, true);
-            }
-            
-            // AGGRESSIVE PLAY: If remote says play, we play.
-            if (playerState !== YT.PlayerState.PLAYING) {
-                player.playVideo();
-            }
+            if (timeDiff > 1.5) player.seekTo(state.time, true);
+            if (playerState !== YT.PlayerState.PLAYING) player.playVideo();
         }
     }
 
-    // Reset the flag after a short delay so we can broadcast again
     setTimeout(() => { isPartnerPlaying = false; }, 1000);
 }
 
@@ -481,7 +460,11 @@ function updateSyncStatus() {
         msg.style.color = "#000";
     } else {
         if (!msg.innerHTML.includes("Ad")) {
-            msg.innerHTML = `<i class="fa-solid fa-pause"></i> Paused`;
+            // Determine who paused it based on lastBroadcaster
+            const pausedBy = (lastBroadcaster === myName) ? "You" : lastBroadcaster;
+            const displayText = (lastBroadcaster === "System") ? "Paused" : `Paused by ${pausedBy}`;
+            
+            msg.innerHTML = `<i class="fa-solid fa-pause"></i> ${displayText}`;
             msg.style.background = "#444";
             msg.style.color = "#fff";
         }
