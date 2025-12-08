@@ -1,5 +1,6 @@
 // --- CONFIGURATION ---
-const firebaseConfig = {
+const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68"; // From prompt
+const FIREBASE_CONFIG = {
     apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co",
     authDomain: "our-music-player.firebaseapp.com",
     databaseURL: "https://our-music-player-default-rtdb.asia-southeast1.firebasedatabase.app",
@@ -9,382 +10,496 @@ const firebaseConfig = {
     appId: "1:444208622552:web:839ca00a5797f52d1660ad",
     measurementId: "G-B4GFLNFCLL"
 };
-const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
 
-if (typeof firebase !== 'undefined' && !firebase.apps.length) firebase.initializeApp(firebaseConfig);
+// --- STATE MANAGEMENT ---
+const state = {
+    userName: null,
+    currentSong: null,
+    isPlaying: false,
+    queue: [],
+    searchResults: [],
+    activeView: 'queue', // 'queue' or 'results'
+    playerReady: false,
+    isRemoteUpdate: false // Prevent echo loops
+};
+
+// --- FIREBASE INIT ---
+firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.database();
-const syncRef = db.ref('sync');
-const queueRef = db.ref('queue');
-const chatRef = db.ref('chat');
+const refs = {
+    sync: db.ref('sync'),
+    queue: db.ref('queue'),
+    chat: db.ref('chat')
+};
 
-let player, currentQueue = [], currentVideoId = null, isPartnerPlaying = false, lastBroadcaster = "System", isManualAction = false;
-let myName = localStorage.getItem('deepSpaceUserName');
-if (!myName) {
-    myName = prompt("Enter your name (Sarthak or Reechita):") || "Guest";
-    localStorage.setItem('deepSpaceUserName', myName);
+// --- DOM ELEMENTS ---
+const dom = {
+    playBtn: document.getElementById('play-btn'),
+    prevBtn: document.getElementById('prev-btn'),
+    nextBtn: document.getElementById('next-btn'),
+    playerOverlay: document.getElementById('player-overlay'),
+    title: document.getElementById('current-title'),
+    artist: document.getElementById('current-artist'),
+    statusBadge: document.getElementById('status-badge'),
+    statusText: document.getElementById('status-text'),
+    statusIcon: document.querySelector('#status-badge i'),
+    
+    // List & Search
+    listContainer: document.getElementById('list-container'),
+    searchForm: document.getElementById('search-form'),
+    searchInput: document.getElementById('search-input'),
+    subtabQueue: document.getElementById('subtab-queue'),
+    subtabResults: document.getElementById('subtab-results'),
+    queueCount: document.getElementById('queue-count'),
+    clearQueueBtn: document.getElementById('clear-queue-btn'),
+    
+    // Chat
+    chatMessages: document.getElementById('chat-messages'),
+    chatForm: document.getElementById('chat-form'),
+    chatInput: document.getElementById('chat-input'),
+    
+    // Mobile Tabs
+    tabQueue: document.getElementById('tab-queue'),
+    tabChat: document.getElementById('tab-chat'),
+    queueView: document.getElementById('queue-view'),
+    chatView: document.getElementById('chat-view'),
+    
+    // Modal
+    infoBtn: document.getElementById('info-btn'),
+    infoModal: document.getElementById('info-modal'),
+    closeModalBtn: document.getElementById('close-modal-btn'),
+    modalActionBtn: document.getElementById('modal-action-btn')
+};
+
+// --- INITIALIZATION ---
+let player; // YouTube Player Instance
+
+function initApp() {
+    let storedName = localStorage.getItem('heartRhythmUser');
+    if (!storedName) {
+        storedName = prompt("Enter your name (Sarthak or Reechita):") || "Guest";
+        localStorage.setItem('heartRhythmUser', storedName);
+    }
+    state.userName = storedName;
+    
+    // Listeners
+    setupFirebaseListeners();
+    setupDOMListeners();
 }
-const partnerName = (myName.toLowerCase().includes("sarthak")) ? "Reechita" : "Sarthak";
 
-// --- YOUTUBE PLAYER ---
-function onYouTubeIframeAPIReady() {
-    player = new YT.Player('player', {
-        height: '100%', width: '100%', videoId: '',
-        playerVars: { 
-            'controls': 1, 'disablekb': 0, 'rel': 0, 'modestbranding': 1, 'autoplay': 0, 'origin': window.location.origin 
+// --- PLAYER LOGIC ---
+window.onYouTubeIframeAPIReady = function() {
+    player = new YT.Player('youtube-player', {
+        height: '100%',
+        width: '100%',
+        playerVars: {
+            'controls': 0,
+            'disablekb': 1,
+            'rel': 0,
+            'modestbranding': 1,
+            'autoplay': 0,
+            'origin': window.location.origin
         },
-        events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
+        events: {
+            'onReady': onPlayerReady,
+            'onStateChange': onPlayerStateChange
+        }
     });
-}
+};
 
 function onPlayerReady(event) {
-    if (player && player.setVolume) player.setVolume(85);
-    setInterval(broadcastTimeIfPlaying, 1000);
-}
-
-function broadcastTimeIfPlaying() {
-    if (player && player.getPlayerState && currentVideoId) {
-        const state = player.getPlayerState();
-        const currentTime = player.getCurrentTime();
-        if (state === YT.PlayerState.PLAYING && player.getDuration() - currentTime < 1 && player.getDuration() > 0) {
-            playNextSong();
-            return;
-        }
-        if (state === YT.PlayerState.PLAYING && lastBroadcaster === myName) {
-            broadcastState('play', currentTime, currentVideoId, false);
-        }
-    }
+    state.playerReady = true;
+    event.target.setVolume(85);
+    updateStatus('Ready', false);
 }
 
 function onPlayerStateChange(event) {
-    const btn = document.getElementById('play-pause-btn');
-    if (event.data === YT.PlayerState.PLAYING) {
-        btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-        isManualAction = false;
-        document.getElementById('syncOverlay').classList.remove('active'); // Clear overlay if playing
-    } else {
-        btn.innerHTML = '<i class="fa-solid fa-play"></i>';
-        
-        // --- STRICT AD & BUFFERING LOGIC ---
-        // If state is BUFFERING (3) or PAUSED (2) and it wasn't a manual action or partner action:
-        if ((event.data === YT.PlayerState.BUFFERING || event.data === YT.PlayerState.PAUSED) 
-            && !isPartnerPlaying && !isManualAction && lastBroadcaster === myName) {
-            
-            // Broadcast a STALL event so the partner pauses
-            broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
+    const s = event.data;
+    const currentTime = player.getCurrentTime();
+    
+    // PLAYING
+    if (s === YT.PlayerState.PLAYING) {
+        updatePlayButton(true);
+        if (!state.isRemoteUpdate) {
+            broadcastSync('play', currentTime);
         }
-        
-        if (event.data === YT.PlayerState.ENDED && !isPartnerPlaying) playNextSong();
+        state.isRemoteUpdate = false;
     }
-    updateSyncStatus();
-}
-
-function togglePlayPause() {
-    if (!player) return;
-    const state = player.getPlayerState();
-    if (state === YT.PlayerState.PLAYING) {
-        player.pauseVideo();
-        broadcastState('pause', player.getCurrentTime(), currentVideoId, false);
-    } else {
-        if (!currentVideoId && currentQueue.length > 0) loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title);
-        else if (currentVideoId) {
-            player.playVideo();
-            broadcastState('play', player.getCurrentTime(), currentVideoId, false);
+    // PAUSED
+    else if (s === YT.PlayerState.PAUSED) {
+        updatePlayButton(false);
+        if (!state.isRemoteUpdate) {
+            broadcastSync('pause', currentTime);
         }
+        state.isRemoteUpdate = false;
     }
-    isManualAction = true;
-}
-
-function loadAndPlayVideo(videoId, title) {
-    if (player && videoId) {
-        isManualAction = false;
-        player.loadVideoById(videoId);
-        currentVideoId = videoId;
-        document.getElementById('current-song-title').textContent = title;
-        setTimeout(() => { if(player.getPlayerState() !== YT.PlayerState.PLAYING) broadcastState('play', 0, videoId, false); }, 800);
-        renderQueue(currentQueue, currentVideoId);
+    // ENDED
+    else if (s === YT.PlayerState.ENDED) {
+        playNext();
     }
 }
 
-// --- QUEUE & DATA ---
-function loadInitialData() {
-    queueRef.orderByChild('order').on('value', (snapshot) => {
-        const data = snapshot.val();
-        let list = [];
-        if (data) Object.keys(data).forEach(k => list.push({ ...data[k], key: k }));
-        list.sort((a, b) => (a.order || 0) - (b.order || 0));
-        currentQueue = list;
-        renderQueue(currentQueue, currentVideoId);
+function broadcastSync(action, time) {
+    if (!state.currentSong) return;
+    refs.sync.set({
+        action: action,
+        time: time,
+        videoId: state.currentSong.videoId,
+        lastUpdater: state.userName,
+        timestamp: Date.now()
     });
+}
 
-    syncRef.on('value', (snapshot) => {
-        const state = snapshot.val();
-        if (state) {
-            lastBroadcaster = state.lastUpdater;
-            if (state.lastUpdater !== myName) applyRemoteCommand(state);
+// --- SYNC LOGIC ---
+function handleSyncUpdate(data) {
+    if (!data || !player || !state.playerReady) return;
+
+    const partnerName = state.userName.toLowerCase().includes('sarthak') ? 'Reechita' : 'Sarthak';
+    
+    // Update visual status
+    if (data.action === 'play') {
+        updateStatus('Synced & Playing', true);
+    } else {
+        updateStatus('Paused', false);
+    }
+
+    // Ignore own updates
+    if (data.lastUpdater === state.userName) return;
+
+    state.isRemoteUpdate = true; // Flag to prevent loop
+
+    const playerState = player.getPlayerState();
+
+    // 1. Check Song Change
+    if (state.currentSong?.videoId !== data.videoId) {
+        // Find song in queue to get details
+        const found = state.queue.find(s => s.videoId === data.videoId);
+        if (found) {
+            loadSong(found);
         } else {
-            document.getElementById('syncOverlay').classList.remove('active');
+            // If not in queue (rare), just load ID
+            // Ideally we wait for queue sync, but for strict sync:
+            // We might just need to rely on the queue listener updating state.currentSong
         }
-        updateSyncStatus();
-    });
+    }
 
-    chatRef.limitToLast(50).on('child_added', (snapshot) => {
-        const msg = snapshot.val();
-        displayChatMessage(msg.user, msg.text, msg.timestamp);
-    });
-}
-loadInitialData();
+    // 2. Sync Time (Strict: tolerance 1.5s)
+    const currentTime = player.getCurrentTime();
+    const timeDiff = Math.abs(currentTime - data.time);
+    
+    if (timeDiff > 1.5) {
+        player.seekTo(data.time, true);
+    }
 
-function addToQueue(videoId, title, uploader, thumbnail) {
-    const newKey = queueRef.push().key;
-    queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, order: Date.now() })
-        .then(() => {
-            switchTab('queue');
-            if (!currentVideoId && currentQueue.length === 0) loadAndPlayVideo(videoId, title);
-        });
-}
-
-function addBatchToQueue(songs) {
-    if (!songs.length) return;
-    const updates = {};
-    songs.forEach((s, i) => {
-        const newKey = queueRef.push().key;
-        updates[newKey] = { ...s, order: Date.now() + i * 100 };
-    });
-    queueRef.update(updates).then(() => switchTab('queue'));
-}
-
-function removeFromQueue(key, event) {
-    if (event) event.stopPropagation();
-    const song = currentQueue.find(s => s.key === key);
-    if (song) {
-        queueRef.child(key).remove();
-        if (song.videoId === currentVideoId) playNextSong();
+    // 3. Sync State
+    if (data.action === 'play' && playerState !== YT.PlayerState.PLAYING) {
+        player.playVideo();
+    } else if (data.action === 'pause' && playerState !== YT.PlayerState.PAUSED) {
+        player.pauseVideo();
     }
 }
 
-function updateQueueOrder(newOrder) {
-    const updates = {};
-    newOrder.forEach((song, index) => { updates[`${song.key}/order`] = index; });
-    queueRef.update(updates);
+function loadSong(song) {
+    if (state.currentSong?.videoId === song.videoId) return;
+    
+    state.currentSong = song;
+    dom.title.textContent = song.title;
+    dom.artist.textContent = song.uploader;
+    
+    if (player && state.playerReady) {
+        state.isRemoteUpdate = true; // Loading new song acts like a stop
+        player.loadVideoById(song.videoId);
+        updateStatus(`Playing: ${song.title}`, true);
+        // Highlight in queue
+        renderQueue(); 
+    }
 }
 
-function playNextSong() {
-    const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
-    const next = currentQueue[(idx + 1) % currentQueue.length];
-    if (next) loadAndPlayVideo(next.videoId, next.title);
+function togglePlay() {
+    if (!player || !state.playerReady) return;
+    const ps = player.getPlayerState();
+    if (ps === YT.PlayerState.PLAYING) {
+        player.pauseVideo();
+    } else {
+        player.playVideo();
+    }
 }
 
-// --- UI RENDER ---
-function renderQueue(queueArray, currentVideoId) {
-    const list = document.getElementById('queue-list');
-    list.innerHTML = '';
-    document.getElementById('queue-count').textContent = queueArray.length;
+function playNext() {
+    if (!state.currentSong || state.queue.length === 0) return;
+    const idx = state.queue.findIndex(s => s.videoId === state.currentSong.videoId);
+    if (idx >= 0 && idx < state.queue.length - 1) {
+        const next = state.queue[idx + 1];
+        // Broadcasting play logic handled by player state change or manual update?
+        // Better to update sync directly to switch for everyone
+        refs.sync.update({
+            videoId: next.videoId,
+            action: 'play',
+            time: 0,
+            lastUpdater: state.userName,
+            timestamp: Date.now()
+        });
+    }
+}
 
-    if (queueArray.length === 0) {
-        list.innerHTML = '<p style="text-align:center; padding:20px; color:var(--text-dim); font-size:0.9rem;">The queue is empty. Start the party!</p>';
+function playPrev() {
+    if (!state.currentSong || state.queue.length === 0) return;
+    const idx = state.queue.findIndex(s => s.videoId === state.currentSong.videoId);
+    if (idx > 0) {
+        const prev = state.queue[idx - 1];
+        refs.sync.update({
+            videoId: prev.videoId,
+            action: 'play',
+            time: 0,
+            lastUpdater: state.userName,
+            timestamp: Date.now()
+        });
+    }
+}
+
+// --- QUEUE & SEARCH ---
+function setupFirebaseListeners() {
+    // Sync
+    refs.sync.on('value', snap => handleSyncUpdate(snap.val()));
+    
+    // Queue
+    refs.queue.orderByChild('order').on('value', snap => {
+        const data = snap.val();
+        state.queue = [];
+        if (data) {
+            Object.keys(data).forEach(key => {
+                state.queue.push({ ...data[key], key });
+            });
+            state.queue.sort((a, b) => a.order - b.order);
+        }
+        
+        // If no song playing, maybe load first?
+        if (!state.currentSong && state.queue.length > 0) {
+             // Wait for sync event usually, but if idle:
+             // loadSong(state.queue[0]); // Optional auto-load
+        }
+        
+        dom.queueCount.textContent = `(${state.queue.length})`;
+        if (state.activeView === 'queue') renderQueue();
+    });
+
+    // Chat
+    refs.chat.limitToLast(50).on('child_added', snap => {
+        renderMessage({ ...snap.val(), key: snap.key });
+    });
+}
+
+function renderQueue() {
+    dom.listContainer.innerHTML = '';
+    if (state.queue.length === 0) {
+        dom.listContainer.innerHTML = '<div class="text-center text-gray-500 mt-10 text-sm">queue is empty, add some love songs...</div>';
+        dom.clearQueueBtn.classList.add('hidden');
         return;
     }
-
-    queueArray.forEach((song, index) => {
-        const item = document.createElement('div');
-        item.className = `song-item ${song.videoId === currentVideoId ? 'playing' : ''}`;
-        item.draggable = true;
-        item.dataset.key = song.key;
-        item.onclick = () => loadAndPlayVideo(song.videoId, song.title);
-        
-        item.innerHTML = `
-            <i class="fa-solid fa-grip-vertical grip-handle" title="Drag to move"></i>
-            <img src="${song.thumbnail}" class="song-thumb">
-            <div class="song-details"><h4>${song.title}</h4><p>${song.uploader}</p></div>
-            <button class="emoji-trigger" style="font-size:0.9rem; color: #ff4d4d;" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
-        `;
-        list.appendChild(item);
-    });
-
-    initDragAndDrop(list);
-}
-
-function initDragAndDrop(list) {
-    let draggedItem = null;
-    list.querySelectorAll('.song-item').forEach(item => {
-        item.addEventListener('dragstart', () => { draggedItem = item; item.classList.add('dragging'); });
-        item.addEventListener('dragend', () => {
-            item.classList.remove('dragging');
-            draggedItem = null;
-            const newOrderKeys = Array.from(list.querySelectorAll('.song-item')).map(el => el.dataset.key);
-            const newOrder = newOrderKeys.map(key => currentQueue.find(s => s.key === key));
-            updateQueueOrder(newOrder);
-        });
-        item.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            const afterElement = getDragAfterElement(list, e.clientY);
-            if (afterElement == null) list.appendChild(draggedItem);
-            else list.insertBefore(draggedItem, afterElement);
-        });
-    });
-}
-
-function getDragAfterElement(container, y) {
-    const draggableElements = [...container.querySelectorAll('.song-item:not(.dragging)')];
-    return draggableElements.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
-        if (offset < 0 && offset > closest.offset) return { offset: offset, element: child };
-        else return closest;
-    }, { offset: Number.NEGATIVE_INFINITY }).element;
-}
-
-// --- SEARCH ---
-async function handleSearch() {
-    const input = document.getElementById('searchInput');
-    const query = input.value.trim();
-    if (!query) return;
-
-    if (query.includes('list=')) {
-        const listId = query.split('list=')[1].split('&')[0];
-        fetchPlaylist(listId);
-        input.value = ''; return;
-    }
-    if (query.includes('spotify.com')) {
-        fetchSpotifyData(query);
-        input.value = ''; return;
-    }
-
-    switchTab('results');
-    document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:20px;">Searching...</p>';
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
     
-    try {
-        const res = await fetch(url);
-        const data = await res.json();
-        const list = document.getElementById('results-list');
-        list.innerHTML = '';
-        data.items.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'song-item';
-            div.innerHTML = `
-                <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
-                <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
-                <button class="emoji-trigger" style="color:var(--primary); font-size:1.1rem;"><i class="fa-solid fa-plus"></i></button>
-            `;
-            div.onclick = () => addToQueue(item.id.videoId, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
-            list.appendChild(div);
-        });
-    } catch(e) { console.error(e); }
-    input.value = '';
+    dom.clearQueueBtn.classList.remove('hidden');
+
+    state.queue.forEach(song => {
+        const isCurrent = state.currentSong && state.currentSong.videoId === song.videoId;
+        const el = document.createElement('div');
+        el.className = `group flex items-center gap-3 p-2 rounded-lg border border-transparent transition-all hover:bg-white/5 hover:border-white/10 ${isCurrent ? 'bg-gradient-to-r from-[#ff0a78]/20 to-transparent border-l-2 border-l-[#ff0a78]' : ''}`;
+        
+        el.innerHTML = `
+            <img src="${song.thumbnail}" class="w-10 h-10 rounded object-cover" loading="lazy">
+            <div class="flex-1 min-w-0">
+                <h4 class="text-sm font-medium truncate ${isCurrent ? 'text-[#ff0a78]' : 'text-gray-200'}">${song.title}</h4>
+                <p class="text-xs text-gray-500 truncate">${song.uploader}</p>
+            </div>
+            <button class="remove-btn opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-400 p-2">
+                <i class="fa-solid fa-trash text-xs"></i>
+            </button>
+        `;
+        
+        el.querySelector('.remove-btn').onclick = () => {
+            if(confirm('Remove this song?')) refs.queue.child(song.key).remove();
+        };
+
+        dom.listContainer.appendChild(el);
+    });
 }
 
-async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
-    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${YOUTUBE_API_KEY}&pageToken=${pageToken}`;
+async function handleSearch(e) {
+    e.preventDefault();
+    const q = dom.searchInput.value.trim();
+    if (!q) return;
+
+    dom.listContainer.innerHTML = '<div class="text-center p-4 text-[#00f2ea] animate-pulse">Searching the cosmos...</div>';
+    state.activeView = 'results';
+    updateTabUI();
+
     try {
-        const res = await fetch(url);
+        const res = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`);
         const data = await res.json();
-        const songs = data.items.filter(i=>i.snippet.resourceId.kind==='youtube#video').map(i => ({
-            videoId: i.snippet.resourceId.videoId,
-            title: i.snippet.title, uploader: i.snippet.channelTitle, thumbnail: i.snippet.thumbnails.default.url
-        }));
-        allSongs = [...allSongs, ...songs];
-        if (data.nextPageToken) fetchPlaylist(playlistId, data.nextPageToken, allSongs);
-        else addBatchToQueue(allSongs);
-    } catch(e) { console.error(e); }
+        state.searchResults = data.items || [];
+        renderSearchResults();
+    } catch (err) {
+        console.error(err);
+        dom.listContainer.innerHTML = '<div class="text-center text-red-400">Search failed.</div>';
+    }
 }
 
-async function fetchSpotifyData(link) {
-    const proxy = `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`;
-    try {
-        const res = await fetch(proxy);
-        const data = await res.json();
-        if(data.tracks) {
-            const songs = [];
-            for (const t of data.tracks.slice(0, 10)) { 
-                const sRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(t.artist + ' ' + t.title)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`);
-                const sData = await sRes.json();
-                if(sData.items.length) {
-                    const i = sData.items[0];
-                    songs.push({ videoId: i.id.videoId, title: i.snippet.title, uploader: i.snippet.channelTitle, thumbnail: i.snippet.thumbnails.default.url });
-                }
-            }
-            addBatchToQueue(songs);
-        }
-    } catch(e) { console.error(e); }
+function renderSearchResults() {
+    dom.listContainer.innerHTML = '';
+    state.searchResults.forEach(item => {
+        const el = document.createElement('div');
+        el.className = 'flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer';
+        el.innerHTML = `
+            <img src="${item.snippet.thumbnails.default.url}" class="w-12 h-12 rounded object-cover">
+            <div class="flex-1 min-w-0">
+                <h4 class="text-sm font-medium text-white truncate">${item.snippet.title}</h4>
+                <p class="text-xs text-gray-500">${item.snippet.channelTitle}</p>
+            </div>
+            <i class="fa-solid fa-plus text-[#00f2ea]"></i>
+        `;
+        el.onclick = () => {
+            const newSong = {
+                videoId: item.id.videoId,
+                title: item.snippet.title,
+                uploader: item.snippet.channelTitle,
+                thumbnail: item.snippet.thumbnails.default.url,
+                order: Date.now()
+            };
+            refs.queue.push(newSong);
+            state.activeView = 'queue';
+            dom.searchInput.value = '';
+            updateTabUI();
+        };
+        dom.listContainer.appendChild(el);
+    });
 }
 
 // --- CHAT ---
-function displayChatMessage(user, text, timestamp) {
-    const box = document.getElementById('chat-messages');
-    const isMe = user === myName;
-    const div = document.createElement('div');
-    div.className = `message ${isMe ? 'me' : 'partner'}`;
-    div.innerHTML = `<div class="msg-header">${user}</div>${text}`;
-    box.appendChild(div);
-    box.scrollTop = box.scrollHeight;
-}
-
-// --- LISTENERS ---
-document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
-document.getElementById('prev-btn').addEventListener('click', () => {
-    const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
-    if(idx > 0) loadAndPlayVideo(currentQueue[idx-1].videoId, currentQueue[idx-1].title);
-});
-document.getElementById('next-btn').addEventListener('click', playNextSong);
-
-document.getElementById('search-btn').addEventListener('click', handleSearch);
-document.getElementById('searchInput').addEventListener('keypress', (e) => { if(e.key==='Enter') handleSearch(); });
-
-document.getElementById('chatSendBtn').addEventListener('click', () => {
-    const val = document.getElementById('chatInput').value.trim();
-    if(val) { chatRef.push({ user: myName, text: val, timestamp: Date.now() }); document.getElementById('chatInput').value=''; }
-});
-
-// NATIVE EMOJI TRIGGER
-document.getElementById('nativeEmojiBtn').addEventListener('click', () => {
-    document.getElementById('chatInput').focus();
-});
-
-document.getElementById('tab-queue').addEventListener('click', () => switchTab('queue'));
-document.getElementById('tab-results').addEventListener('click', () => switchTab('results'));
-document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
-document.getElementById('forceSyncBtn').addEventListener('click', () => {
-    document.getElementById('syncOverlay').classList.remove('active');
-    player.playVideo(); broadcastState('play', player.getCurrentTime(), currentVideoId, false);
-});
-document.getElementById('infoBtn').addEventListener('click', () => document.getElementById('infoOverlay').classList.add('active'));
-document.getElementById('closeInfoBtn').addEventListener('click', () => document.getElementById('infoOverlay').classList.remove('active'));
-
-function switchTab(tab) {
-    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-    document.getElementById('tab-'+tab).classList.add('active');
-    document.getElementById('queue-list').style.display = tab==='queue'?'block':'none';
-    document.getElementById('results-list').style.display = tab==='results'?'block':'none';
-}
-
-function broadcastState(action, time, videoId, isAdStall) {
-    syncRef.set({ action, time, videoId, isAdStall, lastUpdater: myName, timestamp: Date.now() });
-}
-
-function applyRemoteCommand(state) {
-    if (!player || !state.videoId) return;
-    isPartnerPlaying = true;
+function renderMessage(msg) {
+    const isMe = msg.user === state.userName;
+    const el = document.createElement('div');
+    el.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'}`;
     
-    // Strict Stall Check
-    if (state.isAdStall && state.action !== 'play') {
-        document.getElementById('syncOverlay').classList.add('active');
-        document.getElementById('overlayText').textContent = `${partnerName} is having connection issues or watching an Ad.`;
-        if (player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
-        return;
+    // Bold Font 'Play' for user name
+    const nameColor = isMe ? 'text-[#ff0a78]' : 'text-[#00f2ea]';
+    const bubbleStyle = isMe 
+        ? 'bg-gradient-to-br from-[#ff0a78] to-[#ff5e9a] text-white rounded-tr-none' 
+        : 'bg-white/10 border border-white/10 text-gray-200 rounded-tl-none backdrop-blur-md';
+
+    el.innerHTML = `
+        <span class="text-xs mb-1 font-['Play'] font-bold uppercase tracking-widest ${nameColor}">
+            ${msg.user}
+        </span>
+        <div class="max-w-[85%] px-4 py-2 rounded-2xl text-sm leading-relaxed shadow-md break-words ${bubbleStyle}">
+            ${msg.text}
+        </div>
+    `;
+    
+    dom.chatMessages.appendChild(el);
+    dom.chatMessages.scrollTop = dom.chatMessages.scrollHeight;
+}
+
+function sendMessage(e) {
+    e.preventDefault();
+    const text = dom.chatInput.value.trim();
+    if (!text) return;
+    
+    refs.chat.push({
+        user: state.userName,
+        text: text,
+        timestamp: Date.now()
+    });
+    dom.chatInput.value = '';
+}
+
+// --- UI HELPERS ---
+function updateStatus(text, isPlaying) {
+    dom.statusText.textContent = text;
+    dom.statusBadge.className = `inline-flex items-center gap-2 px-4 py-1 rounded-full text-sm font-bold tracking-wider transition-all duration-300 ${
+        isPlaying || text.includes('Ad') 
+        ? 'text-[#00f2ea] bg-[#00f2ea]/10 border border-[#00f2ea]/20' 
+        : 'text-yellow-300 bg-yellow-500/10 border border-yellow-500/20'
+    }`;
+    dom.statusIcon.className = isPlaying ? "fa-solid fa-bolt animate-pulse" : "fa-solid fa-pause";
+}
+
+function updatePlayButton(isPlaying) {
+    if (isPlaying) {
+        dom.playBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+        dom.playBtn.classList.replace('bg-[#ff0a78]', 'bg-gray-800');
+        dom.playBtn.classList.replace('text-white', 'text-[#ff0a78]');
+        dom.playBtn.classList.add('border-[#ff0a78]');
+    } else {
+        dom.playBtn.innerHTML = '<i class="fa-solid fa-play pl-1"></i>';
+        dom.playBtn.classList.replace('bg-gray-800', 'bg-[#ff0a78]');
+        dom.playBtn.classList.replace('text-[#ff0a78]', 'text-white');
+        dom.playBtn.classList.remove('border-[#ff0a78]');
     }
-    
-    document.getElementById('syncOverlay').classList.remove('active');
-    if (state.videoId !== currentVideoId) loadAndPlayVideo(state.videoId, "Syncing...");
-    else if (Math.abs(player.getCurrentTime() - state.time) > 2) player.seekTo(state.time, true);
-    
-    if (state.action === 'play' && player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
-    else if (state.action === 'pause' && player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
 }
 
-function updateSyncStatus() {
-    const msg = document.getElementById('sync-status-msg');
-    if (document.getElementById('syncOverlay').classList.contains('active')) msg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Stalled';
-    else if (player && player.getPlayerState() === YT.PlayerState.PLAYING) msg.innerHTML = `<i class="fa-solid fa-wifi"></i> Synced`;
-    else msg.innerHTML = `<i class="fa-solid fa-pause"></i> Paused`;
+function updateTabUI() {
+    if (state.activeView === 'queue') {
+        dom.subtabQueue.classList.replace('border-transparent', 'border-[#00f2ea]');
+        dom.subtabQueue.classList.replace('text-gray-500', 'text-white');
+        dom.subtabResults.classList.replace('border-[#00f2ea]', 'border-transparent');
+        dom.subtabResults.classList.replace('text-white', 'text-gray-500');
+        renderQueue();
+    } else {
+        dom.subtabResults.classList.replace('border-transparent', 'border-[#00f2ea]');
+        dom.subtabResults.classList.replace('text-gray-500', 'text-white');
+        dom.subtabQueue.classList.replace('border-[#00f2ea]', 'border-transparent');
+        dom.subtabQueue.classList.replace('text-white', 'text-gray-500');
+    }
 }
+
+function setupDOMListeners() {
+    // Controls
+    dom.playBtn.onclick = togglePlay;
+    dom.playerOverlay.onclick = togglePlay;
+    dom.nextBtn.onclick = playNext;
+    dom.prevBtn.onclick = playPrev;
+
+    // Search & Queue
+    dom.searchForm.onsubmit = handleSearch;
+    dom.clearQueueBtn.onclick = () => { if(confirm('Clear all?')) refs.queue.remove(); };
+    dom.subtabQueue.onclick = () => { state.activeView = 'queue'; updateTabUI(); };
+    dom.subtabResults.onclick = () => { state.activeView = 'results'; updateTabUI(); };
+
+    // Chat
+    dom.chatForm.onsubmit = sendMessage;
+
+    // Mobile Tabs
+    dom.tabQueue.onclick = () => {
+        dom.tabQueue.classList.add('text-[#ff0a78]', 'bg-white/5');
+        dom.tabQueue.classList.remove('text-gray-500');
+        dom.tabChat.classList.remove('text-[#00f2ea]', 'bg-white/5');
+        dom.tabChat.classList.add('text-gray-500');
+        dom.queueView.classList.remove('hidden');
+        dom.chatView.classList.add('hidden');
+        // Ensure queue flex is correct
+        dom.queueView.style.display = 'flex';
+        dom.chatView.style.display = 'none';
+    };
+    dom.tabChat.onclick = () => {
+        dom.tabChat.classList.add('text-[#00f2ea]', 'bg-white/5');
+        dom.tabChat.classList.remove('text-gray-500');
+        dom.tabQueue.classList.remove('text-[#ff0a78]', 'bg-white/5');
+        dom.tabQueue.classList.add('text-gray-500');
+        dom.chatView.classList.remove('hidden');
+        dom.queueView.classList.add('hidden');
+         // Ensure chat flex is correct
+        dom.chatView.style.display = 'flex';
+        dom.queueView.style.display = 'none';
+    };
+
+    // Modal
+    const toggleModal = (show) => {
+        if (show) dom.infoModal.classList.add('modal-show');
+        else dom.infoModal.classList.remove('modal-show');
+    };
+    dom.infoBtn.onclick = () => toggleModal(true);
+    dom.closeModalBtn.onclick = () => toggleModal(false);
+    dom.modalActionBtn.onclick = () => toggleModal(false);
+}
+
+// Start
+initApp();
