@@ -17,12 +17,9 @@ const syncRef = db.ref('sync');
 const queueRef = db.ref('queue');
 const chatRef = db.ref('chat');
 
-let player, currentQueue = [], currentVideoId = null, currentArtist = "";
+let player, currentQueue = [], currentVideoId = null;
 let lastBroadcaster = "System";
 let isPartnerPlaying = false;
-let ignoreNextSeek = false; 
-
-// Flag to track if the current pause was initiated by the User explicitly via our controls
 let isManualPause = false;
 
 let myName = localStorage.getItem('deepSpaceUserName');
@@ -48,7 +45,6 @@ function onYouTubeIframeAPIReady() {
 
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(85);
-    // Real-time heartbeat sync (checks every second)
     setInterval(heartbeatSync, 1000);
 }
 
@@ -56,11 +52,9 @@ function heartbeatSync() {
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName) {
         const state = player.getPlayerState();
         if (state === YT.PlayerState.PLAYING) {
-            // Check for end of song
             if (player.getDuration() - player.getCurrentTime() < 1 && player.getDuration() > 0) {
                 playNextSong();
             } else {
-                // Keep broadcasting time to ensure partner stays synced
                 broadcastState('play', player.getCurrentTime(), currentVideoId);
             }
         }
@@ -68,12 +62,12 @@ function heartbeatSync() {
 }
 
 function onPlayerStateChange(event) {
+    // This function handles updates coming from the Player API (auto-play, buffering, etc)
     const btn = document.getElementById('play-pause-btn');
     const state = event.data;
 
     if (state === YT.PlayerState.PLAYING) {
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-        // Reset manual pause flag when playing
         isManualPause = false;
         if (lastBroadcaster === myName || lastBroadcaster === 'System') {
             broadcastState('play', player.getCurrentTime(), currentVideoId);
@@ -83,17 +77,13 @@ function onPlayerStateChange(event) {
         
         if (state === YT.PlayerState.PAUSED) {
             if (!isPartnerPlaying && lastBroadcaster === myName) {
-                // AD DETECTION LOGIC:
-                // If the player pauses but the user didn't click our Pause button, 
-                // we assume it is an Ad or Auto-Pause (Buffering).
+                // Ad/Buffer Detection Logic
                 if (isManualPause) {
                     broadcastState('pause', player.getCurrentTime(), currentVideoId);
                 } else {
-                    // Automatically paused by API (Likely Ad or Native Control)
                     broadcastState('ad_pause', player.getCurrentTime(), currentVideoId);
                 }
             }
-            // Reset flag after check
             isManualPause = false;
         }
         
@@ -104,49 +94,37 @@ function onPlayerStateChange(event) {
     updateSyncStatus();
 }
 
+// CRITICAL FIX: Immediate Button Response
 function togglePlayPause() {
     if (!player) return;
+    const btn = document.getElementById('play-pause-btn');
     const state = player.getPlayerState();
     
     lastBroadcaster = myName; 
     
     if (state === YT.PlayerState.PLAYING) {
-        // Set flag to true because this is a manual user action
+        // Optimistic UI Update: Show Play Icon Immediately
+        btn.innerHTML = '<i class="fa-solid fa-play"></i>';
         isManualPause = true;
         player.pauseVideo();
-        // We broadcast inside onPlayerStateChange to ensure state is actually reached
+        broadcastState('pause', player.getCurrentTime(), currentVideoId);
     } else {
+        // Optimistic UI Update: Show Pause Icon Immediately
+        btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
         if (!currentVideoId && currentQueue.length > 0) {
             loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title, currentQueue[0].uploader);
         } else if (currentVideoId) {
             player.playVideo();
+            broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
     }
 }
 
-// --- INTELLIGENT ARTIST EXTRACTION ---
-function getBetterArtistName(title, channel) {
-    if (!title) return channel || "Unknown Artist";
-    
-    // Try to split "Artist - Title" format
-    if (title.includes('-')) {
-        const parts = title.split('-');
-        // Assume first part is artist if it's reasonably short
-        if (parts[0].length < 30) {
-            return parts[0].trim();
-        }
-    }
-    // Try to split "Artist : Title" format
-    if (title.includes(':')) {
-        const parts = title.split(':');
-        if (parts[0].length < 30) {
-            return parts[0].trim();
-        }
-    }
-    // Fallback to channel title, but clean it up (remove VEVO, etc)
-    if (channel) {
-        return channel.replace('VEVO', '').replace('Official', '').trim();
-    }
+// --- HELPER FUNCTIONS ---
+function getChannelName(title, channel) {
+    if(channel) return channel;
+    // Fallback logic if channel is missing
+    if (title.includes('-')) return title.split('-')[0].trim();
     return "Unknown Artist";
 }
 
@@ -156,11 +134,9 @@ function loadAndPlayVideo(videoId, title, uploader) {
         player.loadVideoById(videoId);
         currentVideoId = videoId;
         
-        // Use intelligent extraction
-        const displayArtist = getBetterArtistName(title, uploader);
-        
+        // Show Channel Name in the Player Section (as requested)
         document.getElementById('current-song-title').textContent = title;
-        document.getElementById('current-song-artist').textContent = displayArtist;
+        document.getElementById('current-song-artist').textContent = uploader || "Unknown Artist";
         
         setTimeout(() => { 
             broadcastState('play', 0, videoId); 
@@ -201,8 +177,8 @@ loadInitialData();
 
 function addToQueue(videoId, title, uploader, thumbnail) {
     const newKey = queueRef.push().key;
-    // We store the raw uploader (Channel Title) here, parsing happens on display
-    queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, order: Date.now() })
+    // We store the user who added it here
+    queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, addedBy: myName, order: Date.now() })
         .then(() => {
             switchTab('queue');
             if (!currentVideoId && currentQueue.length === 0) loadAndPlayVideo(videoId, title, uploader);
@@ -214,7 +190,7 @@ function addBatchToQueue(songs) {
     const updates = {};
     songs.forEach((s, i) => {
         const newKey = queueRef.push().key;
-        updates[newKey] = { ...s, order: Date.now() + i * 100 };
+        updates[newKey] = { ...s, addedBy: myName, order: Date.now() + i * 100 };
     });
     queueRef.update(updates).then(() => switchTab('queue'));
 }
@@ -247,7 +223,7 @@ function renderQueue(queueArray, currentVideoId) {
     document.getElementById('queue-count').textContent = queueArray.length;
 
     if (queueArray.length === 0) {
-        list.innerHTML = '<p style="text-align:center; padding:20px; color:var(--text-dim); font-size:0.9rem;">Queue is empty. Add some love! 🎵</p>';
+        list.innerHTML = '<p style="text-align:center; padding:20px; color:var(--text-dim); font-size:0.9rem;">Queue is empty.</p>';
         return;
     }
 
@@ -258,13 +234,12 @@ function renderQueue(queueArray, currentVideoId) {
         item.dataset.key = song.key;
         item.onclick = () => loadAndPlayVideo(song.videoId, song.title, song.uploader);
         
-        // Extract artist for list view too using the new logic
-        const artist = getBetterArtistName(song.title, song.uploader);
+        // In Queue: Show "Added by [User]" as requested
+        const subtitle = `Added by ${song.addedBy || 'System'}`;
         
         item.innerHTML = `
-            <i class="fa-solid fa-grip-vertical grip-handle" title="Drag to move"></i>
             <img src="${song.thumbnail}" class="song-thumb">
-            <div class="song-details"><h4>${song.title}</h4><p>${artist}</p></div>
+            <div class="song-details"><h4>${song.title}</h4><p>${subtitle}</p></div>
             <button class="emoji-trigger" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
         `;
         list.appendChild(item);
@@ -334,7 +309,7 @@ async function handleSearch() {
             div.innerHTML = `
                 <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
                 <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
-                <button class="emoji-trigger" style="color:var(--gold); font-size:1.1rem; position:static; width:auto; height:auto; background:none; border-radius:0;"><i class="fa-solid fa-plus"></i></button>
+                <button class="emoji-trigger" style="color:#fff; font-size:1.1rem; position:static; width:auto; height:auto;"><i class="fa-solid fa-plus"></i></button>
             `;
             div.onclick = () => addToQueue(item.id.videoId, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
             list.appendChild(div);
@@ -385,7 +360,7 @@ function displayChatMessage(user, text, timestamp) {
     const div = document.createElement('div');
     div.className = `message ${isMe ? 'me' : 'partner'}`;
     const time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    div.innerHTML = `<div class="msg-header">${user} <span style="font-size:0.6em; opacity:0.6; float:right; margin-top:3px;">${time}</span></div>${text}`;
+    div.innerHTML = `<div class="msg-header">${user} <span style="font-size:0.85em;">${time}</span></div>${text}`;
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
@@ -489,11 +464,10 @@ function updateSyncStatus() {
     const msg = document.getElementById('sync-status-msg');
     
     if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
-        msg.innerHTML = `<i class="fa-solid fa-heart-pulse"></i> Heartbeat Synced`;
+        msg.innerHTML = `<i class="fa-solid fa-heart-pulse"></i> Synced`;
         msg.style.background = "#ffd700"; // Gold
         msg.style.color = "#000";
     } else {
-        // If not playing, keep existing message if it was set to Ad, otherwise Pause
         if (!msg.innerHTML.includes("Ad")) {
             msg.innerHTML = `<i class="fa-solid fa-pause"></i> Paused`;
             msg.style.background = "#444";
