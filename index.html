@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sarthak's ❤️ Reechita's Heart's Rhythm</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- Imported "Great Vibes" (Cursive) and "Playfair Display" (Elegant/Professional) -->
-    <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- Imported Professional Fonts: Roboto (YouTube), Inter (Instagram/UI), Montserrat (Headers) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800&family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -38,17 +38,18 @@
                     <div id="player"></div>
                 </div>
 
+                <!-- Reordered: Title First, then Status, then Controls -->
                 <div class="song-info-container">
+                    <div class="track-details">
+                        <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
+                        <div class="artist-name truncate-text" id="current-song-artist">Choose a song</div>
+                    </div>
+
                     <!-- 3D Yellow Sync Status Button -->
                     <div class="sync-badge-container">
                         <div class="sync-status-3d" id="sync-status-msg">
                             <i class="fa-solid fa-link"></i> Connecting...
                         </div>
-                    </div>
-                    
-                    <div class="track-details">
-                        <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
-                        <div class="artist-name truncate-text" id="current-song-artist">Choose a song</div>
                     </div>
                 </div>
 
@@ -70,13 +71,13 @@
                 
                 <div class="panel-container library-panel active" id="view-library">
                     <div class="header-row">
-                        <span class="section-title">Your Playlist</span>
+                        <span class="section-title">Our Playlist</span>
                         <button class="clear-btn btn-3d" id="clearQueueBtn">Clear All</button>
                     </div>
 
                     <div class="search-wrapper">
                         <div class="search-box-elegant">
-                            <input type="text" id="searchInput" placeholder="Search songs or paste YouTube/Spotify links...">
+                            <input type="text" id="searchInput" placeholder="Search song or paste YouTube/Spotify link...">
                             <button class="search-submit" id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
                         </div>
                     </div>
@@ -101,7 +102,7 @@
 
                     <div class="chat-input-area">
                         <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
-                        <input type="text" class="chat-input" id="chatInput" placeholder="Write a note...">
+                        <input type="text" class="chat-input" id="chatInput" placeholder="Message...">
                         <button class="send-btn btn-3d" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
                     </div>
                 </div>
