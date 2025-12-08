@@ -2,139 +2,61 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sarthak & Reechita | Liquid Love</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sarthak & Reechita | Heart's Rhythm</title>
     
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
-    <script src="https://www.youtube.com/iframe_api"></script>
-</head>
-<body>
-
-    <div class="liquid-container">
-        <div class="liquid-blob blob-1"></div>
-        <div class="liquid-blob blob-2"></div>
-        <div class="liquid-blob blob-3"></div>
-    </div>
-
-    <div class="app-container">
-        
-        <div class="top-bar glass-panel">
-            <div class="logo">
-                <h1>Sarthak <i class="fa-solid fa-heart pulse"></i> Reechita</h1>
-            </div>
-            <button class="info-btn" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
-        </div>
-
-        <div class="main-layout">
-            
-            <div class="player-card glass-panel">
-                <div class="video-wrapper">
-                    <div id="player"></div>
-                </div>
-
-                <div class="song-info">
-                    <div class="song-title truncate-text" id="current-song-title">Select a Song...</div>
-                    <div class="sync-status" id="sync-status-msg">
-                        <i class="fa-solid fa-wifi"></i> Sync Active
-                    </div>
-                </div>
-
-                <div class="controls">
-                    <button class="ctrl-btn small" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
-                    <button class="ctrl-btn play" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
-                    <button class="ctrl-btn small" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
-                </div>
-            </div>
-
-            <div class="mobile-nav">
-                <button class="nav-btn active" onclick="switchMobileView('library')"><i class="fa-solid fa-music"></i> Queue</button>
-                <button class="nav-btn" onclick="switchMobileView('chat')"><i class="fa-solid fa-comments"></i> Chat</button>
-            </div>
-
-            <div class="sidebar">
-                
-                <div class="panel-container library-panel active" id="view-library">
-                    <div class="header-row">
-                        <span class="section-title">Playlist</span>
-                        <button class="search-submit" style="width:auto; padding:5px 15px; font-size:0.75rem; background:rgba(255,0,0,0.5);" id="clearQueueBtn">Clear</button>
-                    </div>
-
-                    <div class="search-box">
-                        <input type="text" id="searchInput" placeholder="Search or paste Playlist/Spotify link...">
-                        <button class="search-submit" id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
-                    </div>
-
-                    <div class="tabs">
-                        <button class="tab active" id="tab-queue">Queue (<span id="queue-count">0</span>)</button>
-                        <button class="tab" id="tab-results">Results</button>
-                    </div>
-
-                    <div class="list-content active" id="queue-list">
-                        </div>
-                    <div class="list-content" id="results-list" style="display: none;"></div>
-                </div>
-
-                <div class="panel-container chat-panel" id="view-chat">
-                    <div class="header-row">
-                        <span class="section-title">Messages</span>
-                    </div>
-                    
-                    <div class="chat-messages" id="chat-messages"></div>
-
-                    <div class="chat-input-area">
-                        <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
-                        <input type="text" class="chat-input" id="chatInput" placeholder="Type something sweet...">
-                        <button class="search-submit" style="width:40px; height:40px; border-radius:50%;" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    </div>
-
-    <div class="overlay" id="infoOverlay">
-        <div class="modal-card">
-            <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2>User Guide</h2>
-            <p style="color:#ccc; margin-bottom:15px; font-size:0.9rem;">Welcome to the liquid interface designed for Sarthak & Reechita.</p>
-            <div style="display:flex; flex-direction:column; gap:10px; color:#ddd;">
-                <div><i class="fa-solid fa-grip-vertical" style="color:var(--primary); margin-right:8px;"></i> <strong>Reorder:</strong> Use the grip icon to drag songs.</div>
-                <div><i class="fa-brands fa-youtube" style="color:var(--primary); margin-right:8px;"></i> <strong>Playlists:</strong> Paste YouTube/Spotify playlist links to add all songs.</div>
-                <div><i class="fa-solid fa-ban" style="color:var(--primary); margin-right:8px;"></i> <strong>Strict Sync:</strong> If an Ad plays, the partner pauses automatically.</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="overlay" id="syncOverlay">
-        <div class="modal-card" style="text-align: center;">
-            <h2>Sync Paused</h2>
-            <p id="overlayText" style="color:var(--text-dim); margin-bottom:20px;">Partner is watching an Ad. Playback halted.</p>
-            <div style="margin:0 auto 20px; width:40px; height:40px; border:4px solid rgba(255,255,255,0.1); border-top:4px solid var(--primary); border-radius:50%; animation: spin 1s infinite linear;"></div>
-            <button class="search-submit" style="width:auto; padding:10px 25px;" id="forceSyncBtn">Force Resume</button>
-        </div>
-    </div>
-
-    <script src="script.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Tailwind Configuration -->
     <script>
-        // Mobile View Switcher
-        function switchMobileView(view) {
-            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.panel-container').forEach(panel => {
-                panel.classList.remove('active'); 
-                if(window.innerWidth <= 1000) panel.style.display = 'none';
-            });
-            const btnIndex = view === 'library' ? 0 : 1;
-            document.querySelectorAll('.nav-btn')[btnIndex].classList.add('active');
-            const panel = document.getElementById('view-' + view);
-            panel.classList.add('active');
-            if(window.innerWidth <= 1000) panel.style.display = 'flex';
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: '#ff0a78',
+              'primary-soft': '#ff85c0',
+              'bg-dark': '#05020a',
+              'glass-bg': 'rgba(255, 255, 255, 0.05)',
+            },
+            fontFamily: {
+              sans: ['Montserrat', 'sans-serif'],
+              cursive: ['Dancing Script', 'cursive'],
+            }
+          }
         }
-        window.addEventListener('resize', () => {
-            if(window.innerWidth > 1000) document.querySelectorAll('.panel-container').forEach(p => p.style.display = 'flex');
-        });
+      }
     </script>
+
+    <!-- FontAwesome & Google Fonts -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Import Map for Modules -->
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+    "firebase/database": "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/"
+  }
+}
+</script>
+</head>
+<body class="bg-[#05020a] text-white overflow-hidden h-screen w-screen relative">
+    <div id="root"></div>
+
+    <!-- Main Script (Babel + Module) -->
+    <script type="text/babel" data-type="module" src="script.js"></script>
 </body>
 </html>
