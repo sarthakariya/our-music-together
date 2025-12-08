@@ -22,6 +22,9 @@ let lastBroadcaster = "System";
 let isPartnerPlaying = false;
 let ignoreNextSeek = false; 
 
+// Flag to track if the current pause was initiated by the User explicitly via our controls
+let isManualPause = false;
+
 let myName = localStorage.getItem('deepSpaceUserName');
 if (!myName) {
     myName = prompt("Enter your name (Sarthak or Reechita):") || "Guest";
@@ -70,6 +73,8 @@ function onPlayerStateChange(event) {
 
     if (state === YT.PlayerState.PLAYING) {
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+        // Reset manual pause flag when playing
+        isManualPause = false;
         if (lastBroadcaster === myName || lastBroadcaster === 'System') {
             broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
@@ -78,8 +83,18 @@ function onPlayerStateChange(event) {
         
         if (state === YT.PlayerState.PAUSED) {
             if (!isPartnerPlaying && lastBroadcaster === myName) {
-                broadcastState('pause', player.getCurrentTime(), currentVideoId);
+                // AD DETECTION LOGIC:
+                // If the player pauses but the user didn't click our Pause button, 
+                // we assume it is an Ad or Auto-Pause (Buffering).
+                if (isManualPause) {
+                    broadcastState('pause', player.getCurrentTime(), currentVideoId);
+                } else {
+                    // Automatically paused by API (Likely Ad or Native Control)
+                    broadcastState('ad_pause', player.getCurrentTime(), currentVideoId);
+                }
             }
+            // Reset flag after check
+            isManualPause = false;
         }
         
         if (state === YT.PlayerState.ENDED) {
@@ -96,20 +111,23 @@ function togglePlayPause() {
     lastBroadcaster = myName; 
     
     if (state === YT.PlayerState.PLAYING) {
+        // Set flag to true because this is a manual user action
+        isManualPause = true;
         player.pauseVideo();
-        broadcastState('pause', player.getCurrentTime(), currentVideoId);
+        // We broadcast inside onPlayerStateChange to ensure state is actually reached
     } else {
         if (!currentVideoId && currentQueue.length > 0) {
             loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title, currentQueue[0].uploader);
         } else if (currentVideoId) {
             player.playVideo();
-            broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
     }
 }
 
 // --- INTELLIGENT ARTIST EXTRACTION ---
 function getBetterArtistName(title, channel) {
+    if (!title) return channel || "Unknown Artist";
+    
     // Try to split "Artist - Title" format
     if (title.includes('-')) {
         const parts = title.split('-');
@@ -126,7 +144,10 @@ function getBetterArtistName(title, channel) {
         }
     }
     // Fallback to channel title, but clean it up (remove VEVO, etc)
-    return channel.replace('VEVO', '').replace('Official', '').trim();
+    if (channel) {
+        return channel.replace('VEVO', '').replace('Official', '').trim();
+    }
+    return "Unknown Artist";
 }
 
 function loadAndPlayVideo(videoId, title, uploader) {
@@ -237,7 +258,7 @@ function renderQueue(queueArray, currentVideoId) {
         item.dataset.key = song.key;
         item.onclick = () => loadAndPlayVideo(song.videoId, song.title, song.uploader);
         
-        // Extract artist for list view too
+        // Extract artist for list view too using the new logic
         const artist = getBetterArtistName(song.title, song.uploader);
         
         item.innerHTML = `
@@ -313,7 +334,7 @@ async function handleSearch() {
             div.innerHTML = `
                 <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
                 <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
-                <button class="emoji-trigger" style="color:var(--gold); font-size:1.1rem;"><i class="fa-solid fa-plus"></i></button>
+                <button class="emoji-trigger" style="color:var(--gold); font-size:1.1rem; position:static; width:auto; height:auto; background:none; border-radius:0;"><i class="fa-solid fa-plus"></i></button>
             `;
             div.onclick = () => addToQueue(item.id.videoId, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
             list.appendChild(div);
@@ -439,6 +460,17 @@ function applyRemoteCommand(state) {
         if (playerState !== YT.PlayerState.PAUSED) {
             player.pauseVideo();
         }
+    } else if (state.action === 'ad_pause') {
+        // Partner is experiencing an ad
+        const msg = document.getElementById('sync-status-msg');
+        msg.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Partner has Ad`;
+        msg.style.background = "#ff9800"; // Orange warning
+        
+        // We pause too to wait for them
+        if (playerState !== YT.PlayerState.PAUSED) {
+            player.pauseVideo();
+        }
+        
     } else if (state.action === 'play') {
         const timeDiff = Math.abs(player.getCurrentTime() - state.time);
         if (timeDiff > 1.5) {
@@ -461,8 +493,11 @@ function updateSyncStatus() {
         msg.style.background = "#ffd700"; // Gold
         msg.style.color = "#000";
     } else {
-        msg.innerHTML = `<i class="fa-solid fa-pause"></i> Paused`;
-        msg.style.background = "#444";
-        msg.style.color = "#fff";
+        // If not playing, keep existing message if it was set to Ad, otherwise Pause
+        if (!msg.innerHTML.includes("Ad")) {
+            msg.innerHTML = `<i class="fa-solid fa-pause"></i> Paused`;
+            msg.style.background = "#444";
+            msg.style.color = "#fff";
+        }
     }
 }
