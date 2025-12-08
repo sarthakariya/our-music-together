@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sarthak & Reechita | Eternal Sync</title>
+    <title>Sarthak & Reechita | Liquid Love</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="style.css">
     
@@ -13,12 +13,14 @@
 </head>
 <body>
 
-    <div class="bg-animation" id="bgAnimation">
-        <div class="orb orb-1"></div>
-        <div class="orb orb-2"></div>
+    <div class="liquid-container">
+        <div class="liquid-blob blob-1"></div>
+        <div class="liquid-blob blob-2"></div>
+        <div class="liquid-blob blob-3"></div>
     </div>
 
     <div class="app-container">
+        
         <div class="top-bar glass-panel">
             <div class="logo">
                 <h1>Sarthak <i class="fa-solid fa-heart pulse"></i> Reechita</h1>
@@ -34,9 +36,9 @@
                 </div>
 
                 <div class="song-info">
-                    <div class="song-title truncate-text" id="current-song-title">Love is in the air...</div>
+                    <div class="song-title truncate-text" id="current-song-title">Select a Song...</div>
                     <div class="sync-status" id="sync-status-msg">
-                        <i class="fa-solid fa-infinity"></i> Waiting for Music
+                        <i class="fa-solid fa-wifi"></i> Sync Active
                     </div>
                 </div>
 
@@ -48,20 +50,20 @@
             </div>
 
             <div class="mobile-nav">
-                <button class="nav-btn active" onclick="switchMobileView('library')"><i class="fa-solid fa-music"></i> Our Queue</button>
-                <button class="nav-btn" onclick="switchMobileView('chat')"><i class="fa-solid fa-comments"></i> Love Notes</button>
+                <button class="nav-btn active" onclick="switchMobileView('library')"><i class="fa-solid fa-music"></i> Queue</button>
+                <button class="nav-btn" onclick="switchMobileView('chat')"><i class="fa-solid fa-comments"></i> Chat</button>
             </div>
 
             <div class="sidebar">
                 
                 <div class="panel-container library-panel active" id="view-library">
                     <div class="header-row">
-                        <span class="section-title">Music Queue</span>
-                        <button class="emoji-btn" style="font-size:1rem; color:var(--text-error); border:1px solid var(--text-error); padding:5px 10px; border-radius:15px;" id="clearQueueBtn">Clear All</button>
+                        <span class="section-title">Playlist</span>
+                        <button class="search-submit" style="width:auto; padding:5px 15px; font-size:0.75rem; background:rgba(255,0,0,0.5);" id="clearQueueBtn">Clear</button>
                     </div>
 
                     <div class="search-box">
-                        <input type="text" id="searchInput" placeholder="Search song or paste Playlist/Spotify link...">
+                        <input type="text" id="searchInput" placeholder="Search or paste Playlist/Spotify link...">
                         <button class="search-submit" id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
                     </div>
 
@@ -70,23 +72,21 @@
                         <button class="tab" id="tab-results">Results</button>
                     </div>
 
-                    <div class="list-content active" id="queue-list"></div>
+                    <div class="list-content active" id="queue-list">
+                        </div>
                     <div class="list-content" id="results-list" style="display: none;"></div>
                 </div>
 
                 <div class="panel-container chat-panel" id="view-chat">
                     <div class="header-row">
-                        <span class="section-title">Private Chat</span>
+                        <span class="section-title">Messages</span>
                     </div>
                     
                     <div class="chat-messages" id="chat-messages"></div>
 
-                    <div class="emoji-picker-container glass-panel" id="emojiPicker">
-                        </div>
-
                     <div class="chat-input-area">
-                        <button class="emoji-btn" id="toggleEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
-                        <input type="text" class="chat-input" id="chatInput" placeholder="Type a message...">
+                        <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
+                        <input type="text" class="chat-input" id="chatInput" placeholder="Type something sweet...">
                         <button class="search-submit" style="width:40px; height:40px; border-radius:50%;" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
                     </div>
                 </div>
@@ -98,18 +98,20 @@
     <div class="overlay" id="infoOverlay">
         <div class="modal-card">
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2>Love Sync Guide</h2>
-            <div class="guide-item"><i class="fa-brands fa-youtube"></i> <span><strong>Playlists:</strong> Paste any YouTube or Spotify Playlist link in the search bar to add all songs!</span></div>
-            <div class="guide-item"><i class="fa-solid fa-arrow-down-up-across-line"></i> <span><strong>Reorder:</strong> Drag and drop songs in the queue to change the order.</span></div>
-            <div class="guide-item"><i class="fa-solid fa-clock"></i> <span><strong>Timestamp:</strong> To skip to a specific time, <strong>PAUSE the video first</strong>, drag the seek bar, then press Play.</span></div>
-            <div class="guide-item"><i class="fa-solid fa-heart"></i> <span><strong>Sync:</strong> Everything is synced. If one buffers, the other waits.</span></div>
+            <h2>User Guide</h2>
+            <p style="color:#ccc; margin-bottom:15px; font-size:0.9rem;">Welcome to the liquid interface designed for Sarthak & Reechita.</p>
+            <div style="display:flex; flex-direction:column; gap:10px; color:#ddd;">
+                <div><i class="fa-solid fa-grip-vertical" style="color:var(--primary); margin-right:8px;"></i> <strong>Reorder:</strong> Use the grip icon to drag songs.</div>
+                <div><i class="fa-brands fa-youtube" style="color:var(--primary); margin-right:8px;"></i> <strong>Playlists:</strong> Paste YouTube/Spotify playlist links to add all songs.</div>
+                <div><i class="fa-solid fa-ban" style="color:var(--primary); margin-right:8px;"></i> <strong>Strict Sync:</strong> If an Ad plays, the partner pauses automatically.</div>
+            </div>
         </div>
     </div>
 
     <div class="overlay" id="syncOverlay">
         <div class="modal-card" style="text-align: center;">
             <h2>Sync Paused</h2>
-            <p id="overlayText" style="color:var(--text-dim); margin-bottom:20px;">Partner is buffering or watching an ad...</p>
+            <p id="overlayText" style="color:var(--text-dim); margin-bottom:20px;">Partner is watching an Ad. Playback halted.</p>
             <div style="margin:0 auto 20px; width:40px; height:40px; border:4px solid rgba(255,255,255,0.1); border-top:4px solid var(--primary); border-radius:50%; animation: spin 1s infinite linear;"></div>
             <button class="search-submit" style="width:auto; padding:10px 25px;" id="forceSyncBtn">Force Resume</button>
         </div>
@@ -117,19 +119,7 @@
 
     <script src="script.js"></script>
     <script>
-        // Floating Hearts Logic
-        const bg = document.getElementById('bgAnimation');
-        const emojis = ['❤️', '💖', '✨', '🌹'];
-        for(let i=0; i<20; i++) {
-            const heart = document.createElement('div');
-            heart.classList.add('heart-particle');
-            heart.style.left = Math.random() * 100 + 'vw';
-            heart.style.animationDuration = (Math.random() * 5 + 10) + 's';
-            heart.style.animationDelay = Math.random() * 10 + 's';
-            bg.appendChild(heart);
-        }
-
-        // Mobile Switcher
+        // Mobile View Switcher
         function switchMobileView(view) {
             document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.panel-container').forEach(panel => {
