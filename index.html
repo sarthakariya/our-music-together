@@ -2,139 +2,197 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sarthak & Reechita | Liquid Love</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+    <title>Our Heart's Rhythm</title>
     
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
-    <script src="https://www.youtube.com/iframe_api"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Montserrat:wght@300;400;500;600;700&family=Play:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Firebase SDKs (Compat versions for vanilla JS) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
-<body>
+<body class="bg-[#05020a] text-white overflow-hidden h-screen w-screen selection:bg-[#ff0a78] selection:text-white font-['Montserrat']">
 
-    <div class="liquid-container">
-        <div class="liquid-blob blob-1"></div>
-        <div class="liquid-blob blob-2"></div>
-        <div class="liquid-blob blob-3"></div>
+    <!-- Liquid Background -->
+    <div class="liquid-bg">
+        <div class="blob bg-[#ff0a78] w-[50vw] h-[50vw] -top-20 -left-20"></div>
+        <div class="blob bg-[#240b36] w-[60vw] h-[60vw] -bottom-20 -right-20 animate-[float_15s_infinite_alternate]"></div>
+        <div class="blob bg-[#00f2ea] w-[30vw] h-[30vw] top-[40%] left-[40%] opacity-30 animate-[float_12s_infinite_alternate]"></div>
     </div>
 
-    <div class="app-container">
+    <!-- Main App Container -->
+    <div id="app" class="h-full flex items-center justify-center p-2 md:p-6 lg:p-8">
         
-        <div class="top-bar glass-panel">
-            <div class="logo">
-                <h1>Sarthak <i class="fa-solid fa-heart pulse"></i> Reechita</h1>
-            </div>
-            <button class="info-btn" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
-        </div>
-
-        <div class="main-layout">
+        <!-- Glass Panel -->
+        <div class="glass-panel w-full max-w-7xl h-full md:h-[90vh] lg:h-[85vh] rounded-[30px] flex flex-col overflow-hidden relative shadow-[0_0_50px_rgba(255,10,120,0.15)]">
             
-            <div class="player-card glass-panel">
-                <div class="video-wrapper">
-                    <div id="player"></div>
-                </div>
+            <!-- Header -->
+            <header class="flex justify-between items-center px-6 py-4 border-b border-white/5 bg-black/20 shrink-0">
+                <h1 class="font-['Dancing_Script'] text-3xl md:text-4xl bg-gradient-to-r from-white to-[#ff85c0] bg-clip-text text-transparent select-none">
+                    Sarthak <span class="text-[#ff0a78] animate-pulse mx-1">♥️</span> Reechita
+                </h1>
+                <button id="info-btn" class="text-white/50 hover:text-[#00f2ea] transition-colors text-xl">
+                    <i class="fa-solid fa-circle-info"></i>
+                </button>
+            </header>
 
-                <div class="song-info">
-                    <div class="song-title truncate-text" id="current-song-title">Select a Song...</div>
-                    <div class="sync-status" id="sync-status-msg">
-                        <i class="fa-solid fa-wifi"></i> Sync Active
-                    </div>
-                </div>
-
-                <div class="controls">
-                    <button class="ctrl-btn small" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
-                    <button class="ctrl-btn play" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
-                    <button class="ctrl-btn small" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
-                </div>
-            </div>
-
-            <div class="mobile-nav">
-                <button class="nav-btn active" onclick="switchMobileView('library')"><i class="fa-solid fa-music"></i> Queue</button>
-                <button class="nav-btn" onclick="switchMobileView('chat')"><i class="fa-solid fa-comments"></i> Chat</button>
-            </div>
-
-            <div class="sidebar">
+            <!-- Main Content Body -->
+            <main class="flex-1 flex flex-col md:flex-row min-h-0">
                 
-                <div class="panel-container library-panel active" id="view-library">
-                    <div class="header-row">
-                        <span class="section-title">Playlist</span>
-                        <button class="search-submit" style="width:auto; padding:5px 15px; font-size:0.75rem; background:rgba(255,0,0,0.5);" id="clearQueueBtn">Clear</button>
-                    </div>
-
-                    <div class="search-box">
-                        <input type="text" id="searchInput" placeholder="Search or paste Playlist/Spotify link...">
-                        <button class="search-submit" id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
-                    </div>
-
-                    <div class="tabs">
-                        <button class="tab active" id="tab-queue">Queue (<span id="queue-count">0</span>)</button>
-                        <button class="tab" id="tab-results">Results</button>
-                    </div>
-
-                    <div class="list-content active" id="queue-list">
-                        </div>
-                    <div class="list-content" id="results-list" style="display: none;"></div>
-                </div>
-
-                <div class="panel-container chat-panel" id="view-chat">
-                    <div class="header-row">
-                        <span class="section-title">Messages</span>
-                    </div>
+                <!-- Left: Player Section -->
+                <div class="w-full md:w-[60%] lg:w-[65%] p-4 md:p-6 flex flex-col border-b md:border-b-0 md:border-r border-white/5 overflow-y-auto custom-scrollbar">
                     
-                    <div class="chat-messages" id="chat-messages"></div>
+                    <!-- Video Container -->
+                    <div class="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10 mb-4 group">
+                        <div id="youtube-player" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
+                        <!-- Interaction overlay to force custom controls -->
+                        <div id="player-overlay" class="absolute inset-0 z-10 cursor-pointer"></div>
+                    </div>
 
-                    <div class="chat-input-area">
-                        <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
-                        <input type="text" class="chat-input" id="chatInput" placeholder="Type something sweet...">
-                        <button class="search-submit" style="width:40px; height:40px; border-radius:50%;" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+                    <!-- Song Info & Controls -->
+                    <div class="flex flex-col items-center justify-center space-y-2 mt-auto">
+                        <div class="text-center w-full">
+                            <h2 id="current-title" class="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-300 truncate max-w-md mx-auto px-4 leading-tight">
+                                Waiting for a song...
+                            </h2>
+                            <p id="current-artist" class="text-gray-400 text-sm font-medium mt-1 uppercase tracking-wide">
+                                --
+                            </p>
+                        </div>
+
+                        <!-- Status Indicator -->
+                        <div class="py-2">
+                            <span id="status-badge" class="inline-flex items-center gap-2 px-4 py-1 rounded-full text-sm font-bold tracking-wider text-[#00f2ea] bg-[#00f2ea]/10 border border-[#00f2ea]/20 transition-all duration-300">
+                                <i class="fa-solid fa-pause"></i>
+                                <span id="status-text">Waiting...</span>
+                            </span>
+                        </div>
+
+                        <!-- 3D Controls -->
+                        <div class="flex items-center gap-6 mt-4 pb-4">
+                            <button id="prev-btn" class="w-12 h-12 rounded-full bg-[#1a1a1a] border border-gray-700 text-gray-300 shadow-[0_4px_0_rgb(0,0,0)] active:shadow-none active:translate-y-1 transition-all flex items-center justify-center hover:text-white hover:border-[#ff0a78]">
+                                <i class="fa-solid fa-backward-step text-lg"></i>
+                            </button>
+
+                            <button id="play-btn" class="w-20 h-20 rounded-full flex items-center justify-center text-3xl shadow-[0_6px_0_rgb(0,0,0,0.5)] active:shadow-none active:translate-y-1.5 transition-all bg-[#ff0a78] text-white border border-white/20">
+                                <i class="fa-solid fa-play pl-1"></i>
+                            </button>
+
+                            <button id="next-btn" class="w-12 h-12 rounded-full bg-[#1a1a1a] border border-gray-700 text-gray-300 shadow-[0_4px_0_rgb(0,0,0)] active:shadow-none active:translate-y-1 transition-all flex items-center justify-center hover:text-white hover:border-[#ff0a78]">
+                                <i class="fa-solid fa-forward-step text-lg"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
+                <!-- Right: Sidebar (Queue/Chat) -->
+                <div class="w-full md:w-[40%] lg:w-[35%] flex flex-col bg-black/10 min-h-0 flex-1 border-t md:border-t-0 border-white/5">
+                    
+                    <!-- Mobile Tabs -->
+                    <div class="flex md:hidden border-b border-white/5 shrink-0">
+                        <button id="tab-queue" class="flex-1 py-3 text-sm font-bold uppercase tracking-wider text-[#ff0a78] bg-white/5 transition-colors">Queue</button>
+                        <button id="tab-chat" class="flex-1 py-3 text-sm font-bold uppercase tracking-wider text-gray-500 transition-colors">Chat</button>
+                    </div>
+
+                    <!-- Queue Container -->
+                    <div id="queue-view" class="flex-1 min-h-0 flex flex-col">
+                        <!-- Search Header -->
+                        <div class="p-4 border-b border-white/10 shrink-0">
+                            <form id="search-form" class="flex gap-2">
+                                <input id="search-input" type="text" placeholder="Search songs..." class="flex-1 bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:border-[#ff0a78] focus:ring-1 focus:ring-[#ff0a78] transition-all outline-none">
+                                <button type="submit" class="bg-[#ff0a78] text-white px-4 py-2 rounded-lg shadow-[0_2px_0_#990045] active:shadow-none active:translate-y-[2px] transition-all">
+                                    <i class="fa-solid fa-magnifying-glass"></i>
+                                </button>
+                            </form>
+                            <div class="flex gap-4 mt-4 text-sm font-semibold tracking-wide">
+                                <button id="subtab-queue" class="pb-2 border-b-2 border-[#00f2ea] text-white transition-colors">Queue <span id="queue-count">(0)</span></button>
+                                <button id="subtab-results" class="pb-2 border-b-2 border-transparent text-gray-500 hover:text-gray-300 transition-colors">Results</button>
+                                <div class="flex-1"></div>
+                                <button id="clear-queue-btn" class="text-xs text-red-400 hover:text-red-300 underline hidden">Clear All</button>
+                            </div>
+                        </div>
+
+                        <!-- List Area -->
+                        <div id="list-container" class="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
+                            <!-- Items injected via JS -->
+                            <div class="text-center text-gray-500 mt-10 text-sm">Loading...</div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Container -->
+                    <div id="chat-view" class="flex-[0.8] min-h-0 border-t border-white/5 flex flex-col hidden md:flex">
+                         <div class="p-3 border-b border-white/10 shrink-0">
+                            <h3 class="text-white font-['Dancing_Script'] text-xl">Love Notes</h3>
+                        </div>
+                        <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                            <!-- Messages injected via JS -->
+                        </div>
+                        <form id="chat-form" class="p-3 bg-black/20 backdrop-blur-md border-t border-white/5 flex gap-2 shrink-0">
+                            <input id="chat-input" type="text" placeholder="Type a message..." class="flex-1 bg-white/5 border border-white/10 rounded-full px-4 py-2 text-sm text-white focus:outline-none focus:border-[#ff0a78] transition-colors font-['Montserrat']">
+                            <button type="submit" class="w-10 h-10 rounded-full bg-[#00f2ea] text-black shadow-[0_3px_0_#00aeb5] active:translate-y-[2px] active:shadow-none flex items-center justify-center transition-all">
+                                <i class="fa-solid fa-paper-plane text-sm"></i>
+                            </button>
+                        </form>
+                    </div>
+
+                </div>
+            </main>
+        </div>
+
+        <!-- Info Modal -->
+        <div id="info-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden opacity-0 transition-opacity duration-300">
+            <div class="glass-panel p-8 rounded-3xl max-w-lg w-full relative transform scale-95 transition-transform duration-300">
+                <button id="close-modal-btn" class="absolute top-4 right-4 text-white/50 hover:text-white">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+                <h2 class="font-['Dancing_Script'] text-3xl text-[#ff0a78] mb-4 text-center">User Guide</h2>
+                <div class="space-y-4 font-['Montserrat'] text-gray-300 text-sm leading-relaxed">
+                    <p class="text-center italic mb-4">Welcome to <strong class="text-white">Our Heart's Rhythm</strong>.</p>
+                    <div class="flex items-start gap-3">
+                        <i class="fa-solid fa-bolt text-[#00f2ea] mt-1"></i>
+                        <div>
+                            <strong class="text-white block">Strict Sync</strong>
+                            If one stops, both stop. Playback is synchronized to the exact second.
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3">
+                        <i class="fa-solid fa-list-ul text-[#00f2ea] mt-1"></i>
+                        <div>
+                            <strong class="text-white block">Queue Management</strong>
+                            Search and add songs. The queue is shared in real-time.
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3">
+                        <i class="fa-solid fa-heart text-[#ff0a78] mt-1"></i>
+                        <div>
+                            <strong class="text-white block">Liquid Theme</strong>
+                            Designed with love. Use the chat to stay connected.
+                        </div>
+                    </div>
+                </div>
+                <button id="modal-action-btn" class="w-full mt-6 bg-[#ff0a78] text-white py-3 rounded-xl font-bold shadow-[0_4px_0_#990045] active:translate-y-[2px] active:shadow-none transition-all">
+                    Let's Vibe
+                </button>
             </div>
         </div>
     </div>
 
-    <div class="overlay" id="infoOverlay">
-        <div class="modal-card">
-            <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2>User Guide</h2>
-            <p style="color:#ccc; margin-bottom:15px; font-size:0.9rem;">Welcome to the liquid interface designed for Sarthak & Reechita.</p>
-            <div style="display:flex; flex-direction:column; gap:10px; color:#ddd;">
-                <div><i class="fa-solid fa-grip-vertical" style="color:var(--primary); margin-right:8px;"></i> <strong>Reorder:</strong> Use the grip icon to drag songs.</div>
-                <div><i class="fa-brands fa-youtube" style="color:var(--primary); margin-right:8px;"></i> <strong>Playlists:</strong> Paste YouTube/Spotify playlist links to add all songs.</div>
-                <div><i class="fa-solid fa-ban" style="color:var(--primary); margin-right:8px;"></i> <strong>Strict Sync:</strong> If an Ad plays, the partner pauses automatically.</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="overlay" id="syncOverlay">
-        <div class="modal-card" style="text-align: center;">
-            <h2>Sync Paused</h2>
-            <p id="overlayText" style="color:var(--text-dim); margin-bottom:20px;">Partner is watching an Ad. Playback halted.</p>
-            <div style="margin:0 auto 20px; width:40px; height:40px; border:4px solid rgba(255,255,255,0.1); border-top:4px solid var(--primary); border-radius:50%; animation: spin 1s infinite linear;"></div>
-            <button class="search-submit" style="width:auto; padding:10px 25px;" id="forceSyncBtn">Force Resume</button>
-        </div>
-    </div>
-
+    <!-- YouTube IFrame API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+    
+    <!-- App Logic -->
     <script src="script.js"></script>
-    <script>
-        // Mobile View Switcher
-        function switchMobileView(view) {
-            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.panel-container').forEach(panel => {
-                panel.classList.remove('active'); 
-                if(window.innerWidth <= 1000) panel.style.display = 'none';
-            });
-            const btnIndex = view === 'library' ? 0 : 1;
-            document.querySelectorAll('.nav-btn')[btnIndex].classList.add('active');
-            const panel = document.getElementById('view-' + view);
-            panel.classList.add('active');
-            if(window.innerWidth <= 1000) panel.style.display = 'flex';
-        }
-        window.addEventListener('resize', () => {
-            if(window.innerWidth > 1000) document.querySelectorAll('.panel-container').forEach(p => p.style.display = 'flex');
-        });
-    </script>
 </body>
 </html>
