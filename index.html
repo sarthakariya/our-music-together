@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sarthak & Reechita | Deep Space Sync</title>
+    <title>Sarthak & Reechita | Eternal Sync</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="style.css">
     
@@ -13,13 +13,15 @@
 </head>
 <body>
 
-    <div class="bg-animation" id="bgAnimation"></div>
+    <div class="bg-animation" id="bgAnimation">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+    </div>
 
     <div class="app-container">
-        
         <div class="top-bar glass-panel">
             <div class="logo">
-                <h1>SARTHAK <i class="fa-solid fa-heart pulse"></i> REECHITA</h1>
+                <h1>Sarthak <i class="fa-solid fa-heart pulse"></i> Reechita</h1>
             </div>
             <button class="info-btn" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
         </div>
@@ -32,9 +34,9 @@
                 </div>
 
                 <div class="song-info">
-                    <div class="song-title truncate" id="current-song-title">Ready for Love...</div>
+                    <div class="song-title truncate-text" id="current-song-title">Love is in the air...</div>
                     <div class="sync-status" id="sync-status-msg">
-                        <i class="fa-solid fa-link"></i> Waiting for music...
+                        <i class="fa-solid fa-infinity"></i> Waiting for Music
                     </div>
                 </div>
 
@@ -46,32 +48,29 @@
             </div>
 
             <div class="mobile-nav">
-                <button class="nav-btn active" onclick="switchMobileView('library')"><i class="fa-solid fa-music"></i> Music Queue</button>
-                <button class="nav-btn" onclick="switchMobileView('chat')"><i class="fa-solid fa-comments"></i> Our Chat</button>
+                <button class="nav-btn active" onclick="switchMobileView('library')"><i class="fa-solid fa-music"></i> Our Queue</button>
+                <button class="nav-btn" onclick="switchMobileView('chat')"><i class="fa-solid fa-comments"></i> Love Notes</button>
             </div>
 
-            <div class="sidebar glass-panel">
+            <div class="sidebar">
                 
                 <div class="panel-container library-panel active" id="view-library">
                     <div class="header-row">
-                        <span class="section-title">Music Library</span>
-                        <button class="clear-btn" id="clearQueueBtn">Clear All</button>
+                        <span class="section-title">Music Queue</span>
+                        <button class="emoji-btn" style="font-size:1rem; color:var(--text-error); border:1px solid var(--text-error); padding:5px 10px; border-radius:15px;" id="clearQueueBtn">Clear All</button>
                     </div>
 
                     <div class="search-box">
-                        <input type="text" id="searchInput" placeholder="Search Song / Paste Link...">
+                        <input type="text" id="searchInput" placeholder="Search song or paste Playlist/Spotify link...">
                         <button class="search-submit" id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
                     </div>
 
                     <div class="tabs">
                         <button class="tab active" id="tab-queue">Queue (<span id="queue-count">0</span>)</button>
-                        <button class="tab" id="tab-results">Search Results</button>
+                        <button class="tab" id="tab-results">Results</button>
                     </div>
 
-                    <div class="list-content active" id="queue-list">
-                        <p style="text-align:center; color: var(--text-dim); padding: 20px;">Queue is empty, baby. Add a song!</p>
-                    </div>
-
+                    <div class="list-content active" id="queue-list"></div>
                     <div class="list-content" id="results-list" style="display: none;"></div>
                 </div>
 
@@ -80,12 +79,15 @@
                         <span class="section-title">Private Chat</span>
                     </div>
                     
-                    <div class="chat-messages" id="chat-messages">
+                    <div class="chat-messages" id="chat-messages"></div>
+
+                    <div class="emoji-picker-container glass-panel" id="emojiPicker">
                         </div>
 
                     <div class="chat-input-area">
-                        <input type="text" class="chat-input" id="chatInput" placeholder="Send a message...">
-                        <button class="chat-send" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+                        <button class="emoji-btn" id="toggleEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
+                        <input type="text" class="chat-input" id="chatInput" placeholder="Type a message...">
+                        <button class="search-submit" style="width:40px; height:40px; border-radius:50%;" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
                     </div>
                 </div>
 
@@ -96,65 +98,52 @@
     <div class="overlay" id="infoOverlay">
         <div class="modal-card">
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2>How to Sync</h2>
-            <div class="guide-item"><i class="fa-solid fa-music"></i> <strong>Search:</strong> Use keywords or paste YouTube/Spotify links.</div>
-            <div class="guide-item"><i class="fa-solid fa-list"></i> <strong>Queue:</strong> Drag & Drop to reorder. "Clear All" wipes the list.</div>
-            <div class="guide-item"><i class="fa-solid fa-sliders"></i> <strong>Seeking:</strong> To jump to a specific time, <strong>PAUSE first</strong>, drag the seek bar, then PLAY.</div>
-            <div class="guide-item"><i class="fa-solid fa-link"></i> <strong>Sync:</strong> If one pauses for an ad, the other pauses too.</div>
+            <h2>Love Sync Guide</h2>
+            <div class="guide-item"><i class="fa-brands fa-youtube"></i> <span><strong>Playlists:</strong> Paste any YouTube or Spotify Playlist link in the search bar to add all songs!</span></div>
+            <div class="guide-item"><i class="fa-solid fa-arrow-down-up-across-line"></i> <span><strong>Reorder:</strong> Drag and drop songs in the queue to change the order.</span></div>
+            <div class="guide-item"><i class="fa-solid fa-clock"></i> <span><strong>Timestamp:</strong> To skip to a specific time, <strong>PAUSE the video first</strong>, drag the seek bar, then press Play.</span></div>
+            <div class="guide-item"><i class="fa-solid fa-heart"></i> <span><strong>Sync:</strong> Everything is synced. If one buffers, the other waits.</span></div>
         </div>
     </div>
 
     <div class="overlay" id="syncOverlay">
-        <div class="modal-card">
+        <div class="modal-card" style="text-align: center;">
             <h2>Sync Paused</h2>
-            <p id="overlayText" style="margin-bottom: 20px; color: var(--text-dim);">Your partner is buffering or watching an ad.</p>
-            <div class="spinner" style="margin: 0 auto 20px; width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 1s infinite;"></div>
-            <button class="modal-btn" id="forceSyncBtn">Force Resume</button>
+            <p id="overlayText" style="color:var(--text-dim); margin-bottom:20px;">Partner is buffering or watching an ad...</p>
+            <div style="margin:0 auto 20px; width:40px; height:40px; border:4px solid rgba(255,255,255,0.1); border-top:4px solid var(--primary); border-radius:50%; animation: spin 1s infinite linear;"></div>
+            <button class="search-submit" style="width:auto; padding:10px 25px;" id="forceSyncBtn">Force Resume</button>
         </div>
     </div>
 
     <script src="script.js"></script>
     <script>
-        // Create Floating Hearts
+        // Floating Hearts Logic
         const bg = document.getElementById('bgAnimation');
-        for(let i=0; i<15; i++) {
+        const emojis = ['❤️', '💖', '✨', '🌹'];
+        for(let i=0; i<20; i++) {
             const heart = document.createElement('div');
             heart.classList.add('heart-particle');
             heart.style.left = Math.random() * 100 + 'vw';
-            heart.style.animationDuration = (Math.random() * 5 + 8) + 's';
-            heart.style.animationDelay = Math.random() * 5 + 's';
+            heart.style.animationDuration = (Math.random() * 5 + 10) + 's';
+            heart.style.animationDelay = Math.random() * 10 + 's';
             bg.appendChild(heart);
         }
 
-        // Mobile View Switcher
+        // Mobile Switcher
         function switchMobileView(view) {
-            // Remove active class from buttons
             document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-            // Remove active class from panels
             document.querySelectorAll('.panel-container').forEach(panel => {
                 panel.classList.remove('active'); 
-                // Only hide if on mobile (checked via CSS media query usually, but inline style override helps here)
                 if(window.innerWidth <= 1000) panel.style.display = 'none';
             });
-
-            // Activate button
             const btnIndex = view === 'library' ? 0 : 1;
             document.querySelectorAll('.nav-btn')[btnIndex].classList.add('active');
-
-            // Activate Panel
             const panel = document.getElementById('view-' + view);
             panel.classList.add('active');
             if(window.innerWidth <= 1000) panel.style.display = 'flex';
         }
-
-        // Handle resize reset
         window.addEventListener('resize', () => {
-            if(window.innerWidth > 1000) {
-                document.querySelectorAll('.panel-container').forEach(p => p.style.display = 'flex');
-            } else {
-                // Reset to library view on resize to mobile
-                switchMobileView('library');
-            }
+            if(window.innerWidth > 1000) document.querySelectorAll('.panel-container').forEach(p => p.style.display = 'flex');
         });
     </script>
 </body>
