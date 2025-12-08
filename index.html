@@ -2,144 +2,160 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sarthak & Reechita's Deep Space Sync Player</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sarthak & Reechita | Deep Space Sync</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    
-    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <div class="ambient-light"></div>
-    
+    <div class="bg-animation" id="bgAnimation"></div>
+
     <div class="app-container">
-        <div class="top-bar">
-            <h1>SARTHAK <i class="fa-solid fa-heart pulse"></i> REECHITA SYNC</h1>
+        
+        <div class="top-bar glass-panel">
+            <div class="logo">
+                <h1>SARTHAK <i class="fa-solid fa-heart pulse"></i> REECHITA</h1>
+            </div>
+            <button class="info-btn" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
         </div>
 
         <div class="main-layout">
             
             <div class="player-card glass-panel">
-                
                 <div class="video-wrapper">
                     <div id="player"></div>
                 </div>
 
-                <div class="info-area">
-                    <h2 id="current-song-title" class="truncate-text">No Song Loaded</h2>
-                    <p class="sync-status-msg" id="sync-status-msg" title="This status shows if the player is in sync with your partner, or if there is an ad/buffer stall.">
-                        <i class="fa-solid fa-pause"></i> PAUSED
-                    </p>
-                </div>
-                
-                <div class="controls">
-                    <button class="btn-sec" id="prev-btn" title="Previous Song in Queue">
-                        <i class="fa-solid fa-backward-step"></i>
-                    </button>
-                    <button class="btn-main" id="play-pause-btn" title="Play / Pause (Syncs status with partner)">
-                        <i class="fa-solid fa-play"></i>
-                    </button>
-                    <button class="btn-sec" id="next-btn" title="Next Song in Queue">
-                        <i class="fa-solid fa-forward-step"></i>
-                    </button>
+                <div class="song-info">
+                    <div class="song-title truncate" id="current-song-title">Ready for Love...</div>
+                    <div class="sync-status" id="sync-status-msg">
+                        <i class="fa-solid fa-link"></i> Waiting for music...
+                    </div>
                 </div>
 
+                <div class="controls">
+                    <button class="ctrl-btn small" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
+                    <button class="ctrl-btn play" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
+                    <button class="ctrl-btn small" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
+                </div>
             </div>
 
-            <div class="library-container">
+            <div class="mobile-nav">
+                <button class="nav-btn active" onclick="switchMobileView('library')"><i class="fa-solid fa-music"></i> Music Queue</button>
+                <button class="nav-btn" onclick="switchMobileView('chat')"><i class="fa-solid fa-comments"></i> Our Chat</button>
+            </div>
+
+            <div class="sidebar glass-panel">
                 
-                <div class="top-panel glass-panel">
-                    <div class="section-title-inline">
-                        Search & Queue 
-                        <button class="info-btn" id="info-btn" title="Click for App Guide">
-                            <i class="fa-solid fa-circle-info"></i>
-                        </button>
+                <div class="panel-container library-panel active" id="view-library">
+                    <div class="header-row">
+                        <span class="section-title">Music Library</span>
+                        <button class="clear-btn" id="clearQueueBtn">Clear All</button>
                     </div>
 
-                    <div class="search-wrapper">
-                        <input type="text" id="searchInput" placeholder="Search song, YouTube, Spotify link, or Playlist link...">
-                        <button class="search-btn" id="search-btn" title="Search YouTube/Fetch Link">
-                            <i class="fa-solid fa-magnifying-glass"></i>
-                        </button>
+                    <div class="search-box">
+                        <input type="text" id="searchInput" placeholder="Search Song / Paste Link...">
+                        <button class="search-submit" id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
                     </div>
-                    
+
                     <div class="tabs">
-                        <button class="tab" id="tab-results" title="See search results to add songs to the queue.">Search Results</button>
-                        <button class="tab active" id="tab-queue" title="View and re-order the shared playlist.">Queue (<span id="queue-count">0</span>)</button>
+                        <button class="tab active" id="tab-queue">Queue (<span id="queue-count">0</span>)</button>
+                        <button class="tab" id="tab-results">Search Results</button>
                     </div>
 
-                    <div class="list-view active" id="queue-list">
-                        <p class="empty-state">Queue is empty. Find a song to get the party started!</p>
+                    <div class="list-content active" id="queue-list">
+                        <p style="text-align:center; color: var(--text-dim); padding: 20px;">Queue is empty, baby. Add a song!</p>
                     </div>
 
-                    <div class="list-view" id="results-list">
-                        <p class="empty-state">Search for a song or paste a link above.</p>
-                    </div>
+                    <div class="list-content" id="results-list" style="display: none;"></div>
                 </div>
 
-                <div class="bottom-panel chat-card glass-panel">
-                    <div class="section-title-inline">Chat with Partner</div>
+                <div class="panel-container chat-panel" id="view-chat">
+                    <div class="header-row">
+                        <span class="section-title">Private Chat</span>
+                    </div>
                     
                     <div class="chat-messages" id="chat-messages">
                         </div>
 
-                    <div class="chat-input-wrapper">
-                        <input type="text" id="chatInput" placeholder="Send a sweet message to your partner...">
-                        <button class="send-btn" id="chatSendBtn" title="Send Message">
-                            <i class="fa-solid fa-paper-plane"></i>
-                        </button>
+                    <div class="chat-input-area">
+                        <input type="text" class="chat-input" id="chatInput" placeholder="Send a message...">
+                        <button class="chat-send" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
                     </div>
                 </div>
 
             </div>
         </div>
-        
-        <div class="info-modal-overlay overlay" id="infoOverlay">
-            <div class="glass-modal info-modal">
-                <button class="close-btn" id="close-info-btn" title="Close Guide"><i class="fa-solid fa-xmark"></i></button>
-                <h2>Deep Space Sync Guide</h2>
-                <div class="guide-content">
-                    <p>This is your personal, synchronized music player, built for <strong>Sarthak and Reechita</strong> to listen together, no matter the distance!</p>
-                    
-                    <div class="guide-section">
-                        <h4><i class="fa-solid fa-magnifying-glass"></i> Search & Queue</h4>
-                        <p>Use the search bar to find YouTube songs, or paste links from <strong>YouTube (including Playlists)</strong> or <strong>Spotify (Track/Album/Playlist)</strong>. All added songs are automatically shared in the Queue.</p>
-                    </div>
-                    
-                    <div class="guide-section">
-                        <h4><i class="fa-solid fa-repeat"></i> The Queue</h4>
-                        <p>Drag and drop songs in the Queue tab to re-order the shared playlist. Click a song to start playing it immediately.</p>
-                    </div>
-                    
-                    <div class="guide-section">
-                        <h4><i class="fa-solid fa-satellite-dish"></i> Sync Status</h4>
-                        <p>The main player syncs both the video and the playback time. If one of you gets an ad or buffers, the other player will <strong>pause automatically</strong> (Ad/Buffer Stall) to keep you perfectly synchronized.</p>
-                    </div>
-                    
-                    <div class="guide-section">
-                        <h4><i class="fa-solid fa-comment-dots"></i> Chat</h4>
-                        <p>The chat is for real-time messages with your partner! Share your thoughts on the music.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
     </div>
-    
+
+    <div class="overlay" id="infoOverlay">
+        <div class="modal-card">
+            <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
+            <h2>How to Sync</h2>
+            <div class="guide-item"><i class="fa-solid fa-music"></i> <strong>Search:</strong> Use keywords or paste YouTube/Spotify links.</div>
+            <div class="guide-item"><i class="fa-solid fa-list"></i> <strong>Queue:</strong> Drag & Drop to reorder. "Clear All" wipes the list.</div>
+            <div class="guide-item"><i class="fa-solid fa-sliders"></i> <strong>Seeking:</strong> To jump to a specific time, <strong>PAUSE first</strong>, drag the seek bar, then PLAY.</div>
+            <div class="guide-item"><i class="fa-solid fa-link"></i> <strong>Sync:</strong> If one pauses for an ad, the other pauses too.</div>
+        </div>
+    </div>
+
     <div class="overlay" id="syncOverlay">
-        <div class="glass-modal">
-            <div class="spinner"></div>
-            <h2 id="overlayTitle">Awaiting Partner to Resume...</h2>
-            <p id="overlayText">Playback paused due to an ad/buffer stall by your partner. You cannot resume playback until they do.</p>
-            <button id="forceSyncBtn">Force Play & Sync</button>
+        <div class="modal-card">
+            <h2>Sync Paused</h2>
+            <p id="overlayText" style="margin-bottom: 20px; color: var(--text-dim);">Your partner is buffering or watching an ad.</p>
+            <div class="spinner" style="margin: 0 auto 20px; width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 1s infinite;"></div>
+            <button class="modal-btn" id="forceSyncBtn">Force Resume</button>
         </div>
     </div>
 
     <script src="script.js"></script>
+    <script>
+        // Create Floating Hearts
+        const bg = document.getElementById('bgAnimation');
+        for(let i=0; i<15; i++) {
+            const heart = document.createElement('div');
+            heart.classList.add('heart-particle');
+            heart.style.left = Math.random() * 100 + 'vw';
+            heart.style.animationDuration = (Math.random() * 5 + 8) + 's';
+            heart.style.animationDelay = Math.random() * 5 + 's';
+            bg.appendChild(heart);
+        }
+
+        // Mobile View Switcher
+        function switchMobileView(view) {
+            // Remove active class from buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+            // Remove active class from panels
+            document.querySelectorAll('.panel-container').forEach(panel => {
+                panel.classList.remove('active'); 
+                // Only hide if on mobile (checked via CSS media query usually, but inline style override helps here)
+                if(window.innerWidth <= 1000) panel.style.display = 'none';
+            });
+
+            // Activate button
+            const btnIndex = view === 'library' ? 0 : 1;
+            document.querySelectorAll('.nav-btn')[btnIndex].classList.add('active');
+
+            // Activate Panel
+            const panel = document.getElementById('view-' + view);
+            panel.classList.add('active');
+            if(window.innerWidth <= 1000) panel.style.display = 'flex';
+        }
+
+        // Handle resize reset
+        window.addEventListener('resize', () => {
+            if(window.innerWidth > 1000) {
+                document.querySelectorAll('.panel-container').forEach(p => p.style.display = 'flex');
+            } else {
+                // Reset to library view on resize to mobile
+                switchMobileView('library');
+            }
+        });
+    </script>
 </body>
 </html>
