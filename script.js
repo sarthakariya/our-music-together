@@ -20,8 +20,13 @@ const chatRef = db.ref('chat');
 let player, currentQueue = [], currentVideoId = null;
 let lastBroadcaster = "System"; 
 let activeTab = 'queue'; 
-let currentRemoteState = null; // Store the last known DB state
-let isPartnerPlaying = false; // Flag to prevent play/pause loops
+let currentRemoteState = null; 
+
+// --- CRITICAL SYNC FLAGS ---
+// This flag prevents infinite loops. If true, we ignore all "onStateChange" events from the player.
+// This allows us to update the player (seek, play, load) without broadcasting those changes back to the DB.
+let ignoreSystemEvents = false;
+let ignoreTimer = null;
 
 let myName = localStorage.getItem('deepSpaceUserName');
 if (!myName) {
@@ -29,6 +34,14 @@ if (!myName) {
     localStorage.setItem('deepSpaceUserName', myName);
 }
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
+
+function suppressBroadcast(duration = 1000) {
+    ignoreSystemEvents = true;
+    if (ignoreTimer) clearTimeout(ignoreTimer);
+    ignoreTimer = setTimeout(() => {
+        ignoreSystemEvents = false;
+    }, duration);
+}
 
 // --- YOUTUBE PLAYER ---
 function onYouTubeIframeAPIReady() {
@@ -48,13 +61,13 @@ function onPlayerReady(event) {
     setInterval(heartbeatSync, 1000);
     
     // 2. Receiver Loop (Aggressive Fixer)
-    // Increased to 2000ms to allow buffering and prevent "faulting"
-    setInterval(monitorSyncHealth, 2000);
+    // Increased interval to reduce load and prevent fighting
+    setInterval(monitorSyncHealth, 3000);
     
     // Initial Load
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
-        if(state) applyRemoteCommand(state, true);
+        if(state) applyRemoteCommand(state);
     });
 }
 
@@ -62,8 +75,8 @@ function onPlayerReady(event) {
 
 // SENDER: Tell DB what I am doing
 function heartbeatSync() {
-    // Only broadcast if I am playing and I am the intended broadcaster
-    if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName) {
+    // Only broadcast if I am playing AND I am the intended broadcaster
+    if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
         const state = player.getPlayerState();
         if (state === YT.PlayerState.PLAYING) {
             // Check for end of song
@@ -77,54 +90,59 @@ function heartbeatSync() {
     }
 }
 
-// RECEIVER: Automatic Fixer (The "Begged" Feature)
+// RECEIVER: Automatic Fixer
 function monitorSyncHealth() {
-    if (!player || !currentRemoteState || !player.getPlayerState) return;
+    if (!player || !currentRemoteState || !player.getPlayerState || lastBroadcaster === myName) return;
 
     const myState = player.getPlayerState();
     
     // If DB says PLAYING, but I am PAUSED/CUED/BUFFERING for too long
     if (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart') {
         
-        // If I am NOT playing, Force Play
+        let needsFix = false;
+        
+        // Fix State
         if (myState !== YT.PlayerState.PLAYING && myState !== YT.PlayerState.BUFFERING) {
             console.log("⚠️ Sync Monitor: Force Resuming...");
             player.playVideo();
-            
-            // Fix timestamp if drifted
-            if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 2) {
-                player.seekTo(currentRemoteState.time, true);
-            }
+            needsFix = true;
+        }
+        
+        // Fix Time Drift (> 3 seconds)
+        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3) {
+            player.seekTo(currentRemoteState.time, true);
+            needsFix = true;
+        }
+
+        // IMPORTANT: If we fixed something, silence broadcast so we don't loop
+        if (needsFix) {
+            suppressBroadcast(1500); 
         }
     }
 }
 
 function onPlayerStateChange(event) {
+    // CRITICAL: If we are syncing/loading/fixing, DO NOT BROADCAST.
+    if (ignoreSystemEvents) {
+        return;
+    }
+
     const btn = document.getElementById('play-pause-btn');
     const state = event.data;
 
     if (state === YT.PlayerState.PLAYING) {
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
         
-        // CRITICAL: Ad/Restart Handling
-        // If we start playing and time is near 0, assume it's a fresh start or post-ad.
-        // We broadcast RESTART so everyone syncs to 0.
-        if (player.getCurrentTime() < 2) {
-             lastBroadcaster = myName; // I am taking control
-             broadcastState('restart', 0, currentVideoId); // Force everyone to 0
-        } 
-        else if(!isPartnerPlaying) {
-            // Normal Resume
-            lastBroadcaster = myName;
-            broadcastState('play', player.getCurrentTime(), currentVideoId);
-        }
+        // Only take control if I am NOT ignoring events
+        // This means I (the user) genuinely clicked play
+        lastBroadcaster = myName;
+        broadcastState('play', player.getCurrentTime(), currentVideoId);
 
     } else {
         btn.innerHTML = '<i class="fa-solid fa-play"></i>';
         
         if (state === YT.PlayerState.PAUSED) {
-            // Only broadcast pause if I pressed it (not caused by remote)
-            if (!isPartnerPlaying && lastBroadcaster === myName) {
+            if (lastBroadcaster === myName) {
                 broadcastState('pause', player.getCurrentTime(), currentVideoId);
             }
         }
@@ -170,14 +188,13 @@ function loadInitialData() {
     syncRef.on('value', (snapshot) => {
         const state = snapshot.val();
         if (state) {
-            currentRemoteState = state; // Save for the Monitor Function
+            currentRemoteState = state; 
             
             // If someone else updated it, apply changes
             if (state.lastUpdater !== myName) {
                 lastBroadcaster = state.lastUpdater;
                 applyRemoteCommand(state);
             } else {
-                // If I am the updater, ensure UI matches
                 lastBroadcaster = myName;
             }
         }
@@ -193,6 +210,7 @@ function loadInitialData() {
 loadInitialData();
 
 function broadcastState(action, time, videoId) {
+    if (ignoreSystemEvents) return; // Double safety
     syncRef.set({ 
         action, 
         time, 
@@ -205,7 +223,10 @@ function broadcastState(action, time, videoId) {
 function applyRemoteCommand(state) {
     if (!player) return;
     
-    isPartnerPlaying = true; // Block my own events from firing back
+    // Silence my own events while I apply the partner's command
+    // Increased duration to handle buffering/loading
+    suppressBroadcast(2500); 
+    
     document.getElementById('syncOverlay').classList.remove('active');
 
     // Case 1: Video Changed
@@ -213,7 +234,7 @@ function applyRemoteCommand(state) {
         const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
         const title = songInQueue ? songInQueue.title : "Syncing...";
         const uploader = songInQueue ? songInQueue.uploader : "";
-        loadAndPlayVideo(state.videoId, title, uploader, state.time, false); // Pass false to avoid rebroadcasting loop
+        loadAndPlayVideo(state.videoId, title, uploader, state.time, false); 
         
         if(state.action === 'play' || state.action === 'restart') player.playVideo();
     } 
@@ -222,8 +243,6 @@ function applyRemoteCommand(state) {
         const playerState = player.getPlayerState();
         
         if (state.action === 'restart') {
-            // FORCE START FROM 0 (Ad Recovery/New Song)
-            // Even if we are at 0:10, if server says Restart, we go to 0.
             player.seekTo(0, true);
             player.playVideo();
         }
@@ -242,8 +261,6 @@ function applyRemoteCommand(state) {
             if (playerState !== YT.PlayerState.PAUSED) player.pauseVideo();
         } 
     }
-
-    setTimeout(() => { isPartnerPlaying = false; }, 800);
 }
 
 function updateSyncStatus() {
@@ -255,9 +272,7 @@ function updateSyncStatus() {
         msg.style.background = "#ffd700"; // Gold
         msg.style.color = "#000";
     } else {
-        // We are paused. Why?
         if (currentRemoteState && currentRemoteState.action === 'ad_pause') {
-            // Explicit Ad Pause
             msg.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Partner watching Ad`;
             msg.style.background = "#ff9800";
             msg.style.color = "#fff";
@@ -278,14 +293,19 @@ function updateSyncStatus() {
 
 // --- STANDARD HELPER FUNCTIONS ---
 
-// Updated to support immediate broadcasting
 function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadcast = true) {
     if (player && videoId) {
+        
+        // If this is a remote load, suppress events triggered by loading
+        if (!shouldBroadcast) {
+            suppressBroadcast(3000); 
+        }
+
         // If it's the same video and we just need to seek/play
         if(currentVideoId === videoId && player.cueVideoById) {
              if(Math.abs(player.getCurrentTime() - startTime) > 2) player.seekTo(startTime, true);
              player.playVideo();
-             // Even if same video, if we clicked it, we take control
+             
              if (shouldBroadcast) {
                  lastBroadcaster = myName;
                  broadcastState('play', startTime, videoId);
@@ -300,7 +320,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
         document.getElementById('current-song-artist').textContent = uploader || "Unknown Artist";
         renderQueue(currentQueue, currentVideoId);
         
-        // CRITICAL FIX: Broadcast NEW song immediately so partner switches without waiting for local buffer
+        // Only broadcast if *I* initiated this change manually
         if (shouldBroadcast) {
             lastBroadcaster = myName;
             broadcastState('restart', 0, videoId);
