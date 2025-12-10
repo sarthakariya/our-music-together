@@ -21,11 +21,12 @@ let player, currentQueue = [], currentVideoId = null;
 let lastBroadcaster = "System"; 
 let activeTab = 'queue'; 
 let currentRemoteState = null; 
-let isSwitchingSong = false; // Prevents interactions during the 2.1s wait
+let isSwitchingSong = false; 
 
 // --- CRITICAL SYNC FLAGS ---
 let ignoreSystemEvents = false;
 let ignoreTimer = null;
+let lastLocalInteractionTime = 0; // Timestamp of last user click
 
 let myName = localStorage.getItem('deepSpaceUserName');
 if (!myName) {
@@ -71,23 +72,16 @@ function onPlayerReady(event) {
 
 // --- AD DETECTION LOGIC ---
 function detectAd() {
-    // Safety checks
     if (!player || typeof player.getVideoData !== 'function' || !currentVideoId) return false;
-    
     try {
         const data = player.getVideoData();
-        // If the player reports a Video ID that is DIFFERENT from our current global ID, it's an Ad.
         if (data && data.video_id && data.video_id !== currentVideoId) {
-            // Only count as Ad if we are actually playing or buffering
             const state = player.getPlayerState();
             if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
-                console.log("Ad Detected: Mismatch", data.video_id, currentVideoId);
                 return true;
             }
         }
-    } catch (e) {
-        console.warn("Ad detect error", e);
-    }
+    } catch (e) { console.warn("Ad detect error", e); }
     return false;
 }
 
@@ -95,20 +89,8 @@ function detectAd() {
 
 // SENDER: Tell DB what I am doing
 function heartbeatSync() {
-    // Force UI Update to ensure button is correct
-    if (player && player.getPlayerState) {
-        updatePlayPauseButton(player.getPlayerState());
-    }
-
+    if (player && player.getPlayerState) updatePlayPauseButton(player.getPlayerState());
     if (isSwitchingSong) return;
-
-    // RACE CONDITION FIX: 
-    // If the DB was updated by someone else VERY RECENTLY (< 2s), DO NOT BROADCAST.
-    // This allows their 'Pause' command to propagate to me before I overwrite it with my 'Play' status.
-    if (currentRemoteState && currentRemoteState.lastUpdater !== myName) {
-        const timeSinceUpdate = Date.now() - (currentRemoteState.timestamp || 0);
-        if (timeSinceUpdate < 2000) return;
-    }
 
     // Check for Ad first
     if (lastBroadcaster === myName && detectAd()) {
@@ -120,13 +102,11 @@ function heartbeatSync() {
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
         const state = player.getPlayerState();
         if (state === YT.PlayerState.PLAYING) {
-            // Check for end of song (auto-next)
             const duration = player.getDuration();
             const current = player.getCurrentTime();
             if (duration > 0 && duration - current < 1) {
-                initiateNextSong(); // This will trigger the 2.1s wait
+                initiateNextSong(); 
             } else {
-                // Normal Playing Broadcast
                 broadcastState('play', current, currentVideoId);
             }
         }
@@ -135,31 +115,28 @@ function heartbeatSync() {
 
 // RECEIVER: Automatic Fixer
 function monitorSyncHealth() {
-    // If I am the broadcaster or currently switching, I don't need to fix myself against the DB
     if (lastBroadcaster === myName || isSwitchingSong) return;
     if (!player || !currentRemoteState || !player.getPlayerState) return;
 
-    // If partner is watching ad, do nothing (we should be paused)
+    // Don't fix if I just clicked something recently
+    if (Date.now() - lastLocalInteractionTime < 2000) return;
+
     if (currentRemoteState.action === 'ad_pause') return;
-    if (currentRemoteState.action === 'switching_pause') return; // Don't fight the switch
+    if (currentRemoteState.action === 'switching_pause') return;
 
     const myState = player.getPlayerState();
     
     // If DB says PLAYING
     if (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart') {
-        
         let needsFix = false;
         
-        // Fix State: If I am NOT playing, force play
         if (myState !== YT.PlayerState.PLAYING && myState !== YT.PlayerState.BUFFERING) {
-            if (detectAd()) return; // Local Ad Check
-
+            if (detectAd()) return; 
             console.log("⚠️ Sync Monitor: Force Resuming...");
             player.playVideo();
             needsFix = true;
         }
         
-        // Fix Time Drift (> 3 seconds)
         if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3) {
             if (!detectAd()) { 
                 player.seekTo(currentRemoteState.time, true);
@@ -167,7 +144,7 @@ function monitorSyncHealth() {
             }
         }
 
-        if (needsFix) suppressBroadcast(1500); 
+        if (needsFix) suppressBroadcast(1000); 
     }
     // If DB says PAUSED
     else if (currentRemoteState.action === 'pause') {
@@ -175,7 +152,7 @@ function monitorSyncHealth() {
              console.log("⚠️ Sync Monitor: Force Pausing...");
              player.pauseVideo();
              needsFix = true;
-             if (needsFix) suppressBroadcast(1500);
+             if (needsFix) suppressBroadcast(1000);
          }
     }
 }
@@ -184,36 +161,28 @@ function updatePlayPauseButton(state) {
     const btn = document.getElementById('play-pause-btn');
     if (!btn) return;
     
-    // LOGIC REQUEST: Only spin if switching song. Otherwise strict Play/Pause.
+    // STRICT RULE: Only show spinner if switching song.
     if (isSwitchingSong) {
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
         return;
     }
 
-    // Visual logic matching standard media players
+    // Otherwise, strictly Play or Pause icon
     if (state === YT.PlayerState.PLAYING) {
-        // If playing, button should show Pause icon
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
     } else {
-        // For PAUSED, ENDED, CUED, BUFFERING (unless switching), show Play icon
+        // Paused, Buffering, Ended, Cued -> Show Play Icon
         btn.innerHTML = '<i class="fa-solid fa-play"></i>';
     }
 }
 
 function onPlayerStateChange(event) {
     const state = event.data;
-
-    // 1. Update UI
     updatePlayPauseButton(state);
 
     if (isSwitchingSong) return;
+    if (ignoreSystemEvents) return;
 
-    // 2. If we are programmatically changing state (syncing), do not broadcast
-    if (ignoreSystemEvents) {
-        return;
-    }
-
-    // 3. Ad Detection
     if (state === YT.PlayerState.PLAYING && detectAd()) {
         lastBroadcaster = myName;
         broadcastState('ad_pause', 0, currentVideoId);
@@ -221,17 +190,14 @@ function onPlayerStateChange(event) {
         return;
     }
 
-    // 4. User Interaction Broadcasting
-    // Explicitly check for PLAYING vs PAUSED to claim control
-    if (state === YT.PlayerState.PLAYING) {
-        // Claim control
-        lastBroadcaster = myName; 
-        broadcastState('play', player.getCurrentTime(), currentVideoId);
-    } 
-    else if (state === YT.PlayerState.PAUSED) {
-        // Claim control
-        lastBroadcaster = myName; 
-        broadcastState('pause', player.getCurrentTime(), currentVideoId);
+    // Detect native player clicks (if user clicks video instead of button)
+    // If state changed and we aren't suppressed, we assume it's a user action
+    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.PAUSED) {
+        // Only claim if it wasn't a recent sync event
+        if (Date.now() - lastLocalInteractionTime > 500) {
+             lastBroadcaster = myName; 
+             broadcastState(state === YT.PlayerState.PLAYING ? 'play' : 'pause', player.getCurrentTime(), currentVideoId);
+        }
     }
     else if (state === YT.PlayerState.ENDED) {
         initiateNextSong();
@@ -242,24 +208,35 @@ function onPlayerStateChange(event) {
 
 function togglePlayPause() {
     if (!player || isSwitchingSong) return;
-    const state = player.getPlayerState();
     
-    // IMPORTANT: Claim control immediately so sync doesn't fight back
+    // --- GOD MODE INTERACTION ---
+    // 1. Mark interaction time to ignore incoming syncs for 1s
+    lastLocalInteractionTime = Date.now();
+    
+    // 2. Clear any suppression so we can broadcast immediately
+    ignoreSystemEvents = false;
+    clearTimeout(ignoreTimer);
+
+    // 3. Claim control
     lastBroadcaster = myName; 
+
+    const state = player.getPlayerState();
     
     if (state === YT.PlayerState.PLAYING) {
         player.pauseVideo();
-        // Optimistic UI update
+        // Optimistic UI
         document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-play"></i>';
-        broadcastState('pause', player.getCurrentTime(), currentVideoId);
+        // Force broadcast
+        broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
         if (!currentVideoId && currentQueue.length > 0) {
             initiateSongLoad(currentQueue[0]);
         } else if (currentVideoId) {
             player.playVideo();
-            // Optimistic UI update
+            // Optimistic UI
             document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-pause"></i>';
-            broadcastState('play', player.getCurrentTime(), currentVideoId);
+            // Force broadcast
+            broadcastState('play', player.getCurrentTime(), currentVideoId, true);
         }
     }
 }
@@ -282,34 +259,25 @@ function initiatePrevSong() {
 function initiateSongLoad(songObj) {
     if (!songObj) return;
 
-    // 1. Lock functionality
     isSwitchingSong = true;
     lastBroadcaster = myName;
 
-    // 2. Pause Local Player
     if (player && player.pauseVideo) player.pauseVideo();
     
-    // 3. UI Feedback
     showToast("System", "Switching track in 2.1s...");
-    // Force spinner here
     document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
-    // 4. Broadcast special 'switching_pause' to partner
-    // This tells them to pause and wait, not to fight back with 'monitorSyncHealth'
     syncRef.set({ 
         action: 'switching_pause', 
         time: 0, 
-        videoId: currentVideoId, // Keep old ID for now
+        videoId: currentVideoId, 
         lastUpdater: myName, 
         timestamp: Date.now() 
     });
 
-    // 5. Wait 2.1 seconds
     setTimeout(() => {
-        // 6. Load new song and Restart
         loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
         isSwitchingSong = false;
-        // Button will auto-update in onPlayerStateChange or heartbeat
     }, 2100);
 }
 
@@ -331,9 +299,9 @@ function loadInitialData() {
             
             // If someone else updated it, apply changes
             if (state.lastUpdater !== myName) {
-                lastBroadcaster = state.lastUpdater;
                 applyRemoteCommand(state);
             } else {
+                // If I updated it, just confirm I am broadcaster
                 lastBroadcaster = myName;
             }
         }
@@ -348,8 +316,10 @@ function loadInitialData() {
 }
 loadInitialData();
 
-function broadcastState(action, time, videoId) {
-    if (ignoreSystemEvents) return; 
+// ADDED: force parameter to bypass suppression
+function broadcastState(action, time, videoId, force = false) {
+    if (ignoreSystemEvents && !force) return; 
+    
     syncRef.set({ 
         action, 
         time, 
@@ -361,19 +331,23 @@ function broadcastState(action, time, videoId) {
 
 function applyRemoteCommand(state) {
     if (!player) return;
+
+    // Protection: If I just clicked a button < 1.5s ago, ignore incoming remote events
+    // This prevents my local "Pause" from being overwritten by a lagging "Play" from partner
+    if (Date.now() - lastLocalInteractionTime < 1500) {
+        console.log("Ignoring remote command due to recent local interaction");
+        return;
+    }
     
     // Silence events while applying remote command
-    suppressBroadcast(2500); 
+    suppressBroadcast(1000); 
+    lastBroadcaster = state.lastUpdater;
     
     document.getElementById('syncOverlay').classList.remove('active');
 
-    // Handle "switching_pause" specifically
     if (state.action === 'switching_pause') {
         player.pauseVideo();
         showToast("System", "Partner is changing track...");
-        // Show spinner on remote side too if we want, or just wait for next 'play'
-        updatePlayPauseButton(YT.PlayerState.BUFFERING); // Use buffer state logic manually if needed, but since isSwitchingSong is local, we rely on standard state here or custom
-        // Actually, let's just leave it paused.
         document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
         updateSyncStatus();
         return;
@@ -413,21 +387,19 @@ function applyRemoteCommand(state) {
 function updateSyncStatus() {
     const msg = document.getElementById('sync-status-msg');
     
-    // Check if we are playing
     if (player && player.getPlayerState() === YT.PlayerState.PLAYING && !detectAd()) {
         msg.innerHTML = `<i class="fa-solid fa-heart-pulse"></i> Synced`;
         msg.style.background = "#ffd700"; // Gold
         msg.style.color = "#000";
     } else {
-        // If remote state says ad_pause OR if I am detecting an ad locally
         if ((currentRemoteState && currentRemoteState.action === 'ad_pause') || detectAd()) {
             msg.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Partner watching Ad`;
-            msg.style.background = "#ff9800"; // Orange
+            msg.style.background = "#ff9800"; 
             msg.style.color = "#fff";
         } 
         else if (currentRemoteState && currentRemoteState.action === 'switching_pause') {
             msg.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Switching Song...`;
-            msg.style.background = "#9c27b0"; // Purple
+            msg.style.background = "#9c27b0"; 
             msg.style.color = "#fff";
         }
         else {
@@ -451,20 +423,16 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
     if (player && videoId) {
         
         if (!shouldBroadcast) {
-            suppressBroadcast(3000); 
+            suppressBroadcast(1500); 
         }
 
-        // New Video Load or Seek
-        // NOTE: We always loadVideoById if switching to ensure correct ID is set in player
         if(currentVideoId !== videoId || !player.cueVideoById) {
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
         } else {
-             // Same video, just seek
              if(Math.abs(player.getCurrentTime() - startTime) > 2) player.seekTo(startTime, true);
              player.playVideo();
         }
 
-        // UPDATE GLOBAL STATE IMMEDIATELY to prevent Ad detection race conditions
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
         document.getElementById('current-song-artist').textContent = uploader || "Unknown Artist";
@@ -472,8 +440,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
         
         if (shouldBroadcast) {
             lastBroadcaster = myName;
-            // 'restart' forces the partner to jump to 0:00 or specific time
-            broadcastState('restart', 0, videoId);
+            broadcastState('restart', 0, videoId, true); // force=true
         }
     }
 }
