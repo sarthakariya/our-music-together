@@ -60,7 +60,7 @@ function onPlayerReady(event) {
     setInterval(heartbeatSync, 1000);
     
     // 2. Receiver Loop (Aggressive Fixer)
-    setInterval(monitorSyncHealth, 3000);
+    setInterval(monitorSyncHealth, 2000);
     
     // Initial Load
     syncRef.once('value').then(snapshot => {
@@ -95,12 +95,20 @@ function detectAd() {
 
 // SENDER: Tell DB what I am doing
 function heartbeatSync() {
-    // Force UI Update to fix "Spirit of the Button" issues (Ad transition drift)
+    // Force UI Update to ensure button is correct
     if (player && player.getPlayerState) {
         updatePlayPauseButton(player.getPlayerState());
     }
 
     if (isSwitchingSong) return;
+
+    // RACE CONDITION FIX: 
+    // If the DB was updated by someone else VERY RECENTLY (< 2s), DO NOT BROADCAST.
+    // This allows their 'Pause' command to propagate to me before I overwrite it with my 'Play' status.
+    if (currentRemoteState && currentRemoteState.lastUpdater !== myName) {
+        const timeSinceUpdate = Date.now() - (currentRemoteState.timestamp || 0);
+        if (timeSinceUpdate < 2000) return;
+    }
 
     // Check for Ad first
     if (lastBroadcaster === myName && detectAd()) {
@@ -176,23 +184,26 @@ function updatePlayPauseButton(state) {
     const btn = document.getElementById('play-pause-btn');
     if (!btn) return;
     
+    // LOGIC REQUEST: Only spin if switching song. Otherwise strict Play/Pause.
+    if (isSwitchingSong) {
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        return;
+    }
+
     // Visual logic matching standard media players
     if (state === YT.PlayerState.PLAYING) {
         // If playing, button should show Pause icon
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-    } else if (state === YT.PlayerState.PAUSED || state === YT.PlayerState.CUED || state === YT.PlayerState.ENDED) {
-        // If paused/stopped, button should show Play icon
+    } else {
+        // For PAUSED, ENDED, CUED, BUFFERING (unless switching), show Play icon
         btn.innerHTML = '<i class="fa-solid fa-play"></i>';
-    } else if (state === YT.PlayerState.BUFFERING) {
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
     }
 }
 
 function onPlayerStateChange(event) {
     const state = event.data;
 
-    // 1. ALWAYS update UI immediately. This fixes the "Spirit of the button" issue.
-    // We do this before any checks so the local user always sees reality.
+    // 1. Update UI
     updatePlayPauseButton(state);
 
     if (isSwitchingSong) return;
@@ -211,13 +222,14 @@ function onPlayerStateChange(event) {
     }
 
     // 4. User Interaction Broadcasting
-    // If we are NOT ignoring events, we assume the user clicked something.
-    // We claim control and broadcast.
+    // Explicitly check for PLAYING vs PAUSED to claim control
     if (state === YT.PlayerState.PLAYING) {
+        // Claim control
         lastBroadcaster = myName; 
         broadcastState('play', player.getCurrentTime(), currentVideoId);
     } 
     else if (state === YT.PlayerState.PAUSED) {
+        // Claim control
         lastBroadcaster = myName; 
         broadcastState('pause', player.getCurrentTime(), currentVideoId);
     }
@@ -232,6 +244,7 @@ function togglePlayPause() {
     if (!player || isSwitchingSong) return;
     const state = player.getPlayerState();
     
+    // IMPORTANT: Claim control immediately so sync doesn't fight back
     lastBroadcaster = myName; 
     
     if (state === YT.PlayerState.PLAYING) {
@@ -278,6 +291,7 @@ function initiateSongLoad(songObj) {
     
     // 3. UI Feedback
     showToast("System", "Switching track in 2.1s...");
+    // Force spinner here
     document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
     // 4. Broadcast special 'switching_pause' to partner
@@ -295,6 +309,7 @@ function initiateSongLoad(songObj) {
         // 6. Load new song and Restart
         loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
         isSwitchingSong = false;
+        // Button will auto-update in onPlayerStateChange or heartbeat
     }, 2100);
 }
 
@@ -356,7 +371,10 @@ function applyRemoteCommand(state) {
     if (state.action === 'switching_pause') {
         player.pauseVideo();
         showToast("System", "Partner is changing track...");
-        updatePlayPauseButton(YT.PlayerState.BUFFERING); // Show spinner
+        // Show spinner on remote side too if we want, or just wait for next 'play'
+        updatePlayPauseButton(YT.PlayerState.BUFFERING); // Use buffer state logic manually if needed, but since isSwitchingSong is local, we rely on standard state here or custom
+        // Actually, let's just leave it paused.
+        document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
         updateSyncStatus();
         return;
     }
