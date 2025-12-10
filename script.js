@@ -21,10 +21,10 @@ let player, currentQueue = [], currentVideoId = null;
 let lastBroadcaster = "System"; 
 let activeTab = 'queue'; 
 let currentRemoteState = null; 
+let isSwitchingSong = false; // Flag to prevent multi-clicks during the 2s transition
 
 // --- CRITICAL SYNC FLAGS ---
 // This flag prevents infinite loops. If true, we ignore all "onStateChange" events from the player.
-// This allows us to update the player (seek, play, load) without broadcasting those changes back to the DB.
 let ignoreSystemEvents = false;
 let ignoreTimer = null;
 
@@ -61,7 +61,6 @@ function onPlayerReady(event) {
     setInterval(heartbeatSync, 1000);
     
     // 2. Receiver Loop (Aggressive Fixer)
-    // Increased interval to reduce load and prevent fighting
     setInterval(monitorSyncHealth, 3000);
     
     // Initial Load
@@ -71,17 +70,45 @@ function onPlayerReady(event) {
     });
 }
 
+// --- AD DETECTION LOGIC ---
+function detectAd() {
+    if (!player || !player.getVideoData || !currentVideoId) return false;
+    
+    // If the player is PLAYING, but the video ID reported by the player
+    // is DIFFERENT from the song we are supposed to be playing, it is likely an Ad.
+    // (Or an unexpected autoplay video, which we also want to treat as a desync/ad).
+    try {
+        const data = player.getVideoData();
+        if (data && data.video_id && data.video_id !== currentVideoId) {
+            // Double check state is playing (1)
+            if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+                return true;
+            }
+        }
+    } catch (e) {
+        console.warn("Ad detect error", e);
+    }
+    return false;
+}
+
 // --- CORE SYNC LOGIC ---
 
 // SENDER: Tell DB what I am doing
 function heartbeatSync() {
+    // Check for Ad first
+    if (lastBroadcaster === myName && detectAd()) {
+        // If I am watching an Ad, tell partner to pause
+        broadcastState('ad_pause', 0, currentVideoId);
+        return;
+    }
+
     // Only broadcast if I am playing AND I am the intended broadcaster
-    if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
+    if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents && !isSwitchingSong) {
         const state = player.getPlayerState();
         if (state === YT.PlayerState.PLAYING) {
             // Check for end of song
             if (player.getDuration() - player.getCurrentTime() < 1 && player.getDuration() > 0) {
-                playNextSong();
+                initiateNextSong();
             } else {
                 // Normal Playing Broadcast
                 broadcastState('play', player.getCurrentTime(), currentVideoId);
@@ -94,15 +121,21 @@ function heartbeatSync() {
 function monitorSyncHealth() {
     if (!player || !currentRemoteState || !player.getPlayerState || lastBroadcaster === myName) return;
 
+    // If partner is watching ad, do nothing (we should be paused)
+    if (currentRemoteState.action === 'ad_pause') return;
+
     const myState = player.getPlayerState();
     
-    // If DB says PLAYING, but I am PAUSED/CUED/BUFFERING for too long
+    // If DB says PLAYING
     if (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart') {
         
         let needsFix = false;
         
-        // Fix State
+        // Fix State: If I am NOT playing, force play
         if (myState !== YT.PlayerState.PLAYING && myState !== YT.PlayerState.BUFFERING) {
+            // Check if I am watching an ad locally? If so, don't force seek yet.
+            if (detectAd()) return; 
+
             console.log("⚠️ Sync Monitor: Force Resuming...");
             player.playVideo();
             needsFix = true;
@@ -110,8 +143,10 @@ function monitorSyncHealth() {
         
         // Fix Time Drift (> 3 seconds)
         if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3) {
-            player.seekTo(currentRemoteState.time, true);
-            needsFix = true;
+            if (!detectAd()) { // Don't seek if I'm watching an ad
+                player.seekTo(currentRemoteState.time, true);
+                needsFix = true;
+            }
         }
 
         // IMPORTANT: If we fixed something, silence broadcast so we don't loop
@@ -122,19 +157,22 @@ function monitorSyncHealth() {
 }
 
 function onPlayerStateChange(event) {
-    // CRITICAL: If we are syncing/loading/fixing, DO NOT BROADCAST.
-    if (ignoreSystemEvents) {
-        return;
-    }
+    if (ignoreSystemEvents || isSwitchingSong) return;
 
     const btn = document.getElementById('play-pause-btn');
     const state = event.data;
 
     if (state === YT.PlayerState.PLAYING) {
+        // If playing an ad, don't broadcast "Play" for the main song
+        if (detectAd()) {
+            lastBroadcaster = myName;
+            broadcastState('ad_pause', 0, currentVideoId);
+            return;
+        }
+
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
         
-        // Only take control if I am NOT ignoring events
-        // This means I (the user) genuinely clicked play
+        // Take control
         lastBroadcaster = myName;
         broadcastState('play', player.getCurrentTime(), currentVideoId);
 
@@ -148,14 +186,14 @@ function onPlayerStateChange(event) {
         }
         
         if (state === YT.PlayerState.ENDED) {
-             playNextSong();
+             initiateNextSong();
         }
     }
     updateSyncStatus();
 }
 
 function togglePlayPause() {
-    if (!player) return;
+    if (!player || isSwitchingSong) return;
     const btn = document.getElementById('play-pause-btn');
     const state = player.getPlayerState();
     
@@ -166,12 +204,49 @@ function togglePlayPause() {
         broadcastState('pause', player.getCurrentTime(), currentVideoId);
     } else {
         if (!currentVideoId && currentQueue.length > 0) {
-            loadAndPlayVideo(currentQueue[0].videoId, currentQueue[0].title, currentQueue[0].uploader);
+            initiateSongLoad(currentQueue[0]);
         } else if (currentVideoId) {
             player.playVideo();
             broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
     }
+}
+
+// --- GRACEFUL SONG SWITCHING LOGIC ---
+
+function initiateNextSong() {
+    if (isSwitchingSong) return;
+    const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
+    const next = currentQueue[(idx + 1) % currentQueue.length];
+    if (next) initiateSongLoad(next);
+}
+
+function initiatePrevSong() {
+    if (isSwitchingSong) return;
+    const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
+    if(idx > 0) initiateSongLoad(currentQueue[idx-1]);
+}
+
+function initiateSongLoad(songObj) {
+    if (!songObj) return;
+
+    isSwitchingSong = true;
+    lastBroadcaster = myName;
+
+    // 1. Pause Everyone immediately
+    if (player && player.pauseVideo) player.pauseVideo();
+    broadcastState('pause', player ? player.getCurrentTime() : 0, currentVideoId);
+    
+    // UI Feedback
+    showToast("Sync", "Changing track...");
+    document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+    // 2. Wait for 1.5 seconds to ensure everyone stops
+    setTimeout(() => {
+        // 3. Load and Restart
+        loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
+        isSwitchingSong = false;
+    }, 1500);
 }
 
 // --- DB LISTENER ---
@@ -210,7 +285,7 @@ function loadInitialData() {
 loadInitialData();
 
 function broadcastState(action, time, videoId) {
-    if (ignoreSystemEvents) return; // Double safety
+    if (ignoreSystemEvents) return; 
     syncRef.set({ 
         action, 
         time, 
@@ -223,8 +298,7 @@ function broadcastState(action, time, videoId) {
 function applyRemoteCommand(state) {
     if (!player) return;
     
-    // Silence my own events while I apply the partner's command
-    // Increased duration to handle buffering/loading
+    // Silence events while applying remote command
     suppressBroadcast(2500); 
     
     document.getElementById('syncOverlay').classList.remove('active');
@@ -254,10 +328,7 @@ function applyRemoteCommand(state) {
                 player.playVideo();
             }
         }
-        else if (state.action === 'pause') {
-            if (playerState !== YT.PlayerState.PAUSED) player.pauseVideo();
-        } 
-        else if (state.action === 'ad_pause') {
+        else if (state.action === 'pause' || state.action === 'ad_pause') {
             if (playerState !== YT.PlayerState.PAUSED) player.pauseVideo();
         } 
     }
@@ -267,14 +338,15 @@ function updateSyncStatus() {
     const msg = document.getElementById('sync-status-msg');
     
     // Check if we are playing
-    if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
+    if (player && player.getPlayerState() === YT.PlayerState.PLAYING && !detectAd()) {
         msg.innerHTML = `<i class="fa-solid fa-heart-pulse"></i> Synced`;
         msg.style.background = "#ffd700"; // Gold
         msg.style.color = "#000";
     } else {
-        if (currentRemoteState && currentRemoteState.action === 'ad_pause') {
+        // If remote state says ad_pause OR if I am detecting an ad locally
+        if ((currentRemoteState && currentRemoteState.action === 'ad_pause') || detectAd()) {
             msg.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Partner watching Ad`;
-            msg.style.background = "#ff9800";
+            msg.style.background = "#ff9800"; // Orange
             msg.style.color = "#fff";
         } else {
             const pausedBy = (lastBroadcaster === myName) ? "You" : lastBroadcaster;
@@ -296,12 +368,11 @@ function updateSyncStatus() {
 function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadcast = true) {
     if (player && videoId) {
         
-        // If this is a remote load, suppress events triggered by loading
         if (!shouldBroadcast) {
             suppressBroadcast(3000); 
         }
 
-        // If it's the same video and we just need to seek/play
+        // If it's the same video
         if(currentVideoId === videoId && player.cueVideoById) {
              if(Math.abs(player.getCurrentTime() - startTime) > 2) player.seekTo(startTime, true);
              player.playVideo();
@@ -320,9 +391,9 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
         document.getElementById('current-song-artist').textContent = uploader || "Unknown Artist";
         renderQueue(currentQueue, currentVideoId);
         
-        // Only broadcast if *I* initiated this change manually
         if (shouldBroadcast) {
             lastBroadcaster = myName;
+            // 'restart' forces the partner to jump to 0:00
             broadcastState('restart', 0, videoId);
         }
     }
@@ -341,7 +412,7 @@ function addToQueue(videoId, title, uploader, thumbnail) {
     queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, addedBy: myName, order: Date.now() })
         .then(() => {
             switchTab('queue');
-            if (!currentVideoId && currentQueue.length === 0) loadAndPlayVideo(videoId, title, uploader);
+            if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title, uploader});
         });
 }
 
@@ -360,7 +431,7 @@ function removeFromQueue(key, event) {
     const song = currentQueue.find(s => s.key === key);
     if (song) {
         queueRef.child(key).remove();
-        if (song.videoId === currentVideoId) playNextSong();
+        if (song.videoId === currentVideoId) initiateNextSong();
     }
 }
 
@@ -368,15 +439,6 @@ function updateQueueOrder(newOrder) {
     const updates = {};
     newOrder.forEach((song, index) => { updates[`${song.key}/order`] = index; });
     queueRef.update(updates);
-}
-
-function playNextSong() {
-    const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
-    const next = currentQueue[(idx + 1) % currentQueue.length];
-    if (next) {
-        // Explicitly load next
-        loadAndPlayVideo(next.videoId, next.title, next.uploader);
-    }
 }
 
 function renderQueue(queueArray, currentVideoId) {
@@ -395,7 +457,7 @@ function renderQueue(queueArray, currentVideoId) {
         item.className = `song-item ${song.videoId === currentVideoId ? 'playing' : ''}`;
         item.draggable = true;
         item.dataset.key = song.key;
-        item.onclick = () => loadAndPlayVideo(song.videoId, song.title, song.uploader);
+        item.onclick = () => initiateSongLoad(song);
         
         const subtitle = `Added by ${song.addedBy || 'System'}`;
         const number = index + 1;
@@ -545,11 +607,8 @@ function showToast(user, text) {
 }
 
 document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
-document.getElementById('prev-btn').addEventListener('click', () => {
-    const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
-    if(idx > 0) loadAndPlayVideo(currentQueue[idx-1].videoId, currentQueue[idx-1].title, currentQueue[idx-1].uploader);
-});
-document.getElementById('next-btn').addEventListener('click', playNextSong);
+document.getElementById('prev-btn').addEventListener('click', initiatePrevSong);
+document.getElementById('next-btn').addEventListener('click', initiateNextSong);
 
 document.getElementById('search-btn').addEventListener('click', handleSearch);
 document.getElementById('searchInput').addEventListener('keypress', (e) => { if(e.key==='Enter') handleSearch(); });
