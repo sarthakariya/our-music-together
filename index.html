@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sarthak's ❤️ Reechita's Heart's Rhythm</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800;900&family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@500;600;700;800;900&family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -43,13 +43,10 @@
                 </div>
 
                 <div class="song-info-container">
-                    <!-- Layout: Flex Row -->
-                    <div class="track-row">
-                        <!-- Prominent Title -->
+                    <!-- Layout: Title (Left) and Equalizer (Right) -->
+                    <div class="meta-row">
                         <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
-                    </div>
-                    
-                    <div class="track-status-row">
+                        
                         <!-- Enhanced 5-bar Equalizer -->
                         <div class="equalizer" id="equalizer">
                             <div class="bar"></div>
@@ -58,21 +55,22 @@
                             <div class="bar"></div>
                             <div class="bar"></div>
                         </div>
-
-                        <div class="sync-badge-container">
-                            <div class="sync-status-3d" id="sync-status-msg">
-                                <i class="fa-solid fa-link"></i> Connecting...
-                            </div>
+                    </div>
+                    
+                    <!-- Layout: Sync Status Centered Below -->
+                    <div class="status-row">
+                        <div class="sync-status-3d" id="sync-status-msg">
+                            <i class="fa-solid fa-link"></i> Connecting...
                         </div>
                     </div>
                 </div>
 
                 <div class="controls">
-                    <!-- Icon changed to scroll (script) as requested -->
                     <button class="ctrl-btn small btn-3d" id="lyrics-btn" title="Lyrics"><i class="fa-solid fa-scroll"></i></button>
                     <button class="ctrl-btn small btn-3d" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
                     <button class="ctrl-btn play btn-3d" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
                     <button class="ctrl-btn small btn-3d" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
+                    <!-- Spacer button to balance layout if needed, made invisible -->
                     <button class="ctrl-btn small btn-3d" style="opacity:0; pointer-events:none;"></button> 
                 </div>
             </div>
@@ -124,11 +122,9 @@
                         </div>
                     </div>
 
-                    <!-- View: Chat (Active Vibes Removed) -->
+                    <!-- View: Chat (History Restored) -->
                     <div id="view-chat" class="tab-content chat-layout">
-                        <div class="chat-messages" id="chat-messages">
-                            <div style="text-align:center; opacity:0.5; margin-top:20px; font-size:0.8rem;">Chat history refreshed.</div>
-                        </div>
+                        <div class="chat-messages" id="chat-messages"></div>
                         <div class="chat-input-area">
                             <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
                             <input type="text" class="chat-input" id="chatInput" placeholder="Write a message...">
@@ -160,7 +156,7 @@
         </div>
     </div>
 
-    <!-- Info Overlay (Expanded) -->
+    <!-- Info Overlay -->
     <div class="overlay" id="infoOverlay">
         <div class="modal-card">
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
