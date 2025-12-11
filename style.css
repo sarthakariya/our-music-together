@@ -21,7 +21,7 @@
     --curve-m: 24px;                
     --shadow-3d: 0 25px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255,255,255,0.15);
     
-    --bottom-nav-height: 70px; /* For mobile */
+    --bottom-nav-height: 60px; /* Reduced for compactness */
 }
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@500;600;700;800;900&family=Roboto:wght@500;700;900&display=swap');
@@ -44,7 +44,6 @@ body {
     height: 100vh;
     height: 100dvh; 
     overflow: hidden; 
-    /* Fix for "Fat" interface - prevent horizontal scroll */
     width: 100vw;
     overflow-x: hidden;
     display: flex; justify-content: center; align-items: center; 
@@ -418,85 +417,88 @@ body {
     
     /* Player Card: Full Screen Experience */
     .player-card {
-        flex: 1; max-height: none; padding: 20px; 
-        justify-content: center; gap: 15px; /* Compact gap */
+        flex: 1; max-height: none; padding: 10px 15px; /* Extremely tight padding */
+        justify-content: flex-start; /* Align top */
+        gap: 10px; /* Compact gap */
         border-radius: 0; background: transparent; box-shadow: none; border: none;
-        min-width: 0; width: 100%; /* Fix for Fat Interface */
+        min-width: 0; width: 100%;
     }
     
     .video-wrapper { 
-        border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); 
-        margin-bottom: 10px;
+        border-radius: 16px; box-shadow: 0 5px 20px rgba(0,0,0,0.4); 
+        margin-bottom: 5px; flex-shrink: 0;
     }
-    .player-glow-container { margin-bottom: 0; }
-    .player-glow { display: block; opacity: 0.4; } /* Enable glow for aesthetic */
+    .player-glow-container { margin-bottom: 0; flex-shrink: 0; }
+    .player-glow { display: none; } /* Disable glow for performance and cleanness */
     
-    .song-title { font-size: 1.4rem; text-align: center; }
-    .meta-row { flex-direction: column; gap: 8px; }
-    .status-row { margin-top: 5px; }
+    .song-info-container { flex: 0 0 auto; gap: 5px; }
+    .meta-row { flex-direction: column; gap: 2px; align-items: center; margin-bottom: 0; }
+    .song-title { font-size: 1.1rem; text-align: center; margin-bottom: 0; }
+    .equalizer { height: 15px; margin-top: 2px; }
+    .status-row { margin-top: 2px; }
+    .sync-status-3d { padding: 4px 10px; font-size: 0.65rem; transform: none; }
     
-    .controls { gap: 20px; padding-bottom: 15px; padding-top: 5px; }
-    .ctrl-btn.small { width: 50px; height: 50px; font-size: 1.1rem; }
-    .ctrl-btn.play { width: 75px; height: 75px; font-size: 2rem; }
+    /* CONTROLS: Immediately below player, very compact */
+    .controls { 
+        gap: 15px; padding-top: 5px; margin-top: 0; 
+        justify-content: center; width: 100%;
+    }
+    .ctrl-btn.small { width: 40px; height: 40px; font-size: 1rem; border-width: 2px; }
+    .ctrl-btn.play { width: 60px; height: 60px; font-size: 1.6rem; border-width: 4px; }
     
     /* --- MOBILE SHEET (Sidebar Transformation) --- */
     .sidebar {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1500;
-        border-radius: 0; border: none; background: var(--bg-dark);
-        transform: translateY(110%); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+        border-radius: 0; border: none; background: #0f0518; /* Solid background */
+        transform: translateY(110%); transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
         display: flex; flex-direction: column;
-        min-width: 0; /* Important override */
+        min-width: 0;
     }
     .sidebar.active { transform: translateY(0); }
     
-    /* Header for Sheets */
+    /* Header for Sheets - Highly Visible Close Button */
     .mobile-sheet-header {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 15px 20px; border-bottom: 1px solid rgba(255,255,255,0.1);
-        background: rgba(0,0,0,0.2);
+        padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.1);
+        background: rgba(255,255,255,0.05);
     }
-    #mobile-sheet-title { font-family: 'Montserrat'; font-size: 1.3rem; color: white; margin: 0; }
-    .mobile-close-btn { background: none; border: none; color: white; font-size: 1.5rem; padding: 10px; }
+    #mobile-sheet-title { font-family: 'Montserrat'; font-size: 1.1rem; color: white; margin: 0; font-weight: 700; }
+    .mobile-close-btn { 
+        background: rgba(255,255,255,0.1); border: none; color: white; font-size: 1.1rem; 
+        padding: 0; width: 35px; height: 35px; border-radius: 50%; 
+        display: grid; place-items: center;
+    }
     
     /* Adjust Content for Sheet */
     .sidebar-content { padding-bottom: var(--bottom-nav-height); }
-    .list-content { padding: 15px; }
-    .action-row { padding: 15px 20px; }
+    .list-content { padding: 10px; }
+    .action-row { padding: 10px 15px; }
     
     /* Mobile Chat specific */
     .chat-layout { padding-bottom: 0; height: 100%; }
-    .chat-input-area { padding-bottom: 20px; background: #1a1a2e; }
+    .chat-input-area { padding-bottom: 15px; background: #1a1a2e; }
 
     /* --- MOBILE BOTTOM NAVIGATION --- */
     .mobile-bottom-nav {
         display: flex; height: var(--bottom-nav-height); 
-        background: rgba(20, 10, 30, 0.95); backdrop-filter: blur(20px);
+        background: #0a050f; /* Dark opaque bg */
         border-top: 1px solid rgba(255,255,255,0.1);
         position: fixed; bottom: 0; left: 0; width: 100%; z-index: 1600;
         justify-content: space-around; align-items: center;
     }
     .mobile-nav-item {
-        background: none; border: none; color: #888; 
-        display: flex; flex-direction: column; align-items: center; gap: 4px;
-        font-family: 'Inter'; font-size: 0.7rem; font-weight: 600; position: relative;
-        width: 33%; padding: 10px 0;
+        background: none; border: none; color: #666; 
+        display: flex; flex-direction: column; align-items: center; gap: 3px;
+        font-family: 'Inter'; font-size: 0.65rem; font-weight: 600; position: relative;
+        width: 33%; padding: 8px 0;
     }
-    .mobile-nav-item i { font-size: 1.4rem; margin-bottom: 2px; transition: 0.2s; }
+    .mobile-nav-item i { font-size: 1.2rem; margin-bottom: 2px; transition: 0.2s; }
     .mobile-nav-item.active { color: var(--primary); }
     .mobile-nav-item.active i { transform: translateY(-2px); text-shadow: 0 4px 10px rgba(245,0,87,0.5); }
     
     .mobile-badge {
-        position: absolute; top: 5px; right: 25%; 
-        background: var(--primary); color: white; font-size: 0.65rem; 
-        padding: 2px 6px; border-radius: 10px; border: 2px solid #1a1a2e;
+        position: absolute; top: 4px; right: 28%; 
+        background: var(--primary); color: white; font-size: 0.6rem; 
+        padding: 1px 5px; border-radius: 8px; border: 2px solid #0a050f;
     }
-
-    /* Toast Positioning on Mobile */
-    #toast-container { top: 20px; right: 20px; left: 20px; align-items: center; }
-    .toast { width: 100%; max-width: 400px; transform: none !important; animation: slideDownFade 0.4s; }
-    @keyframes slideDownFade { from{transform:translateY(-20px); opacity:0;} to{transform:translateY(0); opacity:1;} }
-    
-    /* Lyrics Mobile */
-    .lyrics-card { width: 100%; height: 100%; border-radius: 0; max-width: none; background: #000; }
-    .lyrics-content { font-size: 1.4rem; padding-top: 60px; }
 }
