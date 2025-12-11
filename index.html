@@ -39,6 +39,10 @@
 
                 <div class="song-info-container">
                     <div class="track-details">
+                        <!-- Equalizer Animation -->
+                        <div class="equalizer" id="equalizer">
+                            <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                        </div>
                         <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
                         <div class="artist-name truncate-text" id="current-song-artist">Choose a song</div>
                     </div>
@@ -60,13 +64,22 @@
             <!-- Right Side: Unified Sidebar with 3 Tabs -->
             <div class="sidebar glass-panel">
                 
+                <!-- Pinned Search Bar (Always Visible) -->
+                <div class="pinned-search">
+                    <div class="search-box-elegant">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="searchInput" placeholder="Search song or paste link...">
+                        <button class="search-submit" id="search-btn"><i class="fa-solid fa-arrow-right"></i></button>
+                    </div>
+                </div>
+
                 <!-- Unified Navigation Tabs -->
                 <div class="sidebar-tabs">
                     <button class="nav-tab active" id="tab-btn-queue" onclick="switchTab('queue')">
                         <i class="fa-solid fa-list-ol"></i> Queue <span id="queue-badge" class="badge">0</span>
                     </button>
                     <button class="nav-tab" id="tab-btn-results" onclick="switchTab('results')">
-                        <i class="fa-solid fa-magnifying-glass"></i> Results
+                        <i class="fa-solid fa-music"></i> Results
                     </button>
                     <button class="nav-tab" id="tab-btn-chat" onclick="switchTab('chat')">
                         <i class="fa-solid fa-comments"></i> Chat
@@ -87,14 +100,11 @@
 
                     <!-- View: Results (Search) -->
                     <div id="view-results" class="tab-content">
-                        <div class="search-wrapper">
-                            <div class="search-box-elegant">
-                                <input type="text" id="searchInput" placeholder="Search YouTube or paste Link...">
-                                <button class="search-submit" id="search-btn"><i class="fa-solid fa-arrow-right"></i></button>
-                            </div>
-                        </div>
                         <div class="list-content" id="results-list">
-                            <div class="empty-state">Search for songs to add them here.</div>
+                            <div class="empty-state">
+                                <i class="fa-brands fa-youtube" style="font-size: 3rem; margin-bottom: 15px; color: rgba(255,255,255,0.2);"></i>
+                                <p>Search above to find music</p>
+                            </div>
                         </div>
                     </div>
 
