@@ -22,6 +22,7 @@ let lastBroadcaster = "System";
 let activeTab = 'queue'; 
 let currentRemoteState = null; 
 let isSwitchingSong = false; 
+let hasUserInteracted = false; // Flag to track if user clicked the welcome button
 
 // --- CRITICAL SYNC FLAGS ---
 let ignoreSystemEvents = false;
@@ -102,6 +103,9 @@ function heartbeatSync() {
 }
 
 function monitorSyncHealth() {
+    // If user hasn't interacted, we cannot force play due to browser policy
+    if (!hasUserInteracted) return;
+
     if (lastBroadcaster === myName || isSwitchingSong) return;
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     if (Date.now() - lastLocalInteractionTime < 2000) return;
@@ -259,6 +263,19 @@ function applyRemoteCommand(state) {
     if (!player) return;
     if (Date.now() - lastLocalInteractionTime < 1500) return;
     
+    // Only apply remote play commands if user has interacted at least once
+    if (!hasUserInteracted && (state.action === 'play' || state.action === 'restart')) {
+        // We can't auto-play yet, but we can load the video so it's ready
+        // But do not call player.playVideo()
+        if (state.videoId !== currentVideoId) {
+             const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
+             const title = songInQueue ? songInQueue.title : "Syncing...";
+             const uploader = songInQueue ? songInQueue.uploader : "";
+             loadAndPlayVideo(state.videoId, title, uploader, state.time, false, false); // last arg false = don't auto play
+        }
+        return; 
+    }
+    
     suppressBroadcast(1000); 
     lastBroadcaster = state.lastUpdater;
     
@@ -350,7 +367,7 @@ function updateSyncStatus() {
     }
 }
 
-function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadcast = true) {
+function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadcast = true, shouldPlay = true) {
     if (player && videoId) {
         if (!shouldBroadcast) suppressBroadcast(1500); 
 
@@ -358,7 +375,12 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
         } else {
              if(Math.abs(player.getCurrentTime() - startTime) > 2) player.seekTo(startTime, true);
-             player.playVideo();
+             if(shouldPlay) player.playVideo();
+        }
+        
+        // If we are just loading (not playing), pause immediately
+        if(!shouldPlay) {
+            setTimeout(() => player.pauseVideo(), 500);
         }
 
         currentVideoId = videoId;
@@ -433,8 +455,10 @@ function renderQueue(queueArray, currentVideoId) {
         item.dataset.key = song.key;
         item.onclick = () => initiateSongLoad(song);
         
-        // Ensure addedBy fallback is robust
         const user = song.addedBy || 'System';
+        const isMe = user === myName;
+        const badgeClass = isMe ? 'is-me' : 'is-other';
+        const displayText = isMe ? 'Added by You' : `Added by ${user}`;
         const number = index + 1;
         
         item.innerHTML = `
@@ -443,7 +467,7 @@ function renderQueue(queueArray, currentVideoId) {
             <img src="${song.thumbnail}" class="song-thumb">
             <div class="song-details">
                 <h4>${song.title}</h4>
-                <span class="added-by-badge">${user}</span>
+                <span class="added-by-badge ${badgeClass}">${displayText}</span>
             </div>
             <button class="emoji-trigger" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
         `;
@@ -489,6 +513,17 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
 });
 document.getElementById('searchInput').addEventListener('focus', (e) => {
     switchTab('results');
+});
+
+// START SESSION (WELCOME) BUTTON
+document.getElementById('startSessionBtn').addEventListener('click', () => {
+    hasUserInteracted = true;
+    document.getElementById('welcomeOverlay').classList.remove('active');
+    
+    // Check if there is pending state to sync immediately
+    if (currentRemoteState && currentRemoteState.action !== 'pause') {
+         if (player && player.playVideo) player.playVideo();
+    }
 });
 
 async function handleSearch() {
