@@ -150,6 +150,18 @@
         </div>
     </div>
 
+    <!-- INITIAL WELCOME OVERLAY (Fixes Autoplay Policy) -->
+    <div class="overlay active" id="welcomeOverlay" style="z-index: 5000; background: #0f0518;">
+        <div class="modal-card" style="text-align: center; border: 1px solid var(--primary);">
+            <i class="fa-solid fa-headphones-simple" style="font-size: 3rem; color: var(--primary); margin-bottom: 20px;"></i>
+            <h2 style="font-size: 2rem; margin-bottom: 10px;">Welcome Back</h2>
+            <p style="color: #ccc; margin-bottom: 30px;">Tap below to sync hearts and enable audio.</p>
+            <button class="ctrl-btn play btn-3d" id="startSessionBtn" style="width: 80px; height: 80px; margin: 0 auto; font-size: 2.5rem;">
+                <i class="fa-solid fa-play"></i>
+            </button>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>
