@@ -24,7 +24,10 @@ let activeTab = 'queue';
 let currentRemoteState = null; 
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
-let myName = localStorage.getItem('deepSpaceUserName') || ""; // Load if exists, else wait for input
+let myName = localStorage.getItem('deepSpaceUserName') || ""; 
+
+// Fallback metadata in case queue is empty
+let currentSongMeta = { title: "Heart's Rhythm", uploader: "System", thumbnail: "" };
 
 // --- CRITICAL SYNC FLAGS ---
 let ignoreSystemEvents = false;
@@ -63,11 +66,19 @@ document.getElementById('like-btn').addEventListener('click', (e) => {
     icon.style.transform = "scale(1.4)";
     setTimeout(() => icon.style.transform = "scale(1)", 200);
 
-    // Save to Firebase
-    const songObj = currentQueue.find(s => s.videoId === currentVideoId);
-    if (!songObj) return;
+    // Try finding song in queue, otherwise use fallback metadata
+    let songObj = currentQueue.find(s => s.videoId === currentVideoId);
+    if (!songObj) {
+        // Construct from fallback if available
+        songObj = {
+            title: currentSongMeta.title,
+            thumbnail: currentSongMeta.thumbnail,
+            uploader: currentSongMeta.uploader
+        };
+    }
 
-    // Check if already liked to toggle? For now, we just Add/Ensure it's liked.
+    if (!songObj.title) return; // Safety check
+
     likedRef.child(currentVideoId).transaction((currentData) => {
         if (currentData === null) {
             return {
@@ -122,6 +133,7 @@ function renderLikedSongs(likedData) {
         return;
     }
 
+    let delay = 0;
     Object.keys(likedData).forEach(videoId => {
         const song = likedData[videoId];
         const likes = song.likes || {};
@@ -133,7 +145,10 @@ function renderLikedSongs(likedData) {
         else likedByText = `Liked by ${likers[0]}`;
 
         const div = document.createElement('div');
-        div.className = 'song-item';
+        div.className = 'song-item liked-anim';
+        div.style.animationDelay = `${delay}s`;
+        delay += 0.05; // Stagger effect
+
         div.innerHTML = `
             <div class="thumb-container">
                 <img src="${song.thumbnail}" class="song-thumb">
@@ -146,11 +161,9 @@ function renderLikedSongs(likedData) {
         `;
         // Play liked song logic
         div.onclick = () => {
-            // Check if in queue, if not add it, then play
             const existing = currentQueue.find(s => s.videoId === videoId);
             if(existing) initiateSongLoad(existing);
             else {
-                // Add to top of queue and play
                 const newKey = queueRef.push().key;
                 queueRef.child(newKey).set({ 
                     videoId: videoId, title: song.title, uploader: song.uploader, 
@@ -348,6 +361,13 @@ function initiateSongLoad(songObj) {
 
     isSwitchingSong = true;
     lastBroadcaster = myName;
+
+    // Update global metadata fallback
+    currentSongMeta = { 
+        title: songObj.title, 
+        uploader: songObj.uploader, 
+        thumbnail: songObj.thumbnail || "" 
+    };
 
     if (player && player.pauseVideo) player.pauseVideo();
     
@@ -806,6 +826,12 @@ document.getElementById('startSessionBtn').addEventListener('click', () => {
 document.getElementById('welcomeNameInput').addEventListener('keypress', (e) => {
     if(e.key === 'Enter') document.getElementById('startSessionBtn').click();
 });
+// Auto Focus
+if(document.getElementById('welcomeOverlay').classList.contains('active')) {
+    setTimeout(() => {
+        document.getElementById('welcomeNameInput').focus();
+    }, 500);
+}
 
 
 async function handleSearch() {
@@ -933,6 +959,12 @@ function displayChatMessage(user, text, timestamp) {
 
 function showToast(user, text) {
     const container = document.getElementById('toast-container');
+    
+    // LIMIT TO 3 BUBBLES
+    if (container.children.length >= 3) {
+        container.removeChild(container.firstChild);
+    }
+
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.innerHTML = `
