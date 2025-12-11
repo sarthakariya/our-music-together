@@ -196,30 +196,40 @@ body {
     filter: drop-shadow(0 2px 10px rgba(245, 0, 87, 0.3));
 }
 
-/* Equalizer Moved Right */
+/* ENHANCED 3D DANCING VISUALIZER */
 .equalizer {
-    display: flex; justify-content: center; align-items: flex-end; gap: 5px;
-    height: 40px; flex-shrink: 0;
+    display: flex; justify-content: center; align-items: flex-end; gap: 4px;
+    height: 45px; flex-shrink: 0;
     opacity: 0.5; transition: opacity 0.3s;
     padding-bottom: 5px;
+    perspective: 100px;
 }
 .equalizer.active { opacity: 1; }
 .equalizer .bar {
-    width: 8px; background: var(--primary); border-radius: 4px;
+    width: 8px; 
+    background: linear-gradient(to top, var(--primary), #ffd700); 
+    border-radius: 4px;
     height: 5px;
     box-shadow: 0 0 10px var(--primary);
+    transform-origin: bottom;
 }
 .equalizer.active .bar {
-    animation: equalize 0.8s infinite ease-in-out alternate;
+    animation: equalize 1s infinite ease-in-out;
 }
-.equalizer.active .bar:nth-child(1) { animation-delay: -0.4s; background: #ff4081; }
-.equalizer.active .bar:nth-child(2) { animation-delay: -0.2s; background: #e040fb; }
-.equalizer.active .bar:nth-child(3) { animation-delay: -0.5s; background: #7c4dff; }
-.equalizer.active .bar:nth-child(4) { animation-delay: -0.1s; background: #536dfe; }
+
+/* Randomized animations for chaotic beat effect */
+.equalizer.active .bar:nth-child(1) { animation-duration: 0.8s; animation-delay: 0.1s; background: linear-gradient(to top, #c51162, #ff4081); }
+.equalizer.active .bar:nth-child(2) { animation-duration: 0.6s; animation-delay: 0.3s; background: linear-gradient(to top, #7c4dff, #b388ff); }
+.equalizer.active .bar:nth-child(3) { animation-duration: 0.9s; animation-delay: 0.0s; background: linear-gradient(to top, #f50057, #ffd700); height: 40px; }
+.equalizer.active .bar:nth-child(4) { animation-duration: 0.7s; animation-delay: 0.4s; background: linear-gradient(to top, #651fff, #7c4dff); }
+.equalizer.active .bar:nth-child(5) { animation-duration: 0.85s; animation-delay: 0.2s; background: linear-gradient(to top, #d50000, #ff1744); }
 
 @keyframes equalize {
-    0% { height: 5px; transform: scaleY(1); }
-    100% { height: 30px; transform: scaleY(1.1); }
+    0% { height: 10%; transform: scaleY(1); }
+    30% { height: 80%; transform: scaleY(1.1); }
+    50% { height: 40%; transform: scaleY(0.9); }
+    70% { height: 90%; transform: scaleY(1.2); }
+    100% { height: 10%; transform: scaleY(1); }
 }
 
 .sync-badge-container { display:flex; justify-content:center; align-items:center; }
@@ -251,7 +261,7 @@ body {
 
 .controls { 
     display: flex; justify-content: center; align-items: center; 
-    gap: 60px; margin-top: auto; padding-top: 15px; flex-wrap: wrap; 
+    gap: 40px; margin-top: auto; padding-top: 15px; flex-wrap: wrap; 
 }
 
 .btn-3d { 
@@ -404,8 +414,6 @@ body {
 .song-index { font-family: 'Montserrat'; font-weight: 700; color: rgba(255,255,255,0.3); font-size: 1rem; min-width: 25px; text-align: center; }
 .song-thumb { width: 55px; height: 55px; border-radius: 12px; object-fit: cover; background: #000; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
 
-/* Removed Vinyl Spin Animation as requested */
-
 .song-details { flex: 1; padding-right: 10px; min-width: 0; }
 .song-details h4 { 
     font-family: 'Inter'; font-size: 1.1rem; font-weight: 600; margin-bottom: 2px; color: #fff; line-height: 1.3; 
@@ -423,6 +431,19 @@ body {
 .mini-eq-bar:nth-child(2) { height: 10px; animation-delay: 0.2s; }
 .mini-eq-bar:nth-child(3) { height: 8px; animation-delay: 0.4s; }
 @keyframes miniBounce { from { height: 4px; } to { height: 12px; } }
+
+/* RESTORED ADDED BY BADGE */
+.added-by-badge { 
+    display: inline-block; font-size: 0.75rem; color: #fff; font-weight: 700; 
+    background: rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.1); margin-right: 8px;
+}
+.added-by-badge.is-me {
+    background: rgba(245, 0, 87, 0.2); border-color: rgba(245, 0, 87, 0.4); color: #ff80ab;
+}
+.added-by-badge.is-other {
+    background: rgba(124, 77, 255, 0.2); border-color: rgba(124, 77, 255, 0.4); color: #b388ff;
+}
 
 .drag-handle { color: rgba(255,255,255,0.2); font-size: 1.2rem; cursor: grab; padding: 0 8px; transition: 0.2s;}
 .drag-handle:hover { color: white; transform: scale(1.2); }
@@ -509,6 +530,18 @@ body {
     text-align: center; font-size: 2rem;
     background: linear-gradient(to right, #fff, #bbb);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+/* Lyrics Modal Specifics */
+.lyrics-card {
+    background: linear-gradient(145deg, #100514, #1a0822);
+    border: 1px solid rgba(245, 0, 87, 0.3);
+    max-width: 600px;
+}
+.lyrics-content {
+    font-family: 'Inter', sans-serif; color: #e0e0e0; 
+    font-size: 1.1rem; line-height: 1.8; text-align: center; white-space: pre-wrap;
+    min-height: 200px; display: flex; align-items: center; justify-content: center; flex-direction: column;
 }
 
 .guide-content { font-family: 'Inter', sans-serif; color: #ccc; }
