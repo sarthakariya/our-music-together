@@ -15,7 +15,6 @@ if (typeof firebase !== 'undefined' && !firebase.apps.length) firebase.initializ
 const db = firebase.database();
 const syncRef = db.ref('sync');
 const queueRef = db.ref('queue');
-// REVERTED: Chat Reference restored to original to keep history and functionality
 const chatRef = db.ref('chat'); 
 const presenceRef = db.ref('presence');
 
@@ -45,9 +44,6 @@ const sessionKey = presenceRef.push().key;
 presenceRef.child(sessionKey).onDisconnect().remove();
 presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
 
-// REMOVED: Listener for 'active-users-list' since the UI element was removed.
-// The user is still marked online in DB, but we don't display the list.
-
 function suppressBroadcast(duration = 1000) {
     ignoreSystemEvents = true;
     if (ignoreTimer) clearTimeout(ignoreTimer);
@@ -62,7 +58,7 @@ function onYouTubeIframeAPIReady() {
         height: '100%', width: '100%', videoId: '',
         playerVars: { 
             'controls': 1, 'disablekb': 0, 'rel': 0, 'modestbranding': 1, 'autoplay': 1, 'origin': window.location.origin,
-            'playsinline': 1 // Helps with mobile playback behavior
+            'playsinline': 1 
         },
         events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
     });
@@ -80,35 +76,28 @@ function onPlayerReady(event) {
 }
 
 function detectAd() {
-    if (!player || !currentVideoId) return false;
+    if (!player) return false;
     try {
+        const playerState = player.getPlayerState();
+        // If player is playing but no video loaded, or video data is weird, it's often an ad
         const data = player.getVideoData();
-        if (data && data.video_id && data.video_id !== currentVideoId) return true;
+        // If the ID in the player doesn't match our current global ID, it's an ad
+        if (currentVideoId && data && data.video_id && data.video_id !== currentVideoId) return true;
     } catch(e) {}
     return false;
 }
 
-// --- MEDIA SESSION API (Background Play Support) ---
+// --- MEDIA SESSION API ---
 function setupMediaSession() {
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', function() {
-            if(player && player.playVideo) {
-                player.playVideo();
-                togglePlayPause();
-            }
+            if(player && player.playVideo) { player.playVideo(); togglePlayPause(); }
         });
         navigator.mediaSession.setActionHandler('pause', function() {
-            if(player && player.pauseVideo) {
-                player.pauseVideo();
-                togglePlayPause();
-            }
+            if(player && player.pauseVideo) { player.pauseVideo(); togglePlayPause(); }
         });
-        navigator.mediaSession.setActionHandler('previoustrack', function() {
-            initiatePrevSong();
-        });
-        navigator.mediaSession.setActionHandler('nexttrack', function() {
-            initiateNextSong();
-        });
+        navigator.mediaSession.setActionHandler('previoustrack', function() { initiatePrevSong(); });
+        navigator.mediaSession.setActionHandler('nexttrack', function() { initiateNextSong(); });
     }
 }
 
@@ -118,9 +107,7 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
             title: title || "Heart's Rhythm",
             artist: artist || "Sarthak & Reechita",
             album: "Our Sync",
-            artwork: [
-                { src: artworkUrl || 'https://via.placeholder.com/512', sizes: '512x512', type: 'image/png' }
-            ]
+            artwork: [ { src: artworkUrl || 'https://via.placeholder.com/512', sizes: '512x512', type: 'image/png' } ]
         });
     }
 }
@@ -131,12 +118,15 @@ function heartbeatSync() {
     if (player && player.getPlayerState) updatePlayPauseButton(player.getPlayerState());
     if (isSwitchingSong) return;
 
+    // 1. Check for Ad
     if (detectAd()) {
+        // Broadcast ad_pause to stop the other user
         broadcastState('ad_pause', 0, currentVideoId);
         updateSyncStatus();
         return;
     }
 
+    // 2. Normal Heartbeat
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
         const state = player.getPlayerState();
         if (state === YT.PlayerState.PLAYING) {
@@ -153,12 +143,18 @@ function heartbeatSync() {
 
 function monitorSyncHealth() {
     if (!hasUserInteracted) return;
-
     if (lastBroadcaster === myName || isSwitchingSong) return;
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     if (Date.now() - lastLocalInteractionTime < 2000) return;
 
-    if (currentRemoteState.action === 'ad_pause') return;
+    // CRITICAL FIX: If partner is watching an ad, DO NOT force playback or seek.
+    if (currentRemoteState.action === 'ad_pause') {
+        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+            player.pauseVideo();
+        }
+        return; 
+    }
+    
     if (currentRemoteState.action === 'switching_pause') return;
 
     const myState = player.getPlayerState();
@@ -169,6 +165,7 @@ function monitorSyncHealth() {
             if (detectAd()) return; 
             player.playVideo(); needsFix = true;
         }
+        // Only seek if difference is significant to avoid stuttering
         if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3) {
             if (!detectAd()) { player.seekTo(currentRemoteState.time, true); needsFix = true; }
         }
@@ -217,6 +214,8 @@ function onPlayerStateChange(event) {
         
         if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
+             // When returning from an ad, this will trigger a play broadcast
+             // effectively resuming the session for the partner
              broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
     }
@@ -243,14 +242,12 @@ function togglePlayPause() {
     
     if (state === YT.PlayerState.PLAYING) {
         player.pauseVideo();
-        document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-play"></i>';
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
         if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
         else if (currentVideoId) {
             player.setVolume(100);
             player.playVideo();
-            document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-pause"></i>';
             broadcastState('play', player.getCurrentTime(), currentVideoId, true);
         }
     }
@@ -287,10 +284,9 @@ function initiateSongLoad(songObj) {
 
     setTimeout(() => {
         loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
-        // Also update Media Session Metadata for lockscreen
         updateMediaSessionMetadata(songObj.title, songObj.uploader, songObj.thumbnail);
         isSwitchingSong = false;
-    }, 500); // Short delay for UI update
+    }, 500); 
 }
 
 function loadInitialData() {
@@ -330,6 +326,18 @@ function applyRemoteCommand(state) {
     if (!player) return;
     if (Date.now() - lastLocalInteractionTime < 1500) return;
     
+    // Remote Pause for Ad - STRICT HANDLING
+    if (state.action === 'ad_pause') {
+        suppressBroadcast(2000);
+        lastBroadcaster = state.lastUpdater;
+        // Pause if not already paused
+        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+            player.pauseVideo();
+        }
+        updateSyncStatus();
+        return;
+    }
+
     if (!hasUserInteracted && (state.action === 'play' || state.action === 'restart')) {
         if (state.videoId !== currentVideoId) {
              const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
@@ -377,7 +385,7 @@ function applyRemoteCommand(state) {
                 player.playVideo();
             }
         }
-        else if (state.action === 'pause' || state.action === 'ad_pause') {
+        else if (state.action === 'pause') {
             if (playerState !== YT.PlayerState.PAUSED) player.pauseVideo();
         } 
     }
@@ -407,9 +415,10 @@ function updateSyncStatus() {
     }
 
     if (currentRemoteState && currentRemoteState.action === 'ad_pause') {
-        msgEl.innerHTML = `<i class="fa-solid fa-eye-slash"></i> ${currentRemoteState.lastUpdater} watching Ad`;
+        msgEl.innerHTML = `<i class="fa-solid fa-eye-slash"></i> ${currentRemoteState.lastUpdater} having Ad...`;
         msgEl.className = 'sync-status-3d status-ad-remote';
         if(eq) eq.classList.remove('active');
+        // Force the text to show waiting state
         return;
     }
 
@@ -461,7 +470,6 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
         
-        // Update Media Session when a song loads
         let artwork = 'https://via.placeholder.com/512';
         const currentSong = currentQueue.find(s => s.videoId === videoId);
         if(currentSong && currentSong.thumbnail) artwork = currentSong.thumbnail;
@@ -602,7 +610,6 @@ function getDragAfterElement(container, y) {
     }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
-// LYRICS FUNCTIONALITY (Updated for Direct In-App Display using Lrclib)
 document.getElementById('lyrics-btn').addEventListener('click', () => {
     document.getElementById('lyricsOverlay').classList.add('active');
     fetchLyrics();
@@ -621,19 +628,17 @@ async function fetchLyrics() {
         rawTitle = titleEl.textContent;
     }
     
-    // Clean title for search (remove parens, "Official Video", "ft.", etc.)
     const cleanTitle = rawTitle
-        .replace(/[\(\[].*?[\)\]]/g, "") // Remove (...) and [...]
+        .replace(/[\(\[].*?[\)\]]/g, "") 
         .replace(/official video/gi, "")
         .replace(/music video/gi, "")
         .replace(/remastered/gi, "")
         .replace(/hq/gi, "")
         .replace(/hd/gi, "")
-        .replace(/ft\..*/gi, "") // Remove ft. ...
-        .replace(/feat\..*/gi, "") // Remove feat. ...
+        .replace(/ft\..*/gi, "") 
+        .replace(/feat\..*/gi, "")
         .trim();
         
-    // CHANGED: Use first 8 words logic for better accuracy as requested
     const searchWords = cleanTitle.split(/\s+/).slice(0, 8).join(" ");
 
     lyricsTitle.textContent = "Lyrics: " + searchWords + "...";
@@ -645,18 +650,13 @@ async function fetchLyrics() {
         const data = await res.json();
         
         if (Array.isArray(data) && data.length > 0) {
-            // Pick the best match (first one usually)
             const song = data[0];
             const lyrics = song.plainLyrics || song.syncedLyrics || "Instrumental";
-            
-            // Format timestamps out if synced lyrics are returned but we just want text for now
-            // or just display as is. Lrclib plainLyrics is cleanest.
             lyricsContentArea.innerHTML = `<div class="lyrics-text-block">${lyrics}</div>`;
         } else {
             throw new Error("No lyrics found in API");
         }
     } catch (e) {
-        // Fallback to Google Button ONLY if API fails
         lyricsContentArea.innerHTML = `
             <p>Lyrics could not be loaded automatically.</p>
             <a href="https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
@@ -666,8 +666,6 @@ async function fetchLyrics() {
     }
 }
 
-
-// Global Search Handling
 document.getElementById('searchInput').addEventListener('input', (e) => {
     switchTab('results'); 
 });
@@ -675,15 +673,12 @@ document.getElementById('searchInput').addEventListener('focus', (e) => {
     switchTab('results');
 });
 
-// START SESSION BUTTON
 document.getElementById('startSessionBtn').addEventListener('click', () => {
     hasUserInteracted = true;
     document.getElementById('welcomeOverlay').classList.remove('active');
     
-    // Play video to initialize audio context
     if (player && player.playVideo) player.playVideo();
     
-    // Initialize Media Session Metadata early if we have a current song
     if(currentVideoId) {
         const currentSong = currentQueue.find(s => s.videoId === currentVideoId);
         if(currentSong) {
@@ -725,13 +720,11 @@ async function handleSearch() {
             return;
         }
 
-        // Fetch duration for all video IDs found
         const videoIds = data.items.map(item => item.id.videoId).join(',');
         const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
         const detailsRes = await fetch(detailsUrl);
         const detailsData = await detailsRes.json();
         
-        // Map ID to Duration
         const durationMap = {};
         detailsData.items.forEach(v => {
             durationMap[v.id] = parseDuration(v.contentDetails.duration);
