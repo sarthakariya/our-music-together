@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sarthak's ❤️ Reechita's Heart's Rhythm</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800&family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800;900&family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -31,10 +31,8 @@
 
         <div class="main-layout">
             
-            <!-- Left Side: Player -->
             <div class="player-card glass-panel">
                 
-                <!-- Player Glow "Ambilight" Container -->
                 <div class="player-glow-container">
                     <div class="player-glow"></div>
                     <div class="video-wrapper">
@@ -43,10 +41,9 @@
                 </div>
 
                 <div class="song-info-container">
-                    <!-- Layout: Flex Row -->
                     <div class="track-row">
-                        <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
-                        <!-- Enhanced 5-bar Equalizer -->
+                        <div class="song-title" id="current-song-title">Heart's Rhythm</div>
+                        
                         <div class="equalizer" id="equalizer">
                             <div class="bar"></div>
                             <div class="bar"></div>
@@ -64,18 +61,16 @@
                 </div>
 
                 <div class="controls">
-                    <button class="ctrl-btn small btn-3d" id="lyrics-btn" title="Lyrics"><i class="fa-solid fa-feather"></i></button>
+                    <button class="ctrl-btn small btn-3d" id="lyrics-btn" title="Lyrics"><i class="fa-solid fa-scroll"></i></button>
                     <button class="ctrl-btn small btn-3d" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
                     <button class="ctrl-btn play btn-3d" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
                     <button class="ctrl-btn small btn-3d" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
-                    <button class="ctrl-btn small btn-3d" style="opacity:0; pointer-events:none;"></button> <!-- Spacer for balance if needed -->
+                    <button class="ctrl-btn small btn-3d" style="opacity:0; pointer-events:none;"></button>
                 </div>
             </div>
 
-            <!-- Right Side: Unified Sidebar with 3 Tabs -->
             <div class="sidebar glass-panel">
                 
-                <!-- Pinned Search Bar (Always Visible) -->
                 <div class="pinned-search">
                     <div class="search-box-elegant">
                         <i class="fa-solid fa-magnifying-glass search-icon"></i>
@@ -84,7 +79,6 @@
                     </div>
                 </div>
 
-                <!-- Unified Navigation Tabs -->
                 <div class="sidebar-tabs">
                     <button class="nav-tab active" id="tab-btn-queue" onclick="switchTab('queue')">
                         <i class="fa-solid fa-list-ol"></i> Queue <span id="queue-badge" class="badge">0</span>
@@ -97,10 +91,8 @@
                     </button>
                 </div>
 
-                <!-- Content Area -->
                 <div class="sidebar-content">
                     
-                    <!-- View: Queue -->
                     <div id="view-queue" class="tab-content active">
                         <div class="action-row">
                              <h3 class="view-title">Up Next</h3>
@@ -109,7 +101,6 @@
                         <div class="list-content" id="queue-list"></div>
                     </div>
 
-                    <!-- View: Results (Search) -->
                     <div id="view-results" class="tab-content">
                         <div class="list-content" id="results-list">
                             <div class="empty-state">
@@ -119,13 +110,7 @@
                         </div>
                     </div>
 
-                    <!-- View: Chat -->
                     <div id="view-chat" class="tab-content chat-layout">
-                        <!-- Active Users Section -->
-                        <div class="active-users-bar" id="active-users-bar">
-                            <span style="font-size:0.8rem; font-weight:700; color:#aaa; margin-right:10px;">ACTIVE VIBES:</span>
-                            <div id="active-users-list" style="display:flex; gap:10px; overflow-x:auto;"></div>
-                        </div>
                         <div class="chat-messages" id="chat-messages"></div>
                         <div class="chat-input-area">
                             <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
@@ -139,62 +124,67 @@
         </div>
     </div>
 
-    <!-- Notification Toast -->
     <div id="toast-container"></div>
 
-    <!-- Lyrics Overlay -->
     <div class="overlay" id="lyricsOverlay">
         <div class="modal-card lyrics-card">
             <button class="modal-close" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2 id="lyrics-title">Lyrics</h2>
+            <h2 id="lyrics-title" style="background: linear-gradient(to right, #fff, var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Lyrics</h2>
             <div class="lyrics-content" id="lyrics-content-area">
-                <p>Find the words to this melody.</p>
-                <a id="google-lyrics-btn" href="#" target="_blank" class="google-lyrics-btn">
-                    <i class="fa-brands fa-google"></i> Search Lyrics on Google
+                <p>Seeking the words to our melody...</p>
+            </div>
+            <div style="text-align:center; padding-top: 20px;">
+                <a id="google-lyrics-btn" href="#" target="_blank" class="google-lyrics-btn" style="display:none;">
+                    <i class="fa-brands fa-google"></i> Search on Google
                 </a>
-                <p style="margin-top:15px; font-size:0.9rem; color:#888;">Opens in a new tab for 100% accuracy.</p>
             </div>
         </div>
     </div>
 
-    <!-- Info Overlay -->
     <div class="overlay" id="infoOverlay">
         <div class="modal-card">
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2>My Universe for You</h2>
+            <h2>The Rhythm of Us</h2>
             <div class="guide-content">
-                <p class="guide-intro">I built this universe for you. Every beat, every pixel, every line of code is a testament to us.</p>
+                <p class="guide-intro">This is our digital sanctuary. Every line of code was written to bring us closer, no matter the distance.</p>
                 
                 <div class="guide-item">
-                    <i class="fa-solid fa-infinity"></i>
+                    <i class="fa-solid fa-bolt-lightning"></i>
                     <div>
-                        <strong>Always Synced</strong>
-                        <p>No matter where we are, our rhythm stays synchronized. When I press play, your world moves with mine.</p>
+                        <strong>Instant Connection</strong>
+                        <p>When you pause, I pause. When you vibe, I vibe. This space erases the distance between us through sound.</p>
                     </div>
                 </div>
                 
                 <div class="guide-item">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <i class="fa-solid fa-wand-sparkles"></i>
                     <div>
-                        <strong>Your Songs</strong>
-                        <p>Fill this space with the melodies that remind you of us. I'll be listening right here with you.</p>
+                        <strong>Shared Discovery</strong>
+                        <p>The queue is a living timeline of our memories. Add songs that speak for us when words aren't enough.</p>
                     </div>
                 </div>
 
                 <div class="guide-item">
-                    <i class="fa-solid fa-heart"></i>
+                    <i class="fa-solid fa-shield-heart"></i>
                     <div>
-                        <strong>Just for Her</strong>
-                        <p>Every animation was polished with you in mind. This is our little infinite playlist.</p>
+                        <strong>Private Universe</strong>
+                        <p>Only Sarthak and Reechita have the keys to this rhythm. It's a space where time stops and only the music matters.</p>
                     </div>
                 </div>
 
-                <div class="guide-footer">Forever Yours, Sarthak</div>
+                <div class="guide-item">
+                    <i class="fa-solid fa-scroll"></i>
+                    <div>
+                        <strong>The Words We Feel</strong>
+                        <p>Tap the scroll icon to see lyrics. Sometimes the best way to say "I love you" is through a verse.</p>
+                    </div>
+                </div>
+
+                <div class="guide-footer">Forever Synced, Sarthak</div>
             </div>
         </div>
     </div>
 
-    <!-- Sync Stalled Overlay -->
     <div class="overlay" id="syncOverlay">
         <div class="modal-card" style="text-align: center;">
             <h2>Sync Paused</h2>
@@ -204,7 +194,6 @@
         </div>
     </div>
 
-    <!-- INITIAL WELCOME OVERLAY -->
     <div class="overlay active" id="welcomeOverlay" style="z-index: 5000; background: #0f0518;">
         <div class="modal-card" style="text-align: center; border: 1px solid var(--primary);">
             <i class="fa-solid fa-headphones-simple" style="font-size: 3rem; color: var(--primary); margin-bottom: 20px;"></i>
