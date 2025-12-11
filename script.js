@@ -16,6 +16,7 @@ const db = firebase.database();
 const syncRef = db.ref('sync');
 const queueRef = db.ref('queue');
 const chatRef = db.ref('chat');
+const presenceRef = db.ref('presence');
 
 let player, currentQueue = [], currentVideoId = null;
 let lastBroadcaster = "System"; 
@@ -38,6 +39,27 @@ if (!myName || myName === "null") {
 // Normalize Name
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
 
+// --- PRESENCE SYSTEM ---
+const sessionKey = presenceRef.push().key;
+presenceRef.child(sessionKey).onDisconnect().remove();
+presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
+
+// Listen for active users
+presenceRef.on('value', (snapshot) => {
+    const usersDiv = document.getElementById('active-users-list');
+    if (!usersDiv) return;
+    usersDiv.innerHTML = '';
+    const val = snapshot.val();
+    if (val) {
+        Object.values(val).forEach(u => {
+            const chip = document.createElement('div');
+            chip.className = 'active-user-chip';
+            chip.innerHTML = `<div class="online-dot"></div>${u.user}`;
+            usersDiv.appendChild(chip);
+        });
+    }
+});
+
 function suppressBroadcast(duration = 1000) {
     ignoreSystemEvents = true;
     if (ignoreTimer) clearTimeout(ignoreTimer);
@@ -58,7 +80,7 @@ function onYouTubeIframeAPIReady() {
 }
 
 function onPlayerReady(event) {
-    if (player && player.setVolume) player.setVolume(85);
+    if (player && player.setVolume) player.setVolume(100);
     setInterval(heartbeatSync, 1000);
     setInterval(monitorSyncHealth, 2000);
     syncRef.once('value').then(snapshot => {
@@ -157,8 +179,8 @@ function onPlayerStateChange(event) {
     }
 
     if (state === YT.PlayerState.PLAYING) {
-        // Fade in volume on play start
-        if(player && player.getVolume() < 85) fadeVolume(85, 1000);
+        // Force full volume immediately
+        if(player && player.setVolume) player.setVolume(100);
         
         if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
@@ -193,36 +215,12 @@ function togglePlayPause() {
     } else {
         if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
         else if (currentVideoId) {
+            player.setVolume(100);
             player.playVideo();
             document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-pause"></i>';
             broadcastState('play', player.getCurrentTime(), currentVideoId, true);
         }
     }
-}
-
-// Volume Fading Helper
-function fadeVolume(targetVol, duration) {
-    return new Promise(resolve => {
-        if(!player || !player.getVolume) { resolve(); return; }
-        const startVol = player.getVolume();
-        const diff = targetVol - startVol;
-        if(diff === 0) { resolve(); return; }
-        
-        const steps = 10;
-        const stepTime = duration / steps;
-        const volStep = diff / steps;
-        
-        let currentStep = 0;
-        const fadeInterval = setInterval(() => {
-            currentStep++;
-            const newVol = startVol + (volStep * currentStep);
-            player.setVolume(newVol);
-            if(currentStep >= steps) {
-                clearInterval(fadeInterval);
-                resolve();
-            }
-        }, stepTime);
-    });
 }
 
 function initiateNextSong() {
@@ -244,22 +242,20 @@ function initiateSongLoad(songObj) {
     isSwitchingSong = true;
     lastBroadcaster = myName;
 
-    // Fade Out before switching
-    fadeVolume(0, 1000).then(() => {
-        if (player && player.pauseVideo) player.pauseVideo();
-        
-        showToast("System", "Switching track in 1s...");
-        document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    // No fading, just switch
+    if (player && player.pauseVideo) player.pauseVideo();
+    
+    showToast("System", "Switching track...");
+    document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
-        syncRef.set({ 
-            action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
-        });
-
-        setTimeout(() => {
-            loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
-            isSwitchingSong = false;
-        }, 1200);
+    syncRef.set({ 
+        action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
     });
+
+    setTimeout(() => {
+        loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
+        isSwitchingSong = false;
+    }, 500); // Short delay for UI update
 }
 
 function loadInitialData() {
@@ -315,7 +311,6 @@ function applyRemoteCommand(state) {
     document.getElementById('syncOverlay').classList.remove('active');
 
     if (state.action === 'switching_pause') {
-        fadeVolume(0, 500); // Quick fade for remote switch
         player.pauseVideo();
         showToast("System", "Partner is changing track...");
         document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
@@ -328,16 +323,24 @@ function applyRemoteCommand(state) {
         const title = songInQueue ? songInQueue.title : "Syncing...";
         const uploader = songInQueue ? songInQueue.uploader : "";
         loadAndPlayVideo(state.videoId, title, uploader, state.time, false); 
-        if(state.action === 'play' || state.action === 'restart') player.playVideo();
+        if(state.action === 'play' || state.action === 'restart') {
+            player.setVolume(100);
+            player.playVideo();
+        }
     } 
     else {
         const playerState = player.getPlayerState();
         if (state.action === 'restart') {
-            player.seekTo(0, true); player.playVideo();
+            player.seekTo(0, true); 
+            player.setVolume(100);
+            player.playVideo();
         }
         else if (state.action === 'play') {
             if (Math.abs(player.getCurrentTime() - state.time) > 2) player.seekTo(state.time, true);
-            if (playerState !== YT.PlayerState.PLAYING) player.playVideo();
+            if (playerState !== YT.PlayerState.PLAYING) {
+                player.setVolume(100);
+                player.playVideo();
+            }
         }
         else if (state.action === 'pause' || state.action === 'ad_pause') {
             if (playerState !== YT.PlayerState.PAUSED) player.pauseVideo();
@@ -407,12 +410,12 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         if(currentVideoId !== videoId || !player.cueVideoById) {
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
-            player.setVolume(0); // Start at 0 for fade in
+            player.setVolume(100); 
         } else {
              if(Math.abs(player.getCurrentTime() - startTime) > 2) player.seekTo(startTime, true);
              if(shouldPlay) {
+                 player.setVolume(100);
                  player.playVideo();
-                 fadeVolume(85, 1000);
              }
         }
         
@@ -422,7 +425,6 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
-        // Artist name removed per request
         renderQueue(currentQueue, currentVideoId);
         
         if (shouldBroadcast) {
@@ -493,6 +495,10 @@ function renderQueue(queueArray, currentVideoId) {
         item.dataset.key = song.key;
         item.onclick = () => initiateSongLoad(song);
         
+        const user = song.addedBy || 'System';
+        const isMe = user === myName;
+        const badgeClass = isMe ? 'is-me' : 'is-other';
+        const displayText = isMe ? 'You' : `${user}`;
         const number = index + 1;
         
         let statusIndicator = '';
@@ -505,14 +511,14 @@ function renderQueue(queueArray, currentVideoId) {
                 </div>`;
         }
         
-        // Removed the added-by badge from here as requested
         item.innerHTML = `
             <i class="fa-solid fa-bars drag-handle" title="Drag to order"></i>
             <div class="song-index">${number}</div>
             <img src="${song.thumbnail}" class="song-thumb">
             <div class="song-details">
                 <h4>${song.title}</h4>
-                <div style="display:flex; justify-content:flex-end; align-items:center;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="added-by-badge ${badgeClass}">Added by ${displayText}</span>
                     ${statusIndicator}
                 </div>
             </div>
@@ -554,6 +560,68 @@ function getDragAfterElement(container, y) {
     }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
+// LYRICS FUNCTIONALITY (Updated for Direct In-App Display using Lrclib)
+document.getElementById('lyrics-btn').addEventListener('click', () => {
+    document.getElementById('lyricsOverlay').classList.add('active');
+    fetchLyrics();
+});
+document.getElementById('closeLyricsBtn').addEventListener('click', () => {
+    document.getElementById('lyricsOverlay').classList.remove('active');
+});
+
+async function fetchLyrics() {
+    const titleEl = document.getElementById('current-song-title');
+    const lyricsContentArea = document.getElementById('lyrics-content-area');
+    const lyricsTitle = document.getElementById('lyrics-title');
+    
+    let rawTitle = "Heart's Rhythm";
+    if(titleEl && titleEl.textContent !== "Heart's Rhythm") {
+        rawTitle = titleEl.textContent;
+    }
+    
+    // Clean title for search (remove parens, "Official Video", "ft.", etc.)
+    const cleanTitle = rawTitle
+        .replace(/[\(\[].*?[\)\]]/g, "") // Remove (...) and [...]
+        .replace(/official video/gi, "")
+        .replace(/music video/gi, "")
+        .replace(/remastered/gi, "")
+        .replace(/hq/gi, "")
+        .replace(/hd/gi, "")
+        .replace(/ft\..*/gi, "") // Remove ft. ...
+        .replace(/feat\..*/gi, "") // Remove feat. ...
+        .trim();
+        
+    lyricsTitle.textContent = "Lyrics: " + cleanTitle;
+    lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
+
+    try {
+        const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanTitle)}`;
+        const res = await fetch(searchUrl);
+        const data = await res.json();
+        
+        if (Array.isArray(data) && data.length > 0) {
+            // Pick the best match (first one usually)
+            const song = data[0];
+            const lyrics = song.plainLyrics || song.syncedLyrics || "Instrumental";
+            
+            // Format timestamps out if synced lyrics are returned but we just want text for now
+            // or just display as is. Lrclib plainLyrics is cleanest.
+            lyricsContentArea.innerHTML = `<div class="lyrics-text-block">${lyrics}</div>`;
+        } else {
+            throw new Error("No lyrics found in API");
+        }
+    } catch (e) {
+        // Fallback to Google Button ONLY if API fails
+        lyricsContentArea.innerHTML = `
+            <p>Lyrics could not be loaded automatically.</p>
+            <a href="https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
+               <i class="fa-brands fa-google"></i> Search on Google
+            </a>
+        `;
+    }
+}
+
+
 // Global Search Handling
 document.getElementById('searchInput').addEventListener('input', (e) => {
     switchTab('results'); 
@@ -591,26 +659,63 @@ async function handleSearch() {
 
     switchTab('results');
     document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
+    
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
     
     try {
-        const res = await fetch(url);
+        const res = await fetch(searchUrl);
         const data = await res.json();
         const list = document.getElementById('results-list');
         list.innerHTML = '';
+        
+        if (!data.items || data.items.length === 0) {
+            list.innerHTML = '<div class="empty-state"><p>No results found.</p></div>';
+            return;
+        }
+
+        // Fetch duration for all video IDs found
+        const videoIds = data.items.map(item => item.id.videoId).join(',');
+        const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+        const detailsRes = await fetch(detailsUrl);
+        const detailsData = await detailsRes.json();
+        
+        // Map ID to Duration
+        const durationMap = {};
+        detailsData.items.forEach(v => {
+            durationMap[v.id] = parseDuration(v.contentDetails.duration);
+        });
+
         data.items.forEach(item => {
+            const vid = item.id.videoId;
+            const duration = durationMap[vid] || "";
             const div = document.createElement('div');
             div.className = 'song-item';
             div.innerHTML = `
-                <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
+                <div class="thumb-container">
+                    <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
+                    <div class="song-duration-badge">${duration}</div>
+                </div>
                 <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
                 <button class="emoji-trigger" style="color:#fff; font-size:1.1rem; position:static; width:auto; height:auto; border:none; background:transparent;"><i class="fa-solid fa-plus"></i></button>
             `;
-            div.onclick = () => addToQueue(item.id.videoId, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
+            div.onclick = () => addToQueue(vid, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
             list.appendChild(div);
         });
     } catch(e) { console.error(e); }
     input.value = '';
+}
+
+function parseDuration(pt) {
+    let match = pt.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+    if (!match) return "";
+    let h = match[1] ? parseInt(match[1]) : 0;
+    let m = match[2] ? parseInt(match[2]) : 0;
+    let s = match[3] ? parseInt(match[3]) : 0;
+    
+    if (h > 0) {
+        return `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+    }
+    return `${m}:${s.toString().padStart(2,'0')}`;
 }
 
 async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
