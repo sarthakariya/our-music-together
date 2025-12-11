@@ -15,8 +15,8 @@ if (typeof firebase !== 'undefined' && !firebase.apps.length) firebase.initializ
 const db = firebase.database();
 const syncRef = db.ref('sync');
 const queueRef = db.ref('queue');
-// CHANGED: New chat node to clear history
-const chatRef = db.ref('chat_2025'); 
+// CHANGED: New Chat Reference for Fresh History
+const chatRef = db.ref('chat_v2'); 
 const presenceRef = db.ref('presence');
 
 let player, currentQueue = [], currentVideoId = null;
@@ -40,12 +40,13 @@ if (!myName || myName === "null") {
 // Normalize Name
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
 
-// --- PRESENCE SYSTEM (Backend only, visuals removed) ---
+// --- PRESENCE SYSTEM ---
 const sessionKey = presenceRef.push().key;
 presenceRef.child(sessionKey).onDisconnect().remove();
 presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
 
-// (Active Vibes listener removed as per request)
+// REMOVED: Listener for 'active-users-list' since the UI element was removed.
+// The user is still marked online in DB, but we don't display the list.
 
 function suppressBroadcast(duration = 1000) {
     ignoreSystemEvents = true;
@@ -578,11 +579,8 @@ async function fetchLyrics() {
         .replace(/feat\..*/gi, "") // Remove feat. ...
         .trim();
         
-    lyricsTitle.textContent = cleanTitle;
+    lyricsTitle.textContent = "Lyrics: " + cleanTitle;
     lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
-    
-    const googleBtn = document.getElementById('google-lyrics-btn');
-    if(googleBtn) googleBtn.href = `https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}`;
 
     try {
         const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanTitle)}`;
@@ -604,6 +602,9 @@ async function fetchLyrics() {
         // Fallback to Google Button ONLY if API fails
         lyricsContentArea.innerHTML = `
             <p>Lyrics could not be loaded automatically.</p>
+            <a href="https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
+               <i class="fa-brands fa-google"></i> Search on Google
+            </a>
         `;
     }
 }
