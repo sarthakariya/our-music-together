@@ -46,9 +46,13 @@
                     <!-- Layout: Flex Row -->
                     <div class="track-row">
                         <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
-                        <!-- Equalizer moved to right -->
+                        <!-- Enhanced 5-bar Equalizer -->
                         <div class="equalizer" id="equalizer">
-                            <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
                         </div>
                     </div>
 
@@ -60,9 +64,11 @@
                 </div>
 
                 <div class="controls">
+                    <button class="ctrl-btn small btn-3d" id="lyrics-btn" title="Lyrics"><i class="fa-solid fa-feather"></i></button>
                     <button class="ctrl-btn small btn-3d" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
                     <button class="ctrl-btn play btn-3d" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
                     <button class="ctrl-btn small btn-3d" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
+                    <button class="ctrl-btn small btn-3d" style="opacity:0; pointer-events:none;"></button> <!-- Spacer for balance if needed -->
                 </div>
             </div>
 
@@ -130,6 +136,17 @@
 
     <!-- Notification Toast -->
     <div id="toast-container"></div>
+
+    <!-- Lyrics Overlay -->
+    <div class="overlay" id="lyricsOverlay">
+        <div class="modal-card lyrics-card">
+            <button class="modal-close" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
+            <h2 id="lyrics-title">Lyrics</h2>
+            <div class="lyrics-content" id="lyrics-text">
+                Loading lyrics...
+            </div>
+        </div>
+    </div>
 
     <!-- Info Overlay -->
     <div class="overlay" id="infoOverlay">
