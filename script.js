@@ -61,7 +61,8 @@ function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
         height: '100%', width: '100%', videoId: '',
         playerVars: { 
-            'controls': 1, 'disablekb': 0, 'rel': 0, 'modestbranding': 1, 'autoplay': 1, 'origin': window.location.origin 
+            'controls': 1, 'disablekb': 0, 'rel': 0, 'modestbranding': 1, 'autoplay': 1, 'origin': window.location.origin,
+            'playsinline': 1 // Helps with mobile playback behavior
         },
         events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
     });
@@ -75,6 +76,7 @@ function onPlayerReady(event) {
         const state = snapshot.val();
         if(state) applyRemoteCommand(state);
     });
+    setupMediaSession();
 }
 
 function detectAd() {
@@ -84,6 +86,43 @@ function detectAd() {
         if (data && data.video_id && data.video_id !== currentVideoId) return true;
     } catch(e) {}
     return false;
+}
+
+// --- MEDIA SESSION API (Background Play Support) ---
+function setupMediaSession() {
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.setActionHandler('play', function() {
+            if(player && player.playVideo) {
+                player.playVideo();
+                togglePlayPause();
+            }
+        });
+        navigator.mediaSession.setActionHandler('pause', function() {
+            if(player && player.pauseVideo) {
+                player.pauseVideo();
+                togglePlayPause();
+            }
+        });
+        navigator.mediaSession.setActionHandler('previoustrack', function() {
+            initiatePrevSong();
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', function() {
+            initiateNextSong();
+        });
+    }
+}
+
+function updateMediaSessionMetadata(title, artist, artworkUrl) {
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: title || "Heart's Rhythm",
+            artist: artist || "Sarthak & Reechita",
+            album: "Our Sync",
+            artwork: [
+                { src: artworkUrl || 'https://via.placeholder.com/512', sizes: '512x512', type: 'image/png' }
+            ]
+        });
+    }
 }
 
 // --- CORE SYNC LOGIC ---
@@ -150,8 +189,14 @@ function updatePlayPauseButton(state) {
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
         return;
     }
-    if (state === YT.PlayerState.PLAYING) btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-    else btn.innerHTML = '<i class="fa-solid fa-play"></i>';
+    if (state === YT.PlayerState.PLAYING) {
+        btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+        if(navigator.mediaSession) navigator.mediaSession.playbackState = "playing";
+    }
+    else {
+        btn.innerHTML = '<i class="fa-solid fa-play"></i>';
+        if(navigator.mediaSession) navigator.mediaSession.playbackState = "paused";
+    }
 }
 
 function onPlayerStateChange(event) {
@@ -242,6 +287,8 @@ function initiateSongLoad(songObj) {
 
     setTimeout(() => {
         loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
+        // Also update Media Session Metadata for lockscreen
+        updateMediaSessionMetadata(songObj.title, songObj.uploader, songObj.thumbnail);
         isSwitchingSong = false;
     }, 500); // Short delay for UI update
 }
@@ -413,6 +460,13 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
+        
+        // Update Media Session when a song loads
+        let artwork = 'https://via.placeholder.com/512';
+        const currentSong = currentQueue.find(s => s.videoId === videoId);
+        if(currentSong && currentSong.thumbnail) artwork = currentSong.thumbnail;
+        updateMediaSessionMetadata(title, uploader, artwork);
+
         renderQueue(currentQueue, currentVideoId);
         
         if (shouldBroadcast) {
@@ -579,11 +633,14 @@ async function fetchLyrics() {
         .replace(/feat\..*/gi, "") // Remove feat. ...
         .trim();
         
-    lyricsTitle.textContent = "Lyrics: " + cleanTitle;
+    // CHANGED: Use first 8 words logic for better accuracy as requested
+    const searchWords = cleanTitle.split(/\s+/).slice(0, 8).join(" ");
+
+    lyricsTitle.textContent = "Lyrics: " + searchWords + "...";
     lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
 
     try {
-        const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanTitle)}`;
+        const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchWords)}`;
         const res = await fetch(searchUrl);
         const data = await res.json();
         
@@ -623,8 +680,15 @@ document.getElementById('startSessionBtn').addEventListener('click', () => {
     hasUserInteracted = true;
     document.getElementById('welcomeOverlay').classList.remove('active');
     
-    if (currentRemoteState && currentRemoteState.action !== 'pause') {
-         if (player && player.playVideo) player.playVideo();
+    // Play video to initialize audio context
+    if (player && player.playVideo) player.playVideo();
+    
+    // Initialize Media Session Metadata early if we have a current song
+    if(currentVideoId) {
+        const currentSong = currentQueue.find(s => s.videoId === currentVideoId);
+        if(currentSong) {
+             updateMediaSessionMetadata(currentSong.title, currentSong.uploader, currentSong.thumbnail);
+        }
     }
 });
 
