@@ -33,18 +33,27 @@
             
             <!-- Left Side: Player -->
             <div class="player-card glass-panel">
-                <div class="video-wrapper">
-                    <div id="player"></div>
+                
+                <!-- Player Glow "Ambilight" Container -->
+                <div class="player-glow-container">
+                    <div class="player-glow"></div>
+                    <div class="video-wrapper">
+                        <div id="player"></div>
+                    </div>
                 </div>
 
                 <div class="song-info-container">
-                    <div class="track-details">
-                        <!-- Equalizer Animation -->
-                        <div class="equalizer" id="equalizer">
-                            <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
-                        </div>
+                    <!-- Layout: Flex Row -->
+                    <div class="track-row">
                         <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
-                        <div class="artist-name truncate-text" id="current-song-artist">Choose a song</div>
+                        <!-- Enhanced 5-bar Equalizer -->
+                        <div class="equalizer" id="equalizer">
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                        </div>
                     </div>
 
                     <div class="sync-badge-container">
@@ -55,9 +64,11 @@
                 </div>
 
                 <div class="controls">
+                    <button class="ctrl-btn small btn-3d" id="lyrics-btn" title="Lyrics"><i class="fa-solid fa-feather"></i></button>
                     <button class="ctrl-btn small btn-3d" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
                     <button class="ctrl-btn play btn-3d" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
                     <button class="ctrl-btn small btn-3d" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
+                    <button class="ctrl-btn small btn-3d" style="opacity:0; pointer-events:none;"></button> <!-- Spacer for balance if needed -->
                 </div>
             </div>
 
@@ -110,6 +121,11 @@
 
                     <!-- View: Chat -->
                     <div id="view-chat" class="tab-content chat-layout">
+                        <!-- Active Users Section -->
+                        <div class="active-users-bar" id="active-users-bar">
+                            <span style="font-size:0.8rem; font-weight:700; color:#aaa; margin-right:10px;">ACTIVE VIBES:</span>
+                            <div id="active-users-list" style="display:flex; gap:10px; overflow-x:auto;"></div>
+                        </div>
                         <div class="chat-messages" id="chat-messages"></div>
                         <div class="chat-input-area">
                             <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
@@ -126,16 +142,54 @@
     <!-- Notification Toast -->
     <div id="toast-container"></div>
 
+    <!-- Lyrics Overlay -->
+    <div class="overlay" id="lyricsOverlay">
+        <div class="modal-card lyrics-card">
+            <button class="modal-close" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
+            <h2 id="lyrics-title">Lyrics</h2>
+            <div class="lyrics-content" id="lyrics-content-area">
+                <p>Find the words to this melody.</p>
+                <a id="google-lyrics-btn" href="#" target="_blank" class="google-lyrics-btn">
+                    <i class="fa-brands fa-google"></i> Search Lyrics on Google
+                </a>
+                <p style="margin-top:15px; font-size:0.9rem; color:#888;">Opens in a new tab for 100% accuracy.</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Info Overlay -->
     <div class="overlay" id="infoOverlay">
         <div class="modal-card">
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2>Our Heart's Rhythm</h2>
+            <h2>My Universe for You</h2>
             <div class="guide-content">
-                <p class="guide-intro">A sanctuary where music bridges the distance between hearts.</p>
-                <div class="guide-item"><i class="fa-solid fa-infinity"></i><div><strong>Always Connected</strong><p>When one pauses, the world stops for both.</p></div></div>
-                <div class="guide-item"><i class="fa-solid fa-wand-magic-sparkles"></i><div><strong>Seamless Control</strong><p>Search, Drag & Drop Queue, Auto-Sync.</p></div></div>
-                <div class="guide-footer">Sarthak ❤️ Reechita</div>
+                <p class="guide-intro">I built this universe for you. Every beat, every pixel, every line of code is a testament to us.</p>
+                
+                <div class="guide-item">
+                    <i class="fa-solid fa-infinity"></i>
+                    <div>
+                        <strong>Always Synced</strong>
+                        <p>No matter where we are, our rhythm stays synchronized. When I press play, your world moves with mine.</p>
+                    </div>
+                </div>
+                
+                <div class="guide-item">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <div>
+                        <strong>Your Songs</strong>
+                        <p>Fill this space with the melodies that remind you of us. I'll be listening right here with you.</p>
+                    </div>
+                </div>
+
+                <div class="guide-item">
+                    <i class="fa-solid fa-heart"></i>
+                    <div>
+                        <strong>Just for Her</strong>
+                        <p>Every animation was polished with you in mind. This is our little infinite playlist.</p>
+                    </div>
+                </div>
+
+                <div class="guide-footer">Forever Yours, Sarthak</div>
             </div>
         </div>
     </div>
@@ -147,6 +201,18 @@
             <p id="overlayText" style="color:var(--text-dim); margin-bottom:20px;">Waiting for partner...</p>
             <div style="margin:0 auto 20px; width:40px; height:40px; border:4px solid rgba(255,215,0,0.2); border-top:4px solid var(--gold); border-radius:50%; animation: spin 1s infinite linear;"></div>
             <button class="clear-btn btn-3d" style="width:auto; padding:10px 25px; background:var(--gold); color:#000; border-bottom-color:#b29700;" id="forceSyncBtn">Resume</button>
+        </div>
+    </div>
+
+    <!-- INITIAL WELCOME OVERLAY -->
+    <div class="overlay active" id="welcomeOverlay" style="z-index: 5000; background: #0f0518;">
+        <div class="modal-card" style="text-align: center; border: 1px solid var(--primary);">
+            <i class="fa-solid fa-headphones-simple" style="font-size: 3rem; color: var(--primary); margin-bottom: 20px;"></i>
+            <h2 style="font-size: 2rem; margin-bottom: 10px;">Welcome Back</h2>
+            <p style="color: #ccc; margin-bottom: 30px;">Tap below to sync hearts and enable audio.</p>
+            <button class="ctrl-btn play btn-3d" id="startSessionBtn" style="width: 80px; height: 80px; margin: 0 auto; font-size: 2.5rem;">
+                <i class="fa-solid fa-play"></i>
+            </button>
         </div>
     </div>
 
