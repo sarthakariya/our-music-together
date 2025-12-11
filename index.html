@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>❤️ Our Heart's Rhythm 💗</title>
+    <title>Sarthak's ❤️ Reechita's Heart's Rhythm</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800&family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -68,7 +68,8 @@
                     <button class="ctrl-btn small btn-3d" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
                     <button class="ctrl-btn play btn-3d" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
                     <button class="ctrl-btn small btn-3d" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
-                    <button class="ctrl-btn small btn-3d" style="opacity:0; pointer-events:none;"></button> <!-- Spacer for balance if needed -->
+                    <!-- New Heart Button for Symmetry -->
+                    <button class="ctrl-btn small btn-3d" id="like-btn" title="Love this"><i class="fa-solid fa-heart"></i></button>
                 </div>
             </div>
 
@@ -121,11 +122,7 @@
 
                     <!-- View: Chat -->
                     <div id="view-chat" class="tab-content chat-layout">
-                        <!-- Active Users Section -->
-                        <div class="active-users-bar" id="active-users-bar">
-                            <span style="font-size:0.8rem; font-weight:700; color:#aaa; margin-right:10px;">ACTIVE VIBES:</span>
-                            <div id="active-users-list" style="display:flex; gap:10px; overflow-x:auto;"></div>
-                        </div>
+                        <!-- Removed Active Users Bar -->
                         <div class="chat-messages" id="chat-messages"></div>
                         <div class="chat-input-area">
                             <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
@@ -148,7 +145,6 @@
             <button class="modal-close" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
             <h2 id="lyrics-title">Lyrics</h2>
             <div class="lyrics-content" id="lyrics-content-area">
-                <!-- Lyrics will be injected here -->
                 Loading...
             </div>
         </div>
@@ -158,35 +154,46 @@
     <div class="overlay" id="infoOverlay">
         <div class="modal-card">
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2>My Universe for You</h2>
+            <h2>System & Universe Info</h2>
             <div class="guide-content">
-                <p class="guide-intro">I built this universe for you. Every beat, every pixel, every line of code is a testament to us.</p>
+                <p class="guide-intro">Operational parameters for the Sarthak & Reechita Infinite Playlist.</p>
                 
-                <div class="guide-item">
-                    <i class="fa-solid fa-infinity"></i>
-                    <div>
-                        <strong>Always Synced</strong>
-                        <p>No matter where we are, our rhythm stays synchronized. When I press play, your world moves with mine.</p>
+                <div class="info-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:20px;">
+                    <div class="info-box" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px;">
+                        <strong style="color:var(--primary); display:block; margin-bottom:5px;">Sync Status</strong>
+                        <span style="color:#00e676;">Online & Active</span>
                     </div>
-                </div>
-                
-                <div class="guide-item">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i>
-                    <div>
-                        <strong>Your Songs</strong>
-                        <p>Fill this space with the melodies that remind you of us. I'll be listening right here with you.</p>
+                    <div class="info-box" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px;">
+                         <strong style="color:var(--gold); display:block; margin-bottom:5px;">Audio Engine</strong>
+                         <span>High Fidelity Stereo</span>
+                    </div>
+                     <div class="info-box" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px;">
+                         <strong style="color:#2979ff; display:block; margin-bottom:5px;">Database</strong>
+                         <span>Realtime Firebase</span>
+                    </div>
+                     <div class="info-box" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px;">
+                         <strong style="color:#e040fb; display:block; margin-bottom:5px;">Version</strong>
+                         <span>Heartbeat v3.0</span>
                     </div>
                 </div>
 
                 <div class="guide-item">
-                    <i class="fa-solid fa-heart"></i>
+                    <i class="fa-solid fa-tower-broadcast"></i>
                     <div>
-                        <strong>Just for Her</strong>
-                        <p>Every animation was polished with you in mind. This is our little infinite playlist.</p>
+                        <strong>Low Latency Protocol</strong>
+                        <p>Optimized for minimal delay. Playback commands are executed in under 200ms across clients.</p>
                     </div>
                 </div>
 
-                <div class="guide-footer">Forever Yours, Sarthak</div>
+                <div class="guide-item">
+                    <i class="fa-solid fa-shield-heart"></i>
+                    <div>
+                        <strong>Universe Integrity</strong>
+                        <p>Built exclusively for two. External interference is blocked. Your rhythm is secure.</p>
+                    </div>
+                </div>
+
+                <div class="guide-footer">Developed with ❤️ by Sarthak</div>
             </div>
         </div>
     </div>
@@ -201,14 +208,17 @@
         </div>
     </div>
 
-    <!-- INITIAL WELCOME OVERLAY -->
-    <div class="overlay active" id="welcomeOverlay" style="z-index: 5000; background: #0f0518;">
-        <div class="modal-card" style="text-align: center; border: 1px solid var(--primary);">
-            <i class="fa-solid fa-headphones-simple" style="font-size: 3rem; color: var(--primary); margin-bottom: 20px;"></i>
-            <h2 style="font-size: 2rem; margin-bottom: 10px;">Welcome Back</h2>
-            <p style="color: #ccc; margin-bottom: 30px;">Tap below to sync hearts and enable audio.</p>
-            <button class="ctrl-btn play btn-3d" id="startSessionBtn" style="width: 80px; height: 80px; margin: 0 auto; font-size: 2.5rem;">
-                <i class="fa-solid fa-play"></i>
+    <!-- INITIAL WELCOME OVERLAY (Redesigned) -->
+    <div class="overlay active" id="welcomeOverlay" style="z-index: 5000; background: #05000a;">
+        <div class="welcome-content">
+            <div class="pulse-ring"></div>
+            <div class="pulse-ring delay"></div>
+            <i class="fa-solid fa-heart welcome-icon"></i>
+            <h1 class="welcome-title">Heart's Rhythm</h1>
+            <p class="welcome-subtitle">A universe built for Sarthak & Reechita</p>
+            
+            <button class="enter-btn btn-3d" id="startSessionBtn">
+                <i class="fa-solid fa-play"></i> Enter Universe
             </button>
         </div>
     </div>
