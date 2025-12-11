@@ -33,18 +33,23 @@
             
             <!-- Left Side: Player -->
             <div class="player-card glass-panel">
-                <div class="video-wrapper">
-                    <div id="player"></div>
+                
+                <!-- NEW: Ambilight Glow Container -->
+                <div class="player-glow-container">
+                    <div class="player-glow"></div>
+                    <div class="video-wrapper">
+                        <div id="player"></div>
+                    </div>
                 </div>
 
                 <div class="song-info-container">
-                    <div class="track-details">
-                        <!-- Equalizer Animation -->
+                    <!-- NEW LAYOUT: Flex Row -->
+                    <div class="track-row">
+                        <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
+                        <!-- Equalizer moved to right -->
                         <div class="equalizer" id="equalizer">
                             <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
                         </div>
-                        <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
-                        <div class="artist-name truncate-text" id="current-song-artist">Choose a song</div>
                     </div>
 
                     <div class="sync-badge-container">
@@ -130,35 +135,35 @@
     <div class="overlay" id="infoOverlay">
         <div class="modal-card">
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2>Pulse & Features</h2>
+            <h2>My Promise to You</h2>
             <div class="guide-content">
-                <p class="guide-intro">Designed to bridge the distance, this space synchronizes your music and heartbeat in perfect rhythm.</p>
+                <p class="guide-intro">I built this space not just as an app, but as a bridge. No matter the distance, our rhythm stays the same.</p>
                 
                 <div class="guide-item">
-                    <i class="fa-solid fa-bolt"></i>
+                    <i class="fa-solid fa-infinity"></i>
                     <div>
-                        <strong>Instant Sync</strong>
-                        <p>Play, pause, or seek – your actions reflect instantly on your partner's screen.</p>
+                        <strong>Our Sync</strong>
+                        <p>When I press play, your world moves with mine. When I pause, we wait together.</p>
                     </div>
                 </div>
                 
                 <div class="guide-item">
-                    <i class="fa-solid fa-layer-group"></i>
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
                     <div>
-                        <strong>Smart Queue</strong>
-                        <p>Drag & drop to reorder. Hover to see who added the track. A shared playlist for shared moments.</p>
+                        <strong>Your Queue</strong>
+                        <p>Add the songs that remind you of us. I've added a special glow when you touch them.</p>
                     </div>
                 </div>
 
                 <div class="guide-item">
-                    <i class="fa-solid fa-comments"></i>
+                    <i class="fa-solid fa-heart"></i>
                     <div>
-                        <strong>Live Chat</strong>
-                        <p>Share thoughts in real-time. Messages flow with an elastic, polished feel.</p>
+                        <strong>Just for Her</strong>
+                        <p>Every animation, every pixel was polished with you in mind. This is our little infinite playlist.</p>
                     </div>
                 </div>
 
-                <div class="guide-footer">Created with ❤️ for Sarthak & Reechita</div>
+                <div class="guide-footer">Forever Yours, Sarthak</div>
             </div>
         </div>
     </div>
@@ -173,7 +178,7 @@
         </div>
     </div>
 
-    <!-- INITIAL WELCOME OVERLAY (Fixes Autoplay Policy) -->
+    <!-- INITIAL WELCOME OVERLAY -->
     <div class="overlay active" id="welcomeOverlay" style="z-index: 5000; background: #0f0518;">
         <div class="modal-card" style="text-align: center; border: 1px solid var(--primary);">
             <i class="fa-solid fa-headphones-simple" style="font-size: 3rem; color: var(--primary); margin-bottom: 20px;"></i>
