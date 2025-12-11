@@ -121,6 +121,11 @@
 
                     <!-- View: Chat -->
                     <div id="view-chat" class="tab-content chat-layout">
+                        <!-- Active Users Section -->
+                        <div class="active-users-bar" id="active-users-bar">
+                            <span style="font-size:0.8rem; font-weight:700; color:#aaa; margin-right:10px;">ACTIVE VIBES:</span>
+                            <div id="active-users-list" style="display:flex; gap:10px; overflow-x:auto;"></div>
+                        </div>
                         <div class="chat-messages" id="chat-messages"></div>
                         <div class="chat-input-area">
                             <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
@@ -142,8 +147,12 @@
         <div class="modal-card lyrics-card">
             <button class="modal-close" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
             <h2 id="lyrics-title">Lyrics</h2>
-            <div class="lyrics-content" id="lyrics-text">
-                Loading lyrics...
+            <div class="lyrics-content" id="lyrics-content-area">
+                <p>Find the words to this melody.</p>
+                <a id="google-lyrics-btn" href="#" target="_blank" class="google-lyrics-btn">
+                    <i class="fa-brands fa-google"></i> Search Lyrics on Google
+                </a>
+                <p style="margin-top:15px; font-size:0.9rem; color:#888;">Opens in a new tab for 100% accuracy.</p>
             </div>
         </div>
     </div>
