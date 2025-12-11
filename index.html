@@ -22,12 +22,11 @@
 
     <div class="app-container">
         
-        <!-- Top Bar (Visible on Mobile now too, but styled differently) -->
+        <!-- Top Bar: Just the Logo/Title now -->
         <div class="top-bar glass-panel">
             <div class="logo">
                 <h1>Sarthak's ❤️ Reechita's Heart's Rhythm</h1>
             </div>
-            <button class="info-btn" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
         </div>
 
         <div class="main-layout">
@@ -36,15 +35,15 @@
             <div class="player-card glass-panel">
                 
                 <!-- Player Glow "Ambilight" Container -->
-                <div class="player-glow-container">
+                <div class="player-glow-container anim-delay-1">
                     <div class="player-glow"></div>
                     <div class="video-wrapper">
                         <div id="player"></div>
                     </div>
                 </div>
 
-                <div class="song-info-container">
-                    <!-- Equalizer Moved here for independent positioning -->
+                <div class="song-info-container anim-delay-2">
+                    <!-- Equalizer -->
                     <div class="equalizer" id="equalizer">
                         <div class="bar"></div>
                         <div class="bar"></div>
@@ -62,13 +61,13 @@
                     </div>
                 </div>
 
-                <div class="controls">
+                <!-- Controls: Lyrics | Prev | Play | Next | Info -->
+                <div class="controls anim-delay-3">
                     <button class="ctrl-btn small btn-3d" id="lyrics-btn" title="Lyrics"><i class="fa-solid fa-scroll"></i></button>
-                    <button class="ctrl-btn small btn-3d" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
-                    <button class="ctrl-btn play btn-3d" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
-                    <button class="ctrl-btn small btn-3d" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
-                    <!-- On mobile this spacer helps centering -->
-                    <button class="ctrl-btn small btn-3d spacer-btn" style="opacity:0; pointer-events:none;"></button> 
+                    <button class="ctrl-btn small btn-3d" id="prev-btn" title="Previous"><i class="fa-solid fa-backward-step"></i></button>
+                    <button class="ctrl-btn play btn-3d" id="play-pause-btn" title="Play/Pause"><i class="fa-solid fa-play"></i></button>
+                    <button class="ctrl-btn small btn-3d" id="next-btn" title="Next"><i class="fa-solid fa-forward-step"></i></button>
+                    <button class="ctrl-btn small btn-3d" id="infoBtn" title="Guide"><i class="fa-solid fa-circle-info"></i></button>
                 </div>
             </div>
 
@@ -177,21 +176,46 @@
         </div>
     </div>
 
-    <!-- Info Overlay -->
+    <!-- Info Overlay (Updated Content) -->
     <div class="overlay" id="infoOverlay">
         <div class="modal-card">
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2>My Universe for You</h2>
+            <h2 style="margin-bottom: 30px;">How to Use Our Universe</h2>
+            
             <div class="guide-content">
-                <p class="guide-intro">I built this universe so we never have to listen alone. Every beat, every pixel, every line of code is a testament to us.</p>
+                
                 <div class="guide-item">
-                    <i class="fa-solid fa-infinity"></i>
+                    <i class="fa-solid fa-heart-pulse"></i>
                     <div>
                         <strong>Always Synced</strong>
-                        <p>No matter the distance, our rhythm stays perfectly synchronized. When I press play, your world moves with mine.</p>
+                        <p>Our hearts (and this music) beat as one. If I play, you play. If I pause, you pause.</p>
                     </div>
                 </div>
-                <!-- Other guide items kept same -->
+
+                <div class="guide-item" style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 12px; border: 1px solid rgba(245,0,87,0.3);">
+                    <i class="fa-solid fa-sliders" style="color: #ffd700;"></i>
+                    <div>
+                        <strong style="color: #ffd700;">Seeking & Skipping (Important!)</strong>
+                        <p>To skip to a specific part of a song, you <b>must PAUSE first</b>. Then, drag the slider to the timestamp you want, and hit <b>RESUME</b>. This keeps us perfectly perfectly in sync!</p>
+                    </div>
+                </div>
+
+                <div class="guide-item">
+                    <i class="fa-solid fa-list-ol"></i>
+                    <div>
+                        <strong>The Queue</strong>
+                        <p>Add songs from Search. Drag them to reorder. Swipe or click trash to remove. It's our shared playlist.</p>
+                    </div>
+                </div>
+
+                <div class="guide-item">
+                    <i class="fa-brands fa-youtube"></i>
+                    <div>
+                        <strong>Background Play</strong>
+                        <p>On phone, if the music stops when you leave, check your notification bar to press Play again!</p>
+                    </div>
+                </div>
+
                 <div class="guide-footer">Forever Yours, Sarthak</div>
             </div>
         </div>
