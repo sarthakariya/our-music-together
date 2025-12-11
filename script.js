@@ -15,8 +15,8 @@ if (typeof firebase !== 'undefined' && !firebase.apps.length) firebase.initializ
 const db = firebase.database();
 const syncRef = db.ref('sync');
 const queueRef = db.ref('queue');
-// CHANGED: New Chat Reference for Fresh History
-const chatRef = db.ref('chat_v2'); 
+// REVERTED: Chat Reference restored to original to keep history and functionality
+const chatRef = db.ref('chat'); 
 const presenceRef = db.ref('presence');
 
 let player, currentQueue = [], currentVideoId = null;
