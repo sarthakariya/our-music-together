@@ -40,6 +40,8 @@ if (!myName || myName === "null") {
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
 
 // --- PRESENCE SYSTEM ---
+// Explicitly disconnect previous sessions to clean up ghosts
+presenceRef.onDisconnect().cancel(); 
 const sessionKey = presenceRef.push().key;
 presenceRef.child(sessionKey).onDisconnect().remove();
 presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
@@ -58,6 +60,30 @@ presenceRef.on('value', (snapshot) => {
             usersDiv.appendChild(chip);
         });
     }
+});
+
+// --- BUTTON RIPPLE EFFECT ---
+function createRipple(event) {
+    const button = event.currentTarget;
+    const circle = document.createElement("span");
+    const diameter = Math.max(button.clientWidth, button.clientHeight);
+    const radius = diameter / 2;
+
+    circle.style.width = circle.style.height = `${diameter}px`;
+    circle.style.left = `${event.clientX - button.getBoundingClientRect().left - radius}px`;
+    circle.style.top = `${event.clientY - button.getBoundingClientRect().top - radius}px`;
+    circle.classList.add("ripple");
+
+    const ripple = button.getElementsByClassName("ripple")[0];
+    if (ripple) {
+        ripple.remove();
+    }
+
+    button.appendChild(circle);
+}
+
+document.querySelectorAll('.ctrl-btn').forEach(btn => {
+    btn.addEventListener('click', createRipple);
 });
 
 function suppressBroadcast(duration = 1000) {
@@ -182,6 +208,22 @@ function onPlayerStateChange(event) {
         // Force full volume immediately
         if(player && player.setVolume) player.setVolume(100);
         
+        // --- QUOTA SAVER OPTIMIZATION ---
+        // If the current song has no duration in the DB (was added via playlist/batch),
+        // save it now using the player's loaded metadata.
+        // This avoids calling the API for every playlist item upfront.
+        const currentDuration = player.getDuration();
+        if (currentDuration > 0 && currentVideoId) {
+            const currentSongObj = currentQueue.find(s => s.videoId === currentVideoId);
+            if (currentSongObj && !currentSongObj.duration) {
+                // Convert seconds to mm:ss
+                const m = Math.floor(currentDuration / 60);
+                const s = Math.floor(currentDuration % 60);
+                const formatted = `${m}:${s.toString().padStart(2, '0')}`;
+                queueRef.child(currentSongObj.key).update({ duration: formatted });
+            }
+        }
+
         if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
              broadcastState('play', player.getCurrentTime(), currentVideoId);
@@ -198,7 +240,8 @@ function onPlayerStateChange(event) {
     updateSyncStatus();
 }
 
-function togglePlayPause() {
+function togglePlayPause(e) {
+    if(e) createRipple(e);
     if (!player || isSwitchingSong) return;
     
     lastLocalInteractionTime = Date.now();
@@ -223,14 +266,16 @@ function togglePlayPause() {
     }
 }
 
-function initiateNextSong() {
+function initiateNextSong(e) {
+    if(e) createRipple(e);
     if (isSwitchingSong) return;
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
     const next = currentQueue[(idx + 1) % currentQueue.length];
     if (next) initiateSongLoad(next);
 }
 
-function initiatePrevSong() {
+function initiatePrevSong(e) {
+    if(e) createRipple(e);
     if (isSwitchingSong) return;
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
     if(idx > 0) initiateSongLoad(currentQueue[idx-1]);
@@ -442,9 +487,9 @@ function switchTab(tabName) {
     document.getElementById('view-' + tabName).classList.add('active');
 }
 
-function addToQueue(videoId, title, uploader, thumbnail) {
+function addToQueue(videoId, title, uploader, thumbnail, duration = "") {
     const newKey = queueRef.push().key;
-    queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, addedBy: myName, order: Date.now() })
+    queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, addedBy: myName, order: Date.now(), duration })
         .then(() => {
             switchTab('queue');
             if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title, uploader});
@@ -457,6 +502,7 @@ function addBatchToQueue(songs) {
     const updates = {};
     songs.forEach((s, i) => {
         const newKey = queueRef.push().key;
+        // Don't set duration here to save quota. It will be auto-filled on play.
         updates[newKey] = { ...s, addedBy: myName, order: Date.now() + i * 100 };
     });
     queueRef.update(updates).then(() => switchTab('queue'));
@@ -500,6 +546,7 @@ function renderQueue(queueArray, currentVideoId) {
         const badgeClass = isMe ? 'is-me' : 'is-other';
         const displayText = isMe ? 'You' : `${user}`;
         const number = index + 1;
+        const durationText = song.duration ? `<div class="song-duration-badge">${song.duration}</div>` : '';
         
         let statusIndicator = '';
         if (song.videoId === currentVideoId) {
@@ -514,7 +561,10 @@ function renderQueue(queueArray, currentVideoId) {
         item.innerHTML = `
             <i class="fa-solid fa-bars drag-handle" title="Drag to order"></i>
             <div class="song-index">${number}</div>
-            <img src="${song.thumbnail}" class="song-thumb">
+            <div class="thumb-container">
+                <img src="${song.thumbnail}" class="song-thumb">
+                ${durationText}
+            </div>
             <div class="song-details">
                 <h4>${song.title}</h4>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -560,7 +610,7 @@ function getDragAfterElement(container, y) {
     }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
-// LYRICS FUNCTIONALITY (Updated for Direct In-App Display using Lrclib)
+// LYRICS FUNCTIONALITY (Updated for Smart Artist + Title Search)
 document.getElementById('lyrics-btn').addEventListener('click', () => {
     document.getElementById('lyricsOverlay').classList.add('active');
     fetchLyrics();
@@ -575,46 +625,62 @@ async function fetchLyrics() {
     const lyricsTitle = document.getElementById('lyrics-title');
     
     let rawTitle = "Heart's Rhythm";
-    if(titleEl && titleEl.textContent !== "Heart's Rhythm") {
-        rawTitle = titleEl.textContent;
+    let artistHint = "";
+    
+    // Attempt to find the song object for better metadata
+    if(currentVideoId && currentQueue.length) {
+        const songObj = currentQueue.find(s => s.videoId === currentVideoId);
+        if(songObj) {
+            rawTitle = songObj.title;
+            // Channel Name is often the artist
+            artistHint = songObj.uploader.replace("VEVO", "").replace("Official", "").trim(); 
+        }
     }
     
-    // Clean title for search (remove parens, "Official Video", "ft.", etc.)
+    // Clean title
     const cleanTitle = rawTitle
-        .replace(/[\(\[].*?[\)\]]/g, "") // Remove (...) and [...]
+        .replace(/[\(\[].*?[\)\]]/g, "") 
         .replace(/official video/gi, "")
         .replace(/music video/gi, "")
-        .replace(/remastered/gi, "")
-        .replace(/hq/gi, "")
-        .replace(/hd/gi, "")
-        .replace(/ft\..*/gi, "") // Remove ft. ...
-        .replace(/feat\..*/gi, "") // Remove feat. ...
+        .replace(/lyric video/gi, "")
+        .replace(/ft\..*/gi, "") 
+        .replace(/feat\..*/gi, "") 
         .trim();
         
     lyricsTitle.textContent = "Lyrics: " + cleanTitle;
     lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
 
     try {
-        const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanTitle)}`;
+        // IMPROVED: Construct query with Artist + Title for better Lrclib matching
+        // If we have an artist hint, prepend it.
+        const query = artistHint ? `${artistHint} ${cleanTitle}` : cleanTitle;
+        const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(query)}`;
         const res = await fetch(searchUrl);
         const data = await res.json();
         
         if (Array.isArray(data) && data.length > 0) {
-            // Pick the best match (first one usually)
             const song = data[0];
             const lyrics = song.plainLyrics || song.syncedLyrics || "Instrumental";
-            
-            // Format timestamps out if synced lyrics are returned but we just want text for now
-            // or just display as is. Lrclib plainLyrics is cleanest.
             lyricsContentArea.innerHTML = `<div class="lyrics-text-block">${lyrics}</div>`;
         } else {
-            throw new Error("No lyrics found in API");
+            // If Artist+Title failed, try just Title
+            if (artistHint) {
+                 const fallbackUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanTitle)}`;
+                 const fbRes = await fetch(fallbackUrl);
+                 const fbData = await fbRes.json();
+                 if(Array.isArray(fbData) && fbData.length > 0) {
+                     const fbSong = fbData[0];
+                     const fbLyrics = fbSong.plainLyrics || fbSong.syncedLyrics || "Instrumental";
+                     lyricsContentArea.innerHTML = `<div class="lyrics-text-block">${fbLyrics}</div>`;
+                     return;
+                 }
+            }
+            throw new Error("No lyrics found");
         }
     } catch (e) {
-        // Fallback to Google Button ONLY if API fails
         lyricsContentArea.innerHTML = `
             <p>Lyrics could not be loaded automatically.</p>
-            <a href="https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
+            <a href="https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' ' + artistHint + ' lyrics')}" target="_blank" class="google-lyrics-btn">
                <i class="fa-brands fa-google"></i> Search on Google
             </a>
         `;
@@ -698,7 +764,8 @@ async function handleSearch() {
                 <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
                 <button class="emoji-trigger" style="color:#fff; font-size:1.1rem; position:static; width:auto; height:auto; border:none; background:transparent;"><i class="fa-solid fa-plus"></i></button>
             `;
-            div.onclick = () => addToQueue(vid, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
+            // Pass duration to addToQueue here!
+            div.onclick = () => addToQueue(vid, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url, duration);
             list.appendChild(div);
         });
     } catch(e) { console.error(e); }
