@@ -79,9 +79,7 @@ function detectAd() {
     if (!player) return false;
     try {
         const playerState = player.getPlayerState();
-        // If player is playing but no video loaded, or video data is weird, it's often an ad
         const data = player.getVideoData();
-        // If the ID in the player doesn't match our current global ID, it's an ad
         if (currentVideoId && data && data.video_id && data.video_id !== currentVideoId) return true;
     } catch(e) {}
     return false;
@@ -118,15 +116,12 @@ function heartbeatSync() {
     if (player && player.getPlayerState) updatePlayPauseButton(player.getPlayerState());
     if (isSwitchingSong) return;
 
-    // 1. Check for Ad
     if (detectAd()) {
-        // Broadcast ad_pause to stop the other user
         broadcastState('ad_pause', 0, currentVideoId);
         updateSyncStatus();
         return;
     }
 
-    // 2. Normal Heartbeat
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
         const state = player.getPlayerState();
         if (state === YT.PlayerState.PLAYING) {
@@ -147,7 +142,6 @@ function monitorSyncHealth() {
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     if (Date.now() - lastLocalInteractionTime < 2000) return;
 
-    // CRITICAL FIX: If partner is watching an ad, DO NOT force playback or seek.
     if (currentRemoteState.action === 'ad_pause') {
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
             player.pauseVideo();
@@ -165,7 +159,6 @@ function monitorSyncHealth() {
             if (detectAd()) return; 
             player.playVideo(); needsFix = true;
         }
-        // Only seek if difference is significant to avoid stuttering
         if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3) {
             if (!detectAd()) { player.seekTo(currentRemoteState.time, true); needsFix = true; }
         }
@@ -209,13 +202,10 @@ function onPlayerStateChange(event) {
     }
 
     if (state === YT.PlayerState.PLAYING) {
-        // Force full volume immediately
         if(player && player.setVolume) player.setVolume(100);
         
         if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
-             // When returning from an ad, this will trigger a play broadcast
-             // effectively resuming the session for the partner
              broadcastState('play', player.getCurrentTime(), currentVideoId);
         }
     }
@@ -272,7 +262,6 @@ function initiateSongLoad(songObj) {
     isSwitchingSong = true;
     lastBroadcaster = myName;
 
-    // No fading, just switch
     if (player && player.pauseVideo) player.pauseVideo();
     
     showToast("System", "Switching track...");
@@ -326,11 +315,9 @@ function applyRemoteCommand(state) {
     if (!player) return;
     if (Date.now() - lastLocalInteractionTime < 1500) return;
     
-    // Remote Pause for Ad - STRICT HANDLING
     if (state.action === 'ad_pause') {
         suppressBroadcast(2000);
         lastBroadcaster = state.lastUpdater;
-        // Pause if not already paused
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
             player.pauseVideo();
         }
@@ -418,7 +405,6 @@ function updateSyncStatus() {
         msgEl.innerHTML = `<i class="fa-solid fa-eye-slash"></i> ${currentRemoteState.lastUpdater} having Ad...`;
         msgEl.className = 'sync-status-3d status-ad-remote';
         if(eq) eq.classList.remove('active');
-        // Force the text to show waiting state
         return;
     }
 
@@ -484,13 +470,46 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
     }
 }
 
+// --- MODIFIED TAB SWITCHING FOR MOBILE ---
 function switchTab(tabName) {
     activeTab = tabName;
+    
+    // 1. Desktop Tab Handling
     document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
-    document.getElementById('tab-btn-' + tabName).classList.add('active');
+    const dBtn = document.getElementById('tab-btn-' + tabName);
+    if(dBtn) dBtn.classList.add('active');
+
+    // 2. Mobile Nav Handling
+    document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
+    // Find index for mobile items (approximate)
+    const mobileIndex = ['queue', 'results', 'chat'].indexOf(tabName);
+    const mobileItems = document.querySelectorAll('.mobile-nav-item');
+    if(mobileItems[mobileIndex]) mobileItems[mobileIndex].classList.add('active');
+
+    // 3. Content Visibility
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     document.getElementById('view-' + tabName).classList.add('active');
+    
+    // 4. Mobile Sheet Logic
+    // If we are on mobile (screen width < 1100), switching tab means opening the sheet
+    if(window.innerWidth <= 1100) {
+        const sheet = document.getElementById('mobileSheet');
+        const title = document.getElementById('mobile-sheet-title');
+        
+        if(tabName === 'queue') title.textContent = "Queue";
+        else if(tabName === 'results') title.textContent = "Search Music";
+        else if(tabName === 'chat') title.textContent = "Chat";
+        
+        sheet.classList.add('active');
+    }
 }
+
+// Mobile Sheet Close Button
+document.getElementById('mobileSheetClose').addEventListener('click', () => {
+    document.getElementById('mobileSheet').classList.remove('active');
+    // Deselect mobile nav items to show we returned to player
+    document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
+});
 
 function addToQueue(videoId, title, uploader, thumbnail) {
     const newKey = queueRef.push().key;
@@ -530,8 +549,11 @@ function updateQueueOrder(newOrder) {
 function renderQueue(queueArray, currentVideoId) {
     const list = document.getElementById('queue-list');
     const badge = document.getElementById('queue-badge');
+    const mobileBadge = document.getElementById('mobile-queue-badge');
+    
     list.innerHTML = '';
     badge.textContent = queueArray.length;
+    if(mobileBadge) mobileBadge.textContent = queueArray.length;
 
     if (queueArray.length === 0) {
         list.innerHTML = '<div class="empty-state"><p>Queue is empty.</p></div>';
@@ -811,18 +833,31 @@ function displayChatMessage(user, text, timestamp) {
 
 function showToast(user, text) {
     const container = document.getElementById('toast-container');
+    
+    // LIMIT TOASTS TO 3
+    if (container.children.length >= 3) {
+        container.removeChild(container.firstChild);
+    }
+
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.innerHTML = `
-        <i class="fa-solid fa-comment-dots"></i>
+        <i class="fa-solid fa-comment-dots" style="color:#ff4081; font-size:1.4rem;"></i>
         <div class="toast-body">
             <h4>${user}</h4>
-            <p>${text.substring(0, 30)}${text.length>30?'...':''}</p>
+            <p>${text.substring(0, 40)}${text.length>40?'...':''}</p>
         </div>
     `;
     toast.onclick = () => { switchTab('chat'); toast.remove(); };
     container.appendChild(toast);
-    setTimeout(() => { toast.style.opacity='0'; setTimeout(()=>toast.remove(), 400); }, 4000);
+    
+    setTimeout(() => { 
+        toast.style.opacity='0'; 
+        toast.style.transform='translateX(50px)';
+        setTimeout(()=> {
+            if(toast.parentElement) toast.remove();
+        }, 400); 
+    }, 4000);
 }
 
 document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
