@@ -46,7 +46,7 @@
                     <!-- Layout: Flex Row -->
                     <div class="track-row">
                         <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
-                        <!-- Enhanced 5-bar Equalizer -->
+                        <!-- Enhanced Lazy Equalizer -->
                         <div class="equalizer" id="equalizer">
                             <div class="bar"></div>
                             <div class="bar"></div>
@@ -68,15 +68,15 @@
                     <button class="ctrl-btn small btn-3d" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
                     <button class="ctrl-btn play btn-3d" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
                     <button class="ctrl-btn small btn-3d" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
-                    <!-- New Heart Button for Symmetry -->
-                    <button class="ctrl-btn small btn-3d" id="like-btn" title="Love this"><i class="fa-solid fa-heart"></i></button>
+                    <!-- Heart Button (Functional) -->
+                    <button class="ctrl-btn small btn-3d" id="like-btn" title="Add to Liked Songs"><i class="fa-regular fa-heart"></i></button>
                 </div>
             </div>
 
-            <!-- Right Side: Unified Sidebar with 3 Tabs -->
+            <!-- Right Side: Unified Sidebar with Tabs -->
             <div class="sidebar glass-panel">
                 
-                <!-- Pinned Search Bar (Always Visible) -->
+                <!-- Pinned Search Bar -->
                 <div class="pinned-search">
                     <div class="search-box-elegant">
                         <i class="fa-solid fa-magnifying-glass search-icon"></i>
@@ -85,13 +85,13 @@
                     </div>
                 </div>
 
-                <!-- Unified Navigation Tabs -->
+                <!-- Unified Navigation Tabs (Results hidden, Liked added) -->
                 <div class="sidebar-tabs">
                     <button class="nav-tab active" id="tab-btn-queue" onclick="switchTab('queue')">
                         <i class="fa-solid fa-list-ol"></i> Queue <span id="queue-badge" class="badge">0</span>
                     </button>
-                    <button class="nav-tab" id="tab-btn-results" onclick="switchTab('results')">
-                        <i class="fa-solid fa-music"></i> Results
+                    <button class="nav-tab" id="tab-btn-liked" onclick="switchTab('liked')">
+                        <i class="fa-solid fa-heart"></i> Liked
                     </button>
                     <button class="nav-tab" id="tab-btn-chat" onclick="switchTab('chat')">
                         <i class="fa-solid fa-comments"></i> Chat
@@ -110,8 +110,25 @@
                         <div class="list-content" id="queue-list"></div>
                     </div>
 
-                    <!-- View: Results (Search) -->
+                    <!-- View: Liked Songs -->
+                    <div id="view-liked" class="tab-content">
+                        <div class="action-row">
+                             <h3 class="view-title">Our Collection</h3>
+                        </div>
+                        <div class="list-content" id="liked-list">
+                             <div class="empty-state">
+                                <i class="fa-regular fa-heart" style="font-size: 3rem; margin-bottom: 15px; color: rgba(255,255,255,0.2);"></i>
+                                <p>No liked songs yet.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- View: Results (Hidden from Tabs, shown via Search) -->
                     <div id="view-results" class="tab-content">
+                        <div class="action-row">
+                             <h3 class="view-title">Search Results</h3>
+                             <button class="clear-btn btn-3d" style="background:transparent; border:none;" onclick="switchTab('queue')"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
                         <div class="list-content" id="results-list">
                             <div class="empty-state">
                                 <i class="fa-brands fa-youtube" style="font-size: 3rem; margin-bottom: 15px; color: rgba(255,255,255,0.2);"></i>
@@ -122,7 +139,6 @@
 
                     <!-- View: Chat -->
                     <div id="view-chat" class="tab-content chat-layout">
-                        <!-- Removed Active Users Bar -->
                         <div class="chat-messages" id="chat-messages"></div>
                         <div class="chat-input-area">
                             <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
@@ -157,42 +173,16 @@
             <h2>System & Universe Info</h2>
             <div class="guide-content">
                 <p class="guide-intro">Operational parameters for the Sarthak & Reechita Infinite Playlist.</p>
-                
                 <div class="info-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:20px;">
                     <div class="info-box" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px;">
                         <strong style="color:var(--primary); display:block; margin-bottom:5px;">Sync Status</strong>
                         <span style="color:#00e676;">Online & Active</span>
                     </div>
-                    <div class="info-box" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px;">
-                         <strong style="color:var(--gold); display:block; margin-bottom:5px;">Audio Engine</strong>
-                         <span>High Fidelity Stereo</span>
-                    </div>
-                     <div class="info-box" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px;">
-                         <strong style="color:#2979ff; display:block; margin-bottom:5px;">Database</strong>
-                         <span>Realtime Firebase</span>
-                    </div>
                      <div class="info-box" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px;">
                          <strong style="color:#e040fb; display:block; margin-bottom:5px;">Version</strong>
-                         <span>Heartbeat v3.0</span>
+                         <span>Heartbeat v3.2</span>
                     </div>
                 </div>
-
-                <div class="guide-item">
-                    <i class="fa-solid fa-tower-broadcast"></i>
-                    <div>
-                        <strong>Low Latency Protocol</strong>
-                        <p>Optimized for minimal delay. Playback commands are executed in under 200ms across clients.</p>
-                    </div>
-                </div>
-
-                <div class="guide-item">
-                    <i class="fa-solid fa-shield-heart"></i>
-                    <div>
-                        <strong>Universe Integrity</strong>
-                        <p>Built exclusively for two. External interference is blocked. Your rhythm is secure.</p>
-                    </div>
-                </div>
-
                 <div class="guide-footer">Developed with ❤️ by Sarthak</div>
             </div>
         </div>
@@ -208,15 +198,19 @@
         </div>
     </div>
 
-    <!-- INITIAL WELCOME OVERLAY (Redesigned) -->
+    <!-- WELCOME OVERLAY (Redesigned with Input) -->
     <div class="overlay active" id="welcomeOverlay" style="z-index: 5000; background: #05000a;">
         <div class="welcome-content">
             <div class="pulse-ring"></div>
             <div class="pulse-ring delay"></div>
             <i class="fa-solid fa-heart welcome-icon"></i>
             <h1 class="welcome-title">Heart's Rhythm</h1>
-            <p class="welcome-subtitle">A universe built for Sarthak & Reechita</p>
+            <p class="welcome-subtitle">Identify yourself to enter the universe</p>
             
+            <div class="input-wrapper-glow">
+                <input type="text" id="welcomeNameInput" class="welcome-input" placeholder="Enter your name..." autocomplete="off">
+            </div>
+
             <button class="enter-btn btn-3d" id="startSessionBtn">
                 <i class="fa-solid fa-play"></i> Enter Universe
             </button>
