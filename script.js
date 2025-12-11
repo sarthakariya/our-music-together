@@ -16,6 +16,7 @@ const db = firebase.database();
 const syncRef = db.ref('sync');
 const queueRef = db.ref('queue');
 const chatRef = db.ref('chat');
+const presenceRef = db.ref('presence');
 
 let player, currentQueue = [], currentVideoId = null;
 let lastBroadcaster = "System"; 
@@ -37,6 +38,27 @@ if (!myName || myName === "null") {
 }
 // Normalize Name
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
+
+// --- PRESENCE SYSTEM ---
+const sessionKey = presenceRef.push().key;
+presenceRef.child(sessionKey).onDisconnect().remove();
+presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
+
+// Listen for active users
+presenceRef.on('value', (snapshot) => {
+    const usersDiv = document.getElementById('active-users-list');
+    if (!usersDiv) return;
+    usersDiv.innerHTML = '';
+    const val = snapshot.val();
+    if (val) {
+        Object.values(val).forEach(u => {
+            const chip = document.createElement('div');
+            chip.className = 'active-user-chip';
+            chip.innerHTML = `<div class="online-dot"></div>${u.user}`;
+            usersDiv.appendChild(chip);
+        });
+    }
+});
 
 function suppressBroadcast(duration = 1000) {
     ignoreSystemEvents = true;
@@ -538,7 +560,7 @@ function getDragAfterElement(container, y) {
     }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
-// LYRICS FUNCTIONALITY
+// LYRICS FUNCTIONALITY (Updated for Direct In-App Display using Lrclib)
 document.getElementById('lyrics-btn').addEventListener('click', () => {
     document.getElementById('lyricsOverlay').classList.add('active');
     fetchLyrics();
@@ -549,49 +571,51 @@ document.getElementById('closeLyricsBtn').addEventListener('click', () => {
 
 async function fetchLyrics() {
     const titleEl = document.getElementById('current-song-title');
-    const lyricsText = document.getElementById('lyrics-text');
+    const lyricsContentArea = document.getElementById('lyrics-content-area');
     const lyricsTitle = document.getElementById('lyrics-title');
     
-    if(!titleEl || titleEl.textContent === "Heart's Rhythm") {
-        lyricsText.textContent = "Play a song to see lyrics.";
-        return;
+    let rawTitle = "Heart's Rhythm";
+    if(titleEl && titleEl.textContent !== "Heart's Rhythm") {
+        rawTitle = titleEl.textContent;
     }
-
-    const rawTitle = titleEl.textContent;
-    lyricsTitle.textContent = "Lyrics: " + rawTitle;
-    lyricsText.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
-
-    // Simple parser to guess Artist and Title from YouTube video title
-    // Formats often used: "Artist - Title", "Artist - Title (Official Video)", "Title - Artist"
-    let artist = "", song = "";
     
-    const cleanTitle = rawTitle.replace(/[\(\[].*?[\)\]]/g, "").trim(); // Remove () and [] content
-    
-    if (cleanTitle.includes('-')) {
-        const parts = cleanTitle.split('-');
-        artist = parts[0].trim();
-        song = parts[1].trim();
-    } else {
-        // Fallback: use whole string as song, maybe user will manually search
-        song = cleanTitle;
-    }
+    // Clean title for search (remove parens, "Official Video", "ft.", etc.)
+    const cleanTitle = rawTitle
+        .replace(/[\(\[].*?[\)\]]/g, "") // Remove (...) and [...]
+        .replace(/official video/gi, "")
+        .replace(/music video/gi, "")
+        .replace(/remastered/gi, "")
+        .replace(/hq/gi, "")
+        .replace(/hd/gi, "")
+        .replace(/ft\..*/gi, "") // Remove ft. ...
+        .replace(/feat\..*/gi, "") // Remove feat. ...
+        .trim();
+        
+    lyricsTitle.textContent = "Lyrics: " + cleanTitle;
+    lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
 
     try {
-        const res = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(song)}`);
+        const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanTitle)}`;
+        const res = await fetch(searchUrl);
         const data = await res.json();
         
-        if (data.lyrics) {
-            lyricsText.textContent = data.lyrics;
+        if (Array.isArray(data) && data.length > 0) {
+            // Pick the best match (first one usually)
+            const song = data[0];
+            const lyrics = song.plainLyrics || song.syncedLyrics || "Instrumental";
+            
+            // Format timestamps out if synced lyrics are returned but we just want text for now
+            // or just display as is. Lrclib plainLyrics is cleanest.
+            lyricsContentArea.innerHTML = `<div class="lyrics-text-block">${lyrics}</div>`;
         } else {
-            throw new Error("No lyrics found");
+            throw new Error("No lyrics found in API");
         }
     } catch (e) {
-        // Fallback UI if API fails
-        lyricsText.innerHTML = `
-            <p>Could not auto-fetch lyrics for "${cleanTitle}".</p>
-            <a href="https://www.google.com/search?q=${encodeURIComponent(rawTitle + ' lyrics')}" target="_blank" 
-               style="display:inline-block; margin-top:15px; padding:10px 20px; background:#f50057; color:white; text-decoration:none; border-radius:20px; font-weight:bold;">
-               Search on Google
+        // Fallback to Google Button ONLY if API fails
+        lyricsContentArea.innerHTML = `
+            <p>Lyrics could not be loaded automatically.</p>
+            <a href="https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
+               <i class="fa-brands fa-google"></i> Search on Google
             </a>
         `;
     }
@@ -635,26 +659,63 @@ async function handleSearch() {
 
     switchTab('results');
     document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
+    
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
     
     try {
-        const res = await fetch(url);
+        const res = await fetch(searchUrl);
         const data = await res.json();
         const list = document.getElementById('results-list');
         list.innerHTML = '';
+        
+        if (!data.items || data.items.length === 0) {
+            list.innerHTML = '<div class="empty-state"><p>No results found.</p></div>';
+            return;
+        }
+
+        // Fetch duration for all video IDs found
+        const videoIds = data.items.map(item => item.id.videoId).join(',');
+        const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+        const detailsRes = await fetch(detailsUrl);
+        const detailsData = await detailsRes.json();
+        
+        // Map ID to Duration
+        const durationMap = {};
+        detailsData.items.forEach(v => {
+            durationMap[v.id] = parseDuration(v.contentDetails.duration);
+        });
+
         data.items.forEach(item => {
+            const vid = item.id.videoId;
+            const duration = durationMap[vid] || "";
             const div = document.createElement('div');
             div.className = 'song-item';
             div.innerHTML = `
-                <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
+                <div class="thumb-container">
+                    <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
+                    <div class="song-duration-badge">${duration}</div>
+                </div>
                 <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
                 <button class="emoji-trigger" style="color:#fff; font-size:1.1rem; position:static; width:auto; height:auto; border:none; background:transparent;"><i class="fa-solid fa-plus"></i></button>
             `;
-            div.onclick = () => addToQueue(item.id.videoId, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
+            div.onclick = () => addToQueue(vid, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
             list.appendChild(div);
         });
     } catch(e) { console.error(e); }
     input.value = '';
+}
+
+function parseDuration(pt) {
+    let match = pt.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+    if (!match) return "";
+    let h = match[1] ? parseInt(match[1]) : 0;
+    let m = match[2] ? parseInt(match[2]) : 0;
+    let s = match[3] ? parseInt(match[3]) : 0;
+    
+    if (h > 0) {
+        return `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+    }
+    return `${m}:${s.toString().padStart(2,'0')}`;
 }
 
 async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
