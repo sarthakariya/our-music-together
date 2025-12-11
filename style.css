@@ -36,7 +36,7 @@
 ::-webkit-scrollbar-thumb { 
     background: linear-gradient(to bottom, #f50057, #9c27b0, #ffd700); 
     border-radius: 10px; 
-    border: 3px solid var(--bg-dark); /* Creates a floating effect */
+    border: 3px solid var(--bg-dark); 
     box-shadow: inset 0 0 6px rgba(0,0,0,0.5);
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -120,13 +120,13 @@ body {
 }
 .info-btn:hover { color: var(--primary); transform: scale(1.1) rotate(10deg); }
 
-/* Main Layout - Improved Flex */
+/* Main Layout */
 .main-layout { 
     display: flex; 
     gap: 30px; 
     flex: 1; 
     overflow: hidden; 
-    align-items: stretch; /* Ensure both panels stretch to full height */
+    align-items: stretch; 
 }
 
 /* ---------------------------------- PLAYER SECTION ---------------------------------------------------- */
@@ -139,19 +139,31 @@ body {
     overflow-y: auto;
 }
 
+/* ANIMATION: Video Glow Pulse */
+@keyframes border-pulse {
+    0% { box-shadow: 0 15px 50px rgba(0,0,0,0.7), 0 0 0 rgba(245, 0, 87, 0); border-color: rgba(255,255,255,0.1); }
+    50% { box-shadow: 0 15px 60px rgba(0,0,0,0.8), 0 0 30px rgba(245, 0, 87, 0.3); border-color: rgba(245, 0, 87, 0.5); }
+    100% { box-shadow: 0 15px 50px rgba(0,0,0,0.7), 0 0 0 rgba(245, 0, 87, 0); border-color: rgba(255,255,255,0.1); }
+}
+
 .video-wrapper {
     position: relative; width: 100%; padding-bottom: 56.25%; 
     background: #000; border-radius: var(--curve-m); overflow: hidden;
     box-shadow: 0 15px 50px rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.1);
     margin-bottom: 30px; flex-shrink: 0;
+    transition: all 0.5s ease;
 }
+
+.video-wrapper.glow-active {
+    animation: border-pulse 3s infinite ease-in-out;
+}
+
 #player { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 
 .song-info-container {
     text-align: center; margin-bottom: 25px; flex: 1; display: flex; flex-direction: column; justify-content: flex-start;
 }
 
-/* 3D NEON TITLE */
 .song-title { 
     font-family: 'Roboto', sans-serif; 
     font-weight: 900; font-size: 2rem; margin-bottom: 10px; 
@@ -166,19 +178,37 @@ body {
 }
 
 .sync-badge-container { display:flex; justify-content:center; align-items:center; }
+
+/* ANIMATION: Status Pop */
+@keyframes pop-badge {
+    0% { transform: scale(1) translateY(-4px); }
+    50% { transform: scale(1.15) translateY(-6px); }
+    100% { transform: scale(1) translateY(-4px); }
+}
+
 .sync-status-3d {
     font-family: 'Montserrat', sans-serif;
     font-size: 0.95rem; font-weight: 700; 
-    background: var(--gold); color: #000;
     padding: 12px 35px;
     border-radius: 50px; 
-    box-shadow: 0 6px 0 var(--gold-dim), 0 15px 30px rgba(0,0,0,0.4); 
+    box-shadow: 0 6px 0 rgba(0,0,0,0.3), 0 15px 30px rgba(0,0,0,0.4); 
     transform: translateY(-4px);
-    transition: all 0.2s;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     display: inline-flex; align-items: center; gap: 10px;
     letter-spacing: 0.5px;
 }
-.sync-status-3d:active { transform: translateY(0); box-shadow: 0 0 0 var(--gold-dim); }
+.sync-status-3d.pop-anim {
+    animation: pop-badge 0.4s ease-out;
+}
+
+/* Status Colors */
+.status-playing { background: var(--primary); color: white; box-shadow: 0 6px 0 #b0003a, 0 15px 30px rgba(245,0,87,0.4); }
+.status-paused { background: #455a64; color: #eceff1; box-shadow: 0 6px 0 #263238, 0 15px 30px rgba(0,0,0,0.4); }
+.status-ad { background: #ff3d00; color: white; box-shadow: 0 6px 0 #dd2c00, 0 15px 30px rgba(255, 61, 0, 0.3); }
+.status-ad-remote { background: #ff9100; color: white; box-shadow: 0 6px 0 #e65100, 0 15px 30px rgba(255, 145, 0, 0.3); }
+.status-switching { background: #7c4dff; color: white; box-shadow: 0 6px 0 #512da8, 0 15px 30px rgba(124, 77, 255, 0.3); }
+
+.sync-status-3d:active { transform: translateY(0); box-shadow: 0 0 0 transparent; }
 
 .controls { 
     display: flex; justify-content: center; align-items: center; 
@@ -193,14 +223,21 @@ body {
     100% { box-shadow: 0 8px 30px rgba(245, 0, 87, 0.5); }
 }
 
-/* UPDATED: Faster transition for better responsiveness */
 .btn-3d { 
     border: none; 
     transition: all 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
     cursor: pointer; 
     position: relative; 
     user-select: none; 
+    overflow: hidden;
 }
+.btn-3d::after {
+    content: ''; position: absolute; top: 50%; left: 50%;
+    width: 0; height: 0; background: rgba(255,255,255,0.4); border-radius: 50%;
+    transform: translate(-50%, -50%); transition: width 0.4s, height 0.4s;
+}
+.btn-3d:active::after { width: 200px; height: 200px; opacity: 0; }
+
 .btn-3d:active { 
     transform: scale(0.92) translateY(4px); 
     box-shadow: 0 0 0 transparent !important; 
@@ -238,7 +275,7 @@ body {
 .sidebar { 
     flex: 1.3; 
     min-width: 420px; 
-    max-width: 500px; /* Limit width on wide screens */
+    max-width: 500px; 
     display: flex; flex-direction: column; overflow: hidden; 
     padding: 0; 
 }
@@ -300,7 +337,12 @@ body {
 
 .list-content { flex: 1; overflow-y: auto; padding: 20px; }
 
-/* UPDATED: Queue Item Animation */
+/* ANIMATION: List Item Slide In */
+@keyframes slideUpFade {
+    from { opacity: 0; transform: translateY(15px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 .song-item {
     display: flex; align-items: center; gap: 20px; padding: 18px; 
     background: rgba(255,255,255,0.05); 
@@ -310,6 +352,7 @@ body {
     border: 1px solid rgba(255,255,255,0.05);
     backdrop-filter: blur(10px);
     border-left: 4px solid transparent;
+    animation: slideUpFade 0.4s ease-out forwards;
     
     transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s, background 0.2s, border-left 0.2s;
 }
@@ -321,7 +364,6 @@ body {
     box-shadow: 0 12px 30px rgba(0,0,0,0.4);
 }
 
-/* Dragging State */
 .song-item.dragging {
     opacity: 0.6;
     background: var(--primary);
@@ -329,6 +371,7 @@ body {
     box-shadow: 0 20px 40px rgba(0,0,0,0.6);
     border: 2px dashed rgba(255,255,255,0.5);
     cursor: grabbing;
+    animation: none;
 }
 
 .song-item.playing { 
@@ -346,7 +389,7 @@ body {
 .drag-handle { color: rgba(255,255,255,0.3); font-size: 1.3rem; margin-right: 5px; cursor: grab; }
 .drag-handle:hover { color: white; }
 
-/* Results View */
+/* Results & Chat ... (Existing styles maintained) */
 .search-wrapper { padding: 25px; flex-shrink: 0; }
 .search-box-elegant {
     display: flex; align-items: center;
@@ -367,7 +410,6 @@ body {
 .search-submit:hover { transform: scale(1.1); background: var(--primary-bright); }
 .empty-state { text-align: center; margin-top: 50px; color: #888; font-size: 1.1rem; font-style: italic; }
 
-/* Chat View */
 .chat-layout { display: flex; flex-direction: column; }
 .chat-messages { flex: 1; overflow-y: auto; padding: 25px; display: flex; flex-direction: column; gap: 15px; }
 
@@ -409,11 +451,9 @@ body {
 }
 .send-btn:active { transform: translateY(2px); border-bottom: 0; }
 
-/* ---------------------------------- OVERLAY & MODALS -------------------------------------------------- */
-
 .overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
-    z-index: 2000; /* Ensure this is extremely high */
+    z-index: 2000; 
     display: none; align-items: center; justify-content: center; opacity: 0; transition: 0.2s;
 }
 .overlay.active { display: flex; opacity: 1; }
@@ -443,12 +483,8 @@ body {
 .guide-item p { font-size: 0.9rem; line-height: 1.4; color: #999; margin: 0; }
 .guide-footer { text-align: center; margin-top: 30px; font-size: 0.9rem; color: #666; font-weight: 500; }
 
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-/* ---------------------------------- TOAST NOTIFICATION ------------------------------------------------ */
-
 #toast-container {
-    position: fixed; top: 30px; right: 30px; z-index: 3000; /* Highest Z-index */
+    position: fixed; top: 30px; right: 30px; z-index: 3000; 
     pointer-events: none;
 }
 .toast {
@@ -466,7 +502,6 @@ body {
 .toast-body h4 { font-family: 'Montserrat'; font-size: 0.95rem; margin-bottom: 2px; }
 .toast-body p { font-size: 0.9rem; color: #ccc; }
 
-/* ---------------------------------- RESPONSIVENESS ---------------------------------------------------- */
 @media (max-width: 1100px) {
     .app-container { height: 100vh; padding: 0; max-width: 100%; gap: 0; }
     .top-bar { padding: 15px 20px; background: rgba(0,0,0,0.8); border-bottom: 1px solid rgba(255,255,255,0.1); }
