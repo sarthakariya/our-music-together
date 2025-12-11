@@ -16,7 +16,8 @@ const db = firebase.database();
 const syncRef = db.ref('sync');
 const queueRef = db.ref('queue');
 const chatRef = db.ref('chat');
-const presenceRef = db.ref('presence');
+
+// Removed presenceRef logic as requested by user
 
 let player, currentQueue = [], currentVideoId = null;
 let lastBroadcaster = "System"; 
@@ -38,29 +39,6 @@ if (!myName || myName === "null") {
 }
 // Normalize Name
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
-
-// --- PRESENCE SYSTEM ---
-// Explicitly disconnect previous sessions to clean up ghosts
-presenceRef.onDisconnect().cancel(); 
-const sessionKey = presenceRef.push().key;
-presenceRef.child(sessionKey).onDisconnect().remove();
-presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
-
-// Listen for active users
-presenceRef.on('value', (snapshot) => {
-    const usersDiv = document.getElementById('active-users-list');
-    if (!usersDiv) return;
-    usersDiv.innerHTML = '';
-    const val = snapshot.val();
-    if (val) {
-        Object.values(val).forEach(u => {
-            const chip = document.createElement('div');
-            chip.className = 'active-user-chip';
-            chip.innerHTML = `<div class="online-dot"></div>${u.user}`;
-            usersDiv.appendChild(chip);
-        });
-    }
-});
 
 // --- BUTTON RIPPLE EFFECT ---
 function createRipple(event) {
@@ -85,6 +63,23 @@ function createRipple(event) {
 document.querySelectorAll('.ctrl-btn').forEach(btn => {
     btn.addEventListener('click', createRipple);
 });
+
+// Like Button Logic (Visual Only)
+document.getElementById('like-btn').addEventListener('click', (e) => {
+    createRipple(e);
+    const btn = e.currentTarget;
+    const icon = btn.querySelector('i');
+    if(icon.classList.contains('fa-regular')) {
+        icon.classList.remove('fa-regular');
+        icon.classList.add('fa-solid');
+        icon.style.color = '#f50057';
+    } else {
+        // Toggle animation just for fun
+        icon.style.transform = "scale(1.4)";
+        setTimeout(() => icon.style.transform = "scale(1)", 200);
+    }
+});
+
 
 function suppressBroadcast(duration = 1000) {
     ignoreSystemEvents = true;
@@ -205,24 +200,9 @@ function onPlayerStateChange(event) {
     }
 
     if (state === YT.PlayerState.PLAYING) {
-        // Force full volume immediately
         if(player && player.setVolume) player.setVolume(100);
         
-        // --- QUOTA SAVER OPTIMIZATION ---
-        // If the current song has no duration in the DB (was added via playlist/batch),
-        // save it now using the player's loaded metadata.
-        // This avoids calling the API for every playlist item upfront.
-        const currentDuration = player.getDuration();
-        if (currentDuration > 0 && currentVideoId) {
-            const currentSongObj = currentQueue.find(s => s.videoId === currentVideoId);
-            if (currentSongObj && !currentSongObj.duration) {
-                // Convert seconds to mm:ss
-                const m = Math.floor(currentDuration / 60);
-                const s = Math.floor(currentDuration % 60);
-                const formatted = `${m}:${s.toString().padStart(2, '0')}`;
-                queueRef.child(currentSongObj.key).update({ duration: formatted });
-            }
-        }
+        // Removed Duration saving to DB logic as quota saver, and removed display.
 
         if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
@@ -300,6 +280,13 @@ function initiateSongLoad(songObj) {
     setTimeout(() => {
         loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
         isSwitchingSong = false;
+        
+        // Auto-Scroll to song after loading
+        setTimeout(() => {
+             const activeItem = document.querySelector('.song-item.playing');
+             if(activeItem) activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
+
     }, 500); // Short delay for UI update
 }
 
@@ -487,9 +474,9 @@ function switchTab(tabName) {
     document.getElementById('view-' + tabName).classList.add('active');
 }
 
-function addToQueue(videoId, title, uploader, thumbnail, duration = "") {
+function addToQueue(videoId, title, uploader, thumbnail) {
     const newKey = queueRef.push().key;
-    queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, addedBy: myName, order: Date.now(), duration })
+    queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, addedBy: myName, order: Date.now() })
         .then(() => {
             switchTab('queue');
             if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title, uploader});
@@ -502,7 +489,6 @@ function addBatchToQueue(songs) {
     const updates = {};
     songs.forEach((s, i) => {
         const newKey = queueRef.push().key;
-        // Don't set duration here to save quota. It will be auto-filled on play.
         updates[newKey] = { ...s, addedBy: myName, order: Date.now() + i * 100 };
     });
     queueRef.update(updates).then(() => switchTab('queue'));
@@ -546,7 +532,8 @@ function renderQueue(queueArray, currentVideoId) {
         const badgeClass = isMe ? 'is-me' : 'is-other';
         const displayText = isMe ? 'You' : `${user}`;
         const number = index + 1;
-        const durationText = song.duration ? `<div class="song-duration-badge">${song.duration}</div>` : '';
+        
+        // REMOVED DURATION BADGE DISPLAY
         
         let statusIndicator = '';
         if (song.videoId === currentVideoId) {
@@ -563,7 +550,6 @@ function renderQueue(queueArray, currentVideoId) {
             <div class="song-index">${number}</div>
             <div class="thumb-container">
                 <img src="${song.thumbnail}" class="song-thumb">
-                ${durationText}
             </div>
             <div class="song-details">
                 <h4>${song.title}</h4>
@@ -576,6 +562,12 @@ function renderQueue(queueArray, currentVideoId) {
         `;
         list.appendChild(item);
     });
+
+    // Auto-Scroll if current song exists
+    setTimeout(() => {
+         const activeItem = document.querySelector('.song-item.playing');
+         if(activeItem) activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
 
     initDragAndDrop(list);
 }
@@ -759,7 +751,6 @@ async function handleSearch() {
             div.innerHTML = `
                 <div class="thumb-container">
                     <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
-                    <div class="song-duration-badge">${duration}</div>
                 </div>
                 <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
                 <button class="emoji-trigger" style="color:#fff; font-size:1.1rem; position:static; width:auto; height:auto; border:none; background:transparent;"><i class="fa-solid fa-plus"></i></button>
