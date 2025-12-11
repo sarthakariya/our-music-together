@@ -493,10 +493,6 @@ function renderQueue(queueArray, currentVideoId) {
         item.dataset.key = song.key;
         item.onclick = () => initiateSongLoad(song);
         
-        const user = song.addedBy || 'System';
-        const isMe = user === myName;
-        const badgeClass = isMe ? 'is-me' : 'is-other';
-        const displayText = isMe ? 'Added by You' : `Added by ${user}`;
         const number = index + 1;
         
         let statusIndicator = '';
@@ -509,14 +505,14 @@ function renderQueue(queueArray, currentVideoId) {
                 </div>`;
         }
         
+        // Removed the added-by badge from here as requested
         item.innerHTML = `
             <i class="fa-solid fa-bars drag-handle" title="Drag to order"></i>
             <div class="song-index">${number}</div>
             <img src="${song.thumbnail}" class="song-thumb">
             <div class="song-details">
                 <h4>${song.title}</h4>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="added-by-badge ${badgeClass}">${displayText}</span>
+                <div style="display:flex; justify-content:flex-end; align-items:center;">
                     ${statusIndicator}
                 </div>
             </div>
