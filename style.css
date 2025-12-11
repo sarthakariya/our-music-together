@@ -12,7 +12,7 @@
     
     --glass-bg: rgba(22, 12, 35, 0.75); 
     --glass-border: rgba(255, 255, 255, 0.18);
-    --glass-blur: 40px; 
+    --glass-blur: 20px; /* REDUCED FOR PERFORMANCE */
     
     --text-main: #ffffff;           
     --text-dim: #e0e0e0;            
@@ -63,7 +63,7 @@ body {
 
 .liquid-blob {
     position: absolute; border-radius: 50%;
-    filter: blur(80px); /* Reduced slightly for performance */
+    filter: blur(40px); /* REDUCED BLUR FOR BETTER CPU PERFORMANCE */
     opacity: 0.6; 
     will-change: transform; 
     animation: floatLiquid 20s infinite alternate ease-in-out;
@@ -151,13 +151,14 @@ body {
 .player-glow {
     position: absolute; top: 10px; left: 5%; width: 90%; height: 90%;
     background: linear-gradient(135deg, #f50057, #7c4dff);
-    filter: blur(50px); opacity: 0.5; z-index: 0;
+    filter: blur(30px); /* Reduced from 50px */
+    opacity: 0.5; z-index: 0;
     will-change: transform, opacity;
     animation: pulseGlow 5s infinite alternate ease-in-out;
 }
 @keyframes pulseGlow {
-    0% { opacity: 0.3; transform: scale(0.95); filter: blur(40px); }
-    100% { opacity: 0.6; transform: scale(1.05); filter: blur(60px); }
+    0% { opacity: 0.3; transform: scale(0.95); filter: blur(25px); }
+    100% { opacity: 0.6; transform: scale(1.05); filter: blur(35px); }
 }
 
 .video-wrapper {
@@ -199,7 +200,7 @@ body {
     filter: drop-shadow(0 2px 10px rgba(245, 0, 87, 0.3));
 }
 
-/* ENHANCED 3D DANCING VISUALIZER (CALM) */
+/* HYPER SENSITIVE EQUALIZER (Snappy) */
 .equalizer {
     display: flex; justify-content: center; align-items: flex-end; gap: 5px;
     height: 45px; flex-shrink: 0;
@@ -214,24 +215,27 @@ body {
     border-radius: 4px;
     height: 10%;
     box-shadow: 0 0 10px var(--primary);
-    transition: height 0.25s ease-in-out; 
+    transition: height 0.08s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Very Fast Transition */
     will-change: height;
 }
 .equalizer.active .bar {
-    animation: equalizeCalm 1.4s infinite ease-in-out alternate;
+    animation: equalizeSnappy 0.5s infinite alternate; /* Fast animation cycle */
 }
 
-/* Rhythmic Calm Animation - gentle waves */
-@keyframes equalizeCalm {
-    0% { height: 20%; }
-    100% { height: 75%; }
+/* Fast, erratic movement */
+@keyframes equalizeSnappy {
+    0% { height: 10%; }
+    25% { height: 60%; }
+    50% { height: 30%; }
+    75% { height: 90%; }
+    100% { height: 20%; }
 }
 
-.equalizer.active .bar:nth-child(1) { animation-duration: 1.2s; animation-delay: 0s; background: linear-gradient(to top, #c51162, #ff4081); }
-.equalizer.active .bar:nth-child(2) { animation-duration: 1.5s; animation-delay: 0.3s; background: linear-gradient(to top, #7c4dff, #b388ff); }
-.equalizer.active .bar:nth-child(3) { animation-duration: 1.1s; animation-delay: 0.5s; background: linear-gradient(to top, #f50057, #ffd700); }
-.equalizer.active .bar:nth-child(4) { animation-duration: 1.6s; animation-delay: 0.2s; background: linear-gradient(to top, #651fff, #7c4dff); }
-.equalizer.active .bar:nth-child(5) { animation-duration: 1.3s; animation-delay: 0.4s; background: linear-gradient(to top, #d50000, #ff1744); }
+.equalizer.active .bar:nth-child(1) { animation-duration: 0.4s; animation-delay: 0s; background: linear-gradient(to top, #c51162, #ff4081); }
+.equalizer.active .bar:nth-child(2) { animation-duration: 0.5s; animation-delay: 0.1s; background: linear-gradient(to top, #7c4dff, #b388ff); }
+.equalizer.active .bar:nth-child(3) { animation-duration: 0.35s; animation-delay: 0.2s; background: linear-gradient(to top, #f50057, #ffd700); }
+.equalizer.active .bar:nth-child(4) { animation-duration: 0.45s; animation-delay: 0.1s; background: linear-gradient(to top, #651fff, #7c4dff); }
+.equalizer.active .bar:nth-child(5) { animation-duration: 0.42s; animation-delay: 0.3s; background: linear-gradient(to top, #d50000, #ff1744); }
 
 
 .sync-badge-container { display:flex; justify-content:center; align-items:center; }
@@ -432,13 +436,8 @@ body {
 .song-index { font-family: 'Montserrat'; font-weight: 700; color: rgba(255,255,255,0.3); font-size: 1rem; min-width: 25px; text-align: center; }
 .song-thumb { width: 55px; height: 55px; border-radius: 12px; object-fit: cover; background: #000; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
 
-/* Duration Badge Style - Now positioned more visibly */
-.song-duration-badge {
-    font-size: 0.75rem; color: #fff; background: rgba(0,0,0,0.7); 
-    padding: 3px 6px; border-radius: 6px; position: absolute; bottom: 3px; right: 3px;
-    font-family: 'Roboto', sans-serif; font-weight: 700;
-    backdrop-filter: blur(2px); border: 1px solid rgba(255,255,255,0.1);
-}
+/* REMOVED DURATION BADGE CSS */
+
 .thumb-container { position: relative; width: 55px; height: 55px; flex-shrink: 0; border-radius: 12px; overflow: hidden; }
 .thumb-container .song-thumb { width: 100%; height: 100%; border-radius: 0; }
 
@@ -489,25 +488,6 @@ body {
 
 .empty-state { text-align: center; margin-top: 60px; color: rgba(255,255,255,0.4); }
 .empty-state p { font-size: 1.1rem; }
-
-/* Active Users Bar - Fixed Layout */
-.active-users-bar {
-    padding: 12px 25px;
-    background: rgba(255,255,255,0.03);
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    display: flex; align-items: center;
-    min-height: 55px; /* Force height */
-}
-.active-user-chip {
-    display: flex; align-items: center; gap: 8px;
-    background: rgba(255,255,255,0.1);
-    padding: 5px 12px; border-radius: 20px;
-    font-size: 0.85rem; font-weight: 600; color: white;
-    border: 1px solid rgba(255,255,255,0.1);
-    white-space: nowrap; /* Prevent collapsing */
-    flex-shrink: 0;
-}
-.online-dot { width: 8px; height: 8px; background: #00e676; border-radius: 50%; box-shadow: 0 0 5px #00e676; }
 
 .chat-layout { display: flex; flex-direction: column; }
 .chat-messages { flex: 1; overflow-y: auto; padding: 25px; display: flex; flex-direction: column; gap: 15px; }
@@ -650,4 +630,59 @@ body {
     .controls { gap: 40px; }
     .ctrl-btn.small { width: 60px; height: 60px; }
     .ctrl-btn.play { width: 85px; height: 85px; font-size: 2.5rem; }
+}
+
+/* NEW WELCOME SCREEN STYLES */
+.welcome-content {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    width: 100%; height: 100%;
+}
+.welcome-icon {
+    font-size: 5rem; color: var(--primary);
+    margin-bottom: 20px;
+    filter: drop-shadow(0 0 20px var(--primary));
+    animation: heartbeat 1.5s infinite;
+    z-index: 2;
+}
+@keyframes heartbeat {
+    0% { transform: scale(1); }
+    15% { transform: scale(1.3); }
+    30% { transform: scale(1); }
+    45% { transform: scale(1.15); }
+    60% { transform: scale(1); }
+}
+.welcome-title {
+    font-family: 'Montserrat', sans-serif; font-weight: 900;
+    font-size: 3.5rem; color: white; margin: 0;
+    text-shadow: 0 0 30px rgba(245, 0, 87, 0.5);
+    z-index: 2; text-align: center;
+}
+.welcome-subtitle {
+    font-family: 'Inter', sans-serif; font-size: 1.2rem;
+    color: #b388ff; margin: 10px 0 40px; letter-spacing: 2px; text-transform: uppercase;
+    z-index: 2; text-align: center;
+}
+.pulse-ring {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 200px; height: 200px; border-radius: 50%;
+    border: 2px solid var(--primary); opacity: 0;
+    animation: pulseRing 3s infinite;
+    pointer-events: none;
+}
+.pulse-ring.delay { animation-delay: 1.5s; }
+@keyframes pulseRing {
+    0% { width: 100px; height: 100px; opacity: 0.8; border-width: 5px; }
+    100% { width: 600px; height: 600px; opacity: 0; border-width: 0px; }
+}
+.enter-btn {
+    padding: 15px 40px; background: white; color: black;
+    font-family: 'Montserrat'; font-weight: 800; font-size: 1.2rem;
+    border-radius: 50px; text-transform: uppercase; letter-spacing: 1px;
+    box-shadow: 0 0 20px rgba(255,255,255,0.5); z-index: 2;
+    transition: 0.3s;
+}
+.enter-btn:hover {
+    transform: scale(1.1); box-shadow: 0 0 40px var(--primary);
+    background: var(--primary); color: white;
 }
