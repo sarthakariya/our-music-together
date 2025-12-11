@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sarthak's ❤️ Reechita's Heart's Rhythm</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800;900&family=Outfit:wght@500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -14,197 +14,149 @@
 </head>
 <body>
 
-    <!-- Animated Background -->
-    <div class="liquid-container">
-        <div class="liquid-blob blob-1"></div>
-        <div class="liquid-blob blob-2"></div>
-        <div class="liquid-blob blob-3"></div>
-        <div class="liquid-blob blob-4"></div>
-        <div class="grid-overlay"></div>
-    </div>
+    <div class="app-background"></div>
 
     <div class="app-container">
         
-        <div class="top-bar glass-panel anim-slide-down">
+        <!-- HEADER -->
+        <div class="top-bar">
             <div class="logo">
-                <h1>Sarthak's <span class="heart-beat">❤️</span> Reechita's</h1>
-                <span class="logo-sub">Heart's Rhythm Universe</span>
+                <h1>Sarthak's <span class="heart-beat">❤️</span> Reechita's Heart's Rhythm</h1>
             </div>
-            <button class="info-btn btn-hover-effect" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
+            <button class="info-btn" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
         </div>
 
         <div class="main-layout">
             
-            <!-- Left Side: Player -->
-            <div class="player-card glass-panel anim-scale-in">
-                
-                <!-- Player Glow "Ambilight" Container -->
-                <div class="player-glow-container">
-                    <div class="player-glow"></div>
-                    <div class="video-wrapper">
-                        <div id="player"></div>
+            <!-- PLAYER SECTION (Left) -->
+            <div class="player-card">
+                <div class="video-wrapper">
+                    <div id="player"></div>
+                </div>
+
+                <div class="song-info-area">
+                    <h2 class="song-title" id="current-song-title">Heart's Rhythm</h2>
+                    <div class="sync-pill" id="sync-status-msg">
+                        <i class="fa-solid fa-pause"></i> Paused by System
+                    </div>
+                    <!-- Equalizer Line -->
+                    <div class="equalizer-line" id="equalizer">
+                        <span></span><span></span><span></span><span></span><span></span>
                     </div>
                 </div>
 
-                <div class="song-info-container">
-                    <!-- Layout: Flex Row -->
-                    <div class="track-row">
-                        <div class="song-text-wrapper">
-                            <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
-                            <div class="song-artist" id="current-song-artist">Waiting for track...</div>
-                        </div>
-                        <!-- Enhanced Equalizer -->
-                        <div class="equalizer" id="equalizer">
-                            <div class="bar"></div><div class="bar"></div><div class="bar"></div>
-                            <div class="bar"></div><div class="bar"></div>
-                        </div>
-                    </div>
-
-                    <div class="sync-badge-container">
-                        <div class="sync-status-3d" id="sync-status-msg">
-                            <i class="fa-solid fa-link"></i> Connecting...
-                        </div>
-                    </div>
-                </div>
-
-                <div class="controls">
-                    <button class="ctrl-btn small btn-3d" id="lyrics-btn" title="Lyrics"><i class="fa-solid fa-feather"></i></button>
-                    <button class="ctrl-btn small btn-3d" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
-                    <button class="ctrl-btn play btn-3d" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
-                    <button class="ctrl-btn small btn-3d" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
-                    <!-- Heart Button -->
-                    <button class="ctrl-btn small btn-3d" id="like-btn" title="Add to Liked Songs"><i class="fa-regular fa-heart"></i></button>
+                <div class="controls-row">
+                    <button class="ctrl-btn secondary" id="lyrics-btn"><i class="fa-solid fa-feather"></i></button>
+                    <button class="ctrl-btn secondary" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
+                    <button class="ctrl-btn primary-play" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
+                    <button class="ctrl-btn secondary" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
+                    <button class="ctrl-btn secondary" id="like-btn"><i class="fa-regular fa-heart"></i></button>
                 </div>
             </div>
 
-            <!-- Right Side: Unified Sidebar -->
-            <div class="sidebar glass-panel anim-slide-left">
+            <!-- SIDEBAR SECTION (Right) -->
+            <div class="sidebar">
                 
-                <!-- Pinned Search Bar -->
-                <div class="pinned-search">
-                    <div class="search-box-elegant">
-                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                        <input type="text" id="searchInput" placeholder="Search song or paste link...">
-                        <button class="search-submit" id="search-btn"><i class="fa-solid fa-arrow-right"></i></button>
-                    </div>
+                <!-- Search -->
+                <div class="search-container">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="searchInput" placeholder="Search song or paste link...">
+                    <button id="search-btn"><i class="fa-solid fa-arrow-right"></i></button>
                 </div>
 
-                <!-- Unified Navigation Tabs -->
-                <div class="sidebar-tabs">
-                    <button class="nav-tab active" id="tab-btn-queue" onclick="switchTab('queue')">
-                        <i class="fa-solid fa-layer-group"></i> Queue <span id="queue-badge" class="badge">0</span>
+                <!-- Tabs -->
+                <div class="tabs-header">
+                    <button class="tab-btn active" id="tab-btn-queue" onclick="switchTab('queue')">
+                        <i class="fa-solid fa-list-ul"></i> QUEUE <span class="badge" id="queue-badge">0</span>
                     </button>
-                    <button class="nav-tab" id="tab-btn-liked" onclick="switchTab('liked')">
-                        <i class="fa-solid fa-heart"></i> Liked
+                    <button class="tab-btn" id="tab-btn-liked" onclick="switchTab('liked')">
+                        <i class="fa-solid fa-heart"></i> LIKED
                     </button>
-                    <button class="nav-tab" id="tab-btn-chat" onclick="switchTab('chat')">
-                        <i class="fa-solid fa-comments"></i> Chat
+                    <button class="tab-btn" id="tab-btn-chat" onclick="switchTab('chat')">
+                        <i class="fa-solid fa-comments"></i> CHAT
                     </button>
                 </div>
 
-                <!-- Content Area -->
-                <div class="sidebar-content">
-                    
-                    <!-- View: Queue -->
-                    <div id="view-queue" class="tab-content active">
-                        <div class="action-row">
-                             <h3 class="view-title">Up Next</h3>
-                             <button class="clear-btn btn-3d" id="clearQueueBtn">Clear All</button>
-                        </div>
-                        <div class="list-content custom-scroll" id="queue-list"></div>
+                <!-- Tab Content: Queue -->
+                <div id="view-queue" class="tab-content active">
+                    <div class="content-header">
+                        <h3>Up Next</h3>
+                        <button class="clear-btn" id="clearQueueBtn">Clear All</button>
                     </div>
-
-                    <!-- View: Liked Songs -->
-                    <div id="view-liked" class="tab-content">
-                        <div class="action-row">
-                             <h3 class="view-title">Our Collection</h3>
-                        </div>
-                        <div class="list-content custom-scroll" id="liked-list">
-                             <div class="empty-state">
-                                <i class="fa-regular fa-heart" style="font-size: 3rem; margin-bottom: 15px; opacity:0.5;"></i>
-                                <p>No liked songs yet.</p>
-                            </div>
-                        </div>
+                    <div class="list-container custom-scroll" id="queue-list">
+                        <!-- Items injected by JS -->
                     </div>
-
-                    <!-- View: Results -->
-                    <div id="view-results" class="tab-content">
-                        <div class="action-row">
-                             <h3 class="view-title">Search Results</h3>
-                             <button class="clear-btn btn-3d" style="background:rgba(255,255,255,0.1); border:none;" onclick="switchTab('queue')"><i class="fa-solid fa-xmark"></i></button>
-                        </div>
-                        <div class="list-content custom-scroll" id="results-list">
-                            <div class="empty-state">
-                                <i class="fa-brands fa-youtube" style="font-size: 3rem; margin-bottom: 15px; opacity:0.5;"></i>
-                                <p>Search above to find music</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- View: Chat -->
-                    <div id="view-chat" class="tab-content chat-layout">
-                        <div class="chat-messages custom-scroll" id="chat-messages"></div>
-                        <div class="chat-input-area">
-                            <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
-                            <input type="text" class="chat-input" id="chatInput" placeholder="Message...">
-                            <button class="send-btn btn-3d" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
-                        </div>
-                    </div>
-
                 </div>
+
+                <!-- Tab Content: Liked -->
+                <div id="view-liked" class="tab-content">
+                    <div class="content-header">
+                        <h3>Your Collection</h3>
+                    </div>
+                    <div class="list-container custom-scroll" id="liked-list">
+                        <div class="empty-state">No liked songs yet.</div>
+                    </div>
+                </div>
+
+                <!-- Tab Content: Results (Hidden until search) -->
+                <div id="view-results" class="tab-content">
+                    <div class="content-header">
+                        <h3>Results</h3>
+                        <button class="clear-btn" style="background:transparent; color:#fff;" onclick="switchTab('queue')"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="list-container custom-scroll" id="results-list"></div>
+                </div>
+
+                <!-- Tab Content: Chat -->
+                <div id="view-chat" class="tab-content">
+                    <div class="chat-container custom-scroll" id="chat-messages"></div>
+                    <div class="chat-input-row">
+                        <button id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
+                        <input type="text" id="chatInput" placeholder="Type a message...">
+                        <button id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
 
-    <!-- Notification Toast Container -->
+    <!-- Floating Bubbles Container (Bottom Right) -->
     <div id="toast-container"></div>
 
-    <!-- Lyrics Overlay -->
-    <div class="overlay" id="lyricsOverlay">
-        <div class="modal-card lyrics-card">
-            <button class="modal-close" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2 id="lyrics-title">Lyrics</h2>
-            <div class="lyrics-content" id="lyrics-content-area">Loading...</div>
+    <!-- Overlays -->
+    <div class="modal-overlay" id="lyricsOverlay">
+        <div class="modal-box">
+            <button class="close-modal" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
+            <h2>Lyrics</h2>
+            <div id="lyrics-content-area" class="custom-scroll">Loading...</div>
         </div>
     </div>
 
-    <!-- Info Overlay -->
-    <div class="overlay" id="infoOverlay">
-        <div class="modal-card">
-            <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
+    <div class="modal-overlay" id="infoOverlay">
+        <div class="modal-box">
+            <button class="close-modal" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
             <h2>System Info</h2>
-            <div class="guide-content">
-                <p class="guide-intro">Operational parameters for the Infinite Playlist.</p>
-                <div class="info-grid">
-                    <div class="info-box"><strong style="color:var(--primary);">Sync Status</strong><span style="color:#00e676;">Online</span></div>
-                    <div class="info-box"><strong style="color:#e040fb;">Version</strong><span>Neon v4.0</span></div>
-                </div>
-            </div>
+            <p style="opacity:0.7;">Heartbeat v5.0 // Synchronized</p>
         </div>
     </div>
 
-    <!-- Sync Stalled Overlay -->
-    <div class="overlay" id="syncOverlay">
-        <div class="modal-card" style="text-align: center;">
-            <h2>Sync Paused</h2>
-            <p id="overlayText" style="opacity:0.7; margin-bottom:20px;">Waiting for partner...</p>
-            <div class="loading-spinner"></div>
-            <button class="clear-btn btn-3d" style="width:auto; padding:10px 25px; background:var(--gold); color:#000;" id="forceSyncBtn">Resume</button>
+    <div class="modal-overlay" id="syncOverlay">
+        <div class="modal-box center">
+            <h2>Syncing...</h2>
+            <div class="spinner"></div>
+            <button class="clear-btn" id="forceSyncBtn">Force Resume</button>
         </div>
     </div>
 
-    <!-- WELCOME OVERLAY -->
-    <div class="overlay active" id="welcomeOverlay" style="z-index: 5000; background: #020005;">
-        <div class="welcome-content">
-            <div class="pulse-ring"></div>
-            <div class="pulse-ring delay"></div>
-            <i class="fa-solid fa-heart welcome-icon"></i>
-            <h1 class="welcome-title">Heart's Rhythm</h1>
-            <p class="welcome-subtitle">Enter your name to join the universe</p>
-            
-            <div class="premium-input-container">
-                <input type="text" id="welcomeNameInput" class="premium-input" placeholder="Your Name" autocomplete="off">
-                <button class="premium-enter-btn" id="startSessionBtn"><i class="fa-solid fa-arrow-right"></i></button>
+    <!-- Welcome -->
+    <div class="welcome-screen active" id="welcomeOverlay">
+        <div class="welcome-box">
+            <i class="fa-solid fa-heart pulse-icon"></i>
+            <h1>Heart's Rhythm</h1>
+            <div class="input-group">
+                <input type="text" id="welcomeNameInput" placeholder="Enter your name" autocomplete="off">
+                <button id="startSessionBtn"><i class="fa-solid fa-arrow-right"></i></button>
             </div>
         </div>
     </div>
