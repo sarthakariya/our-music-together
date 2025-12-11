@@ -72,16 +72,15 @@ function onPlayerReady(event) {
 
 // --- AD DETECTION LOGIC ---
 function detectAd() {
-    if (!player || typeof player.getVideoData !== 'function' || !currentVideoId) return false;
+    if (!player || !currentVideoId) return false;
     try {
         const data = player.getVideoData();
+        // If data exists, has a video_id, and that ID is NOT the one we loaded
+        // This is the most reliable way to detect YouTube inserting an ad
         if (data && data.video_id && data.video_id !== currentVideoId) {
-            const state = player.getPlayerState();
-            if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
-                return true;
-            }
+            return true;
         }
-    } catch (e) { console.warn("Ad detect error", e); }
+    } catch(e) {}
     return false;
 }
 
@@ -92,15 +91,17 @@ function heartbeatSync() {
     if (player && player.getPlayerState) updatePlayPauseButton(player.getPlayerState());
     if (isSwitchingSong) return;
 
-    // Check for Ad first
-    if (lastBroadcaster === myName && detectAd()) {
+    // Check for Ad first - CRITICAL: If I see an ad, I MUST broadcast it.
+    if (detectAd()) {
         broadcastState('ad_pause', 0, currentVideoId);
+        updateSyncStatus();
         return;
     }
 
-    // Only broadcast if I am playing AND I am the intended broadcaster
+    // Only broadcast if I am the intended broadcaster
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
         const state = player.getPlayerState();
+        
         if (state === YT.PlayerState.PLAYING) {
             const duration = player.getDuration();
             const current = player.getCurrentTime();
@@ -109,6 +110,11 @@ function heartbeatSync() {
             } else {
                 broadcastState('play', current, currentVideoId);
             }
+        }
+        // NEW: If I paused it, I should keep telling the world I paused it.
+        // This fixes the issue where the pause attribution disappears or is overwritten.
+        else if (state === YT.PlayerState.PAUSED) {
+            broadcastState('pause', player.getCurrentTime(), currentVideoId);
         }
     }
 }
@@ -183,7 +189,7 @@ function onPlayerStateChange(event) {
     if (isSwitchingSong) return;
     if (ignoreSystemEvents) return;
 
-    if (state === YT.PlayerState.PLAYING && detectAd()) {
+    if (detectAd()) {
         lastBroadcaster = myName;
         broadcastState('ad_pause', 0, currentVideoId);
         updateSyncStatus();
@@ -226,7 +232,7 @@ function togglePlayPause() {
         player.pauseVideo();
         // Optimistic UI
         document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-play"></i>';
-        // Force broadcast
+        // Force broadcast with explicit name
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
         if (!currentVideoId && currentQueue.length > 0) {
@@ -333,7 +339,6 @@ function applyRemoteCommand(state) {
     if (!player) return;
 
     // Protection: If I just clicked a button < 1.5s ago, ignore incoming remote events
-    // This prevents my local "Pause" from being overwritten by a lagging "Play" from partner
     if (Date.now() - lastLocalInteractionTime < 1500) {
         console.log("Ignoring remote command due to recent local interaction");
         return;
@@ -382,38 +387,70 @@ function applyRemoteCommand(state) {
             if (playerState !== YT.PlayerState.PAUSED) player.pauseVideo();
         } 
     }
+    updateSyncStatus();
 }
 
 function updateSyncStatus() {
-    const msg = document.getElementById('sync-status-msg');
+    const msgEl = document.getElementById('sync-status-msg');
+    const container = document.querySelector('.video-wrapper');
     
-    if (player && player.getPlayerState() === YT.PlayerState.PLAYING && !detectAd()) {
-        msg.innerHTML = `<i class="fa-solid fa-heart-pulse"></i> Synced`;
-        msg.style.background = "#ffd700"; // Gold
-        msg.style.color = "#000";
-    } else {
-        if ((currentRemoteState && currentRemoteState.action === 'ad_pause') || detectAd()) {
-            msg.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Partner watching Ad`;
-            msg.style.background = "#ff9800"; 
-            msg.style.color = "#fff";
-        } 
-        else if (currentRemoteState && currentRemoteState.action === 'switching_pause') {
-            msg.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Switching Song...`;
-            msg.style.background = "#9c27b0"; 
-            msg.style.color = "#fff";
+    // Animation trigger (remove and re-add class logic handled by CSS animations on change)
+    // To restart animation, we use a small reflow hack
+    msgEl.classList.remove('pop-anim');
+    void msgEl.offsetWidth; // trigger reflow
+    msgEl.classList.add('pop-anim');
+
+    // 1. Local Ad?
+    if (detectAd()) {
+        msgEl.innerHTML = '<i class="fa-solid fa-rectangle-ad"></i> Ad Playing';
+        msgEl.className = 'sync-status-3d status-ad';
+        return;
+    }
+
+    // 2. Switching?
+    if (isSwitchingSong) {
+        msgEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Switching...';
+        msgEl.className = 'sync-status-3d status-switching';
+        return;
+    }
+
+    // 3. Remote Ad?
+    if (currentRemoteState && currentRemoteState.action === 'ad_pause') {
+        // If remote is watching ad, we are paused.
+        msgEl.innerHTML = `<i class="fa-solid fa-eye-slash"></i> ${currentRemoteState.lastUpdater} watching Ad`;
+        msgEl.className = 'sync-status-3d status-ad-remote';
+        return;
+    }
+
+    // 4. Remote Switching?
+    if (currentRemoteState && currentRemoteState.action === 'switching_pause') {
+        msgEl.innerHTML = `<i class="fa-solid fa-music"></i> ${currentRemoteState.lastUpdater} picking song...`;
+        msgEl.className = 'sync-status-3d status-switching';
+        return;
+    }
+
+    const playerState = player ? player.getPlayerState() : -1;
+
+    // 5. Playing
+    if (playerState === YT.PlayerState.PLAYING) {
+        msgEl.innerHTML = `<i class="fa-solid fa-heart-pulse"></i> Vibing Together`;
+        msgEl.className = 'sync-status-3d status-playing';
+        if(container) container.classList.add('glow-active');
+    } 
+    // 6. Paused
+    else {
+        if(container) container.classList.remove('glow-active');
+        
+        // Determine who paused by prioritising the DB record if the action was a pause
+        let pauser = lastBroadcaster;
+        if (currentRemoteState && currentRemoteState.action === 'pause') {
+            pauser = currentRemoteState.lastUpdater;
         }
-        else {
-            const pausedBy = (lastBroadcaster === myName) ? "You" : lastBroadcaster;
-            
-            if(currentRemoteState && (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart')) {
-                 msg.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Syncing...`;
-                 msg.style.background = "#2979ff";
-            } else {
-                 msg.innerHTML = `<i class="fa-solid fa-pause"></i> Paused by ${pausedBy}`;
-                 msg.style.background = "#444";
-            }
-            msg.style.color = "#fff";
-        }
+        // Handle case where system might be the updater (e.g. initial load)
+        const nameDisplay = (pauser === myName) ? "You" : pauser;
+        
+        msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> Paused by ${nameDisplay}`;
+        msgEl.className = 'sync-status-3d status-paused';
     }
 }
 
