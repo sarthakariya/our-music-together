@@ -22,6 +22,7 @@
 
     <div class="app-container">
         
+        <!-- Top Bar (Visible on Mobile now too, but styled differently) -->
         <div class="top-bar glass-panel">
             <div class="logo">
                 <h1>Sarthak's ❤️ Reechita's Heart's Rhythm</h1>
@@ -43,16 +44,16 @@
                 </div>
 
                 <div class="song-info-container">
-                    <div class="meta-row">
-                        <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
-                        <div class="equalizer" id="equalizer">
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                        </div>
+                    <!-- Equalizer Moved here for independent positioning -->
+                    <div class="equalizer" id="equalizer">
+                        <div class="bar"></div>
+                        <div class="bar"></div>
+                        <div class="bar"></div>
+                        <div class="bar"></div>
+                        <div class="bar"></div>
                     </div>
+
+                    <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
                     
                     <div class="status-row">
                         <div class="sync-status-3d" id="sync-status-msg">
