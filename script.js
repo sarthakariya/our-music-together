@@ -16,8 +16,7 @@ const db = firebase.database();
 const syncRef = db.ref('sync');
 const queueRef = db.ref('queue');
 const chatRef = db.ref('chat');
-
-// Removed presenceRef logic as requested by user
+const likedRef = db.ref('liked_songs');
 
 let player, currentQueue = [], currentVideoId = null;
 let lastBroadcaster = "System"; 
@@ -25,20 +24,15 @@ let activeTab = 'queue';
 let currentRemoteState = null; 
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
+let myName = localStorage.getItem('deepSpaceUserName') || ""; 
+
+// Fallback metadata in case queue is empty
+let currentSongMeta = { title: "Heart's Rhythm", uploader: "System", thumbnail: "" };
 
 // --- CRITICAL SYNC FLAGS ---
 let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
-
-let myName = localStorage.getItem('deepSpaceUserName');
-if (!myName || myName === "null") {
-    myName = prompt("Enter your name (Sarthak or Reechita):");
-    if(!myName) myName = "Guest";
-    localStorage.setItem('deepSpaceUserName', myName);
-}
-// Normalize Name
-myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
 
 // --- BUTTON RIPPLE EFFECT ---
 function createRipple(event) {
@@ -56,7 +50,6 @@ function createRipple(event) {
     if (ripple) {
         ripple.remove();
     }
-
     button.appendChild(circle);
 }
 
@@ -64,21 +57,125 @@ document.querySelectorAll('.ctrl-btn').forEach(btn => {
     btn.addEventListener('click', createRipple);
 });
 
-// Like Button Logic (Visual Only)
+// --- LIKE FUNCTIONALITY ---
 document.getElementById('like-btn').addEventListener('click', (e) => {
-    createRipple(e);
-    const btn = e.currentTarget;
+    if (!currentVideoId || !myName) return;
+    
+    // Animate
+    const icon = e.currentTarget.querySelector('i');
+    icon.style.transform = "scale(1.4)";
+    setTimeout(() => icon.style.transform = "scale(1)", 200);
+
+    // Try finding song in queue, otherwise use fallback metadata
+    let songObj = currentQueue.find(s => s.videoId === currentVideoId);
+    if (!songObj) {
+        // Construct from fallback if available
+        songObj = {
+            title: currentSongMeta.title,
+            thumbnail: currentSongMeta.thumbnail,
+            uploader: currentSongMeta.uploader
+        };
+    }
+
+    if (!songObj.title) return; // Safety check
+
+    likedRef.child(currentVideoId).transaction((currentData) => {
+        if (currentData === null) {
+            return {
+                title: songObj.title,
+                thumbnail: songObj.thumbnail,
+                uploader: songObj.uploader,
+                likes: { [myName]: true }
+            };
+        } else {
+            if (!currentData.likes) currentData.likes = {};
+            currentData.likes[myName] = true;
+            return currentData;
+        }
+    });
+    
+    showToast("System", "Added to Liked Songs ❤️");
+    updateLikeButtonState(true);
+});
+
+function updateLikeButtonState(isLiked) {
+    const btn = document.getElementById('like-btn');
     const icon = btn.querySelector('i');
-    if(icon.classList.contains('fa-regular')) {
+    if (isLiked) {
         icon.classList.remove('fa-regular');
         icon.classList.add('fa-solid');
         icon.style.color = '#f50057';
     } else {
-        // Toggle animation just for fun
-        icon.style.transform = "scale(1.4)";
-        setTimeout(() => icon.style.transform = "scale(1)", 200);
+        icon.classList.remove('fa-solid');
+        icon.classList.add('fa-regular');
+        icon.style.color = 'white';
     }
-});
+}
+
+function checkCurrentSongLiked() {
+    if (!currentVideoId) return;
+    likedRef.child(currentVideoId).once('value', snapshot => {
+        const val = snapshot.val();
+        if (val && val.likes && val.likes[myName]) {
+            updateLikeButtonState(true);
+        } else {
+            updateLikeButtonState(false);
+        }
+    });
+}
+
+function renderLikedSongs(likedData) {
+    const list = document.getElementById('liked-list');
+    list.innerHTML = '';
+    
+    if (!likedData) {
+        list.innerHTML = '<div class="empty-state"><p>No liked songs yet.</p></div>';
+        return;
+    }
+
+    let delay = 0;
+    Object.keys(likedData).forEach(videoId => {
+        const song = likedData[videoId];
+        const likes = song.likes || {};
+        const likers = Object.keys(likes);
+        
+        let likedByText = "";
+        if (likers.length > 1) likedByText = "Liked by Both";
+        else if (likers.includes(myName)) likedByText = "Liked by You";
+        else likedByText = `Liked by ${likers[0]}`;
+
+        const div = document.createElement('div');
+        div.className = 'song-item liked-anim';
+        div.style.animationDelay = `${delay}s`;
+        delay += 0.05; // Stagger effect
+
+        div.innerHTML = `
+            <div class="thumb-container">
+                <img src="${song.thumbnail}" class="song-thumb">
+            </div>
+            <div class="song-details">
+                <h4>${song.title}</h4>
+                <span class="liked-by-text">${likedByText}</span>
+            </div>
+            <button class="emoji-trigger" style="color:#fff;"><i class="fa-solid fa-play"></i></button>
+        `;
+        // Play liked song logic
+        div.onclick = () => {
+            const existing = currentQueue.find(s => s.videoId === videoId);
+            if(existing) initiateSongLoad(existing);
+            else {
+                const newKey = queueRef.push().key;
+                queueRef.child(newKey).set({ 
+                    videoId: videoId, title: song.title, uploader: song.uploader, 
+                    thumbnail: song.thumbnail, addedBy: myName, order: Date.now() 
+                }).then(() => {
+                   initiateSongLoad({ videoId, title: song.title, uploader: song.uploader });
+                });
+            }
+        };
+        list.appendChild(div);
+    });
+}
 
 
 function suppressBroadcast(duration = 1000) {
@@ -202,8 +299,6 @@ function onPlayerStateChange(event) {
     if (state === YT.PlayerState.PLAYING) {
         if(player && player.setVolume) player.setVolume(100);
         
-        // Removed Duration saving to DB logic as quota saver, and removed display.
-
         if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
              broadcastState('play', player.getCurrentTime(), currentVideoId);
@@ -267,7 +362,13 @@ function initiateSongLoad(songObj) {
     isSwitchingSong = true;
     lastBroadcaster = myName;
 
-    // No fading, just switch
+    // Update global metadata fallback
+    currentSongMeta = { 
+        title: songObj.title, 
+        uploader: songObj.uploader, 
+        thumbnail: songObj.thumbnail || "" 
+    };
+
     if (player && player.pauseVideo) player.pauseVideo();
     
     showToast("System", "Switching track...");
@@ -281,13 +382,12 @@ function initiateSongLoad(songObj) {
         loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
         isSwitchingSong = false;
         
-        // Auto-Scroll to song after loading
         setTimeout(() => {
              const activeItem = document.querySelector('.song-item.playing');
              if(activeItem) activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 300);
 
-    }, 500); // Short delay for UI update
+    }, 500); 
 }
 
 function loadInitialData() {
@@ -314,6 +414,11 @@ function loadInitialData() {
         const msg = snapshot.val();
         displayChatMessage(msg.user, msg.text, msg.timestamp);
         if (msg.user !== myName && activeTab !== 'chat') showToast(msg.user, msg.text);
+    });
+    
+    likedRef.on('value', (snapshot) => {
+        renderLikedSongs(snapshot.val());
+        checkCurrentSongLiked(); // Re-check button state if external changes happen
     });
 }
 loadInitialData();
@@ -457,6 +562,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
+        checkCurrentSongLiked(); // Check if newly loaded song is liked
         renderQueue(currentQueue, currentVideoId);
         
         if (shouldBroadcast) {
@@ -468,10 +574,19 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
 function switchTab(tabName) {
     activeTab = tabName;
+    
+    // Deactivate all
     document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
-    document.getElementById('tab-btn-' + tabName).classList.add('active');
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-    document.getElementById('view-' + tabName).classList.add('active');
+
+    // Handle special "results" case (it doesn't have a nav button anymore)
+    if(tabName === 'results') {
+        document.getElementById('view-results').classList.add('active');
+    } else {
+        const btn = document.getElementById('tab-btn-' + tabName);
+        if(btn) btn.classList.add('active');
+        document.getElementById('view-' + tabName).classList.add('active');
+    }
 }
 
 function addToQueue(videoId, title, uploader, thumbnail) {
@@ -529,11 +644,8 @@ function renderQueue(queueArray, currentVideoId) {
         
         const user = song.addedBy || 'System';
         const isMe = user === myName;
-        const badgeClass = isMe ? 'is-me' : 'is-other';
         const displayText = isMe ? 'You' : `${user}`;
         const number = index + 1;
-        
-        // REMOVED DURATION BADGE DISPLAY
         
         let statusIndicator = '';
         if (song.videoId === currentVideoId) {
@@ -554,7 +666,7 @@ function renderQueue(queueArray, currentVideoId) {
             <div class="song-details">
                 <h4>${song.title}</h4>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="added-by-badge ${badgeClass}">Added by ${displayText}</span>
+                    <span class="added-by-badge">Added by ${displayText}</span>
                     ${statusIndicator}
                 </div>
             </div>
@@ -688,8 +800,21 @@ document.getElementById('searchInput').addEventListener('focus', (e) => {
     switchTab('results');
 });
 
-// START SESSION BUTTON
+// START SESSION BUTTON (Updated for Name Input)
 document.getElementById('startSessionBtn').addEventListener('click', () => {
+    const nameInput = document.getElementById('welcomeNameInput');
+    const enteredName = nameInput.value.trim();
+    
+    if (!enteredName) {
+        nameInput.style.borderColor = 'red';
+        setTimeout(() => nameInput.style.borderColor = 'rgba(255,255,255,0.2)', 500);
+        return;
+    }
+    
+    // Capitalize Name
+    myName = enteredName.charAt(0).toUpperCase() + enteredName.slice(1).toLowerCase();
+    localStorage.setItem('deepSpaceUserName', myName);
+    
     hasUserInteracted = true;
     document.getElementById('welcomeOverlay').classList.remove('active');
     
@@ -697,6 +822,17 @@ document.getElementById('startSessionBtn').addEventListener('click', () => {
          if (player && player.playVideo) player.playVideo();
     }
 });
+// Allow "Enter" key in welcome input
+document.getElementById('welcomeNameInput').addEventListener('keypress', (e) => {
+    if(e.key === 'Enter') document.getElementById('startSessionBtn').click();
+});
+// Auto Focus
+if(document.getElementById('welcomeOverlay').classList.contains('active')) {
+    setTimeout(() => {
+        document.getElementById('welcomeNameInput').focus();
+    }, 500);
+}
+
 
 async function handleSearch() {
     const input = document.getElementById('searchInput');
@@ -755,8 +891,7 @@ async function handleSearch() {
                 <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
                 <button class="emoji-trigger" style="color:#fff; font-size:1.1rem; position:static; width:auto; height:auto; border:none; background:transparent;"><i class="fa-solid fa-plus"></i></button>
             `;
-            // Pass duration to addToQueue here!
-            div.onclick = () => addToQueue(vid, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url, duration);
+            div.onclick = () => addToQueue(vid, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
             list.appendChild(div);
         });
     } catch(e) { console.error(e); }
@@ -824,6 +959,12 @@ function displayChatMessage(user, text, timestamp) {
 
 function showToast(user, text) {
     const container = document.getElementById('toast-container');
+    
+    // LIMIT TO 3 BUBBLES
+    if (container.children.length >= 3) {
+        container.removeChild(container.firstChild);
+    }
+
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.innerHTML = `
