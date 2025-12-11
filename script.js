@@ -15,7 +15,8 @@ if (typeof firebase !== 'undefined' && !firebase.apps.length) firebase.initializ
 const db = firebase.database();
 const syncRef = db.ref('sync');
 const queueRef = db.ref('queue');
-const chatRef = db.ref('chat');
+// CHANGED: New chat node to clear history
+const chatRef = db.ref('chat_2025'); 
 const presenceRef = db.ref('presence');
 
 let player, currentQueue = [], currentVideoId = null;
@@ -39,26 +40,12 @@ if (!myName || myName === "null") {
 // Normalize Name
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
 
-// --- PRESENCE SYSTEM ---
+// --- PRESENCE SYSTEM (Backend only, visuals removed) ---
 const sessionKey = presenceRef.push().key;
 presenceRef.child(sessionKey).onDisconnect().remove();
 presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
 
-// Listen for active users
-presenceRef.on('value', (snapshot) => {
-    const usersDiv = document.getElementById('active-users-list');
-    if (!usersDiv) return;
-    usersDiv.innerHTML = '';
-    const val = snapshot.val();
-    if (val) {
-        Object.values(val).forEach(u => {
-            const chip = document.createElement('div');
-            chip.className = 'active-user-chip';
-            chip.innerHTML = `<div class="online-dot"></div>${u.user}`;
-            usersDiv.appendChild(chip);
-        });
-    }
-});
+// (Active Vibes listener removed as per request)
 
 function suppressBroadcast(duration = 1000) {
     ignoreSystemEvents = true;
@@ -591,8 +578,11 @@ async function fetchLyrics() {
         .replace(/feat\..*/gi, "") // Remove feat. ...
         .trim();
         
-    lyricsTitle.textContent = "Lyrics: " + cleanTitle;
+    lyricsTitle.textContent = cleanTitle;
     lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
+    
+    const googleBtn = document.getElementById('google-lyrics-btn');
+    if(googleBtn) googleBtn.href = `https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}`;
 
     try {
         const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanTitle)}`;
@@ -614,9 +604,6 @@ async function fetchLyrics() {
         // Fallback to Google Button ONLY if API fails
         lyricsContentArea.innerHTML = `
             <p>Lyrics could not be loaded automatically.</p>
-            <a href="https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
-               <i class="fa-brands fa-google"></i> Search on Google
-            </a>
         `;
     }
 }
