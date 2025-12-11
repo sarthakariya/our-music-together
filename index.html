@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sarthak's ❤️ Reechita's Heart's Rhythm</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800&family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800;900&family=Outfit:wght@500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -14,25 +14,29 @@
 </head>
 <body>
 
+    <!-- Animated Background -->
     <div class="liquid-container">
         <div class="liquid-blob blob-1"></div>
         <div class="liquid-blob blob-2"></div>
         <div class="liquid-blob blob-3"></div>
+        <div class="liquid-blob blob-4"></div>
+        <div class="grid-overlay"></div>
     </div>
 
     <div class="app-container">
         
-        <div class="top-bar glass-panel">
+        <div class="top-bar glass-panel anim-slide-down">
             <div class="logo">
-                <h1>Sarthak's ❤️ Reechita's Heart's Rhythm</h1>
+                <h1>Sarthak's <span class="heart-beat">❤️</span> Reechita's</h1>
+                <span class="logo-sub">Heart's Rhythm Universe</span>
             </div>
-            <button class="info-btn" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
+            <button class="info-btn btn-hover-effect" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
         </div>
 
         <div class="main-layout">
             
             <!-- Left Side: Player -->
-            <div class="player-card glass-panel">
+            <div class="player-card glass-panel anim-scale-in">
                 
                 <!-- Player Glow "Ambilight" Container -->
                 <div class="player-glow-container">
@@ -45,14 +49,14 @@
                 <div class="song-info-container">
                     <!-- Layout: Flex Row -->
                     <div class="track-row">
-                        <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
-                        <!-- Enhanced Lazy Equalizer -->
+                        <div class="song-text-wrapper">
+                            <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
+                            <div class="song-artist" id="current-song-artist">Waiting for track...</div>
+                        </div>
+                        <!-- Enhanced Equalizer -->
                         <div class="equalizer" id="equalizer">
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
+                            <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                            <div class="bar"></div><div class="bar"></div>
                         </div>
                     </div>
 
@@ -68,13 +72,13 @@
                     <button class="ctrl-btn small btn-3d" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
                     <button class="ctrl-btn play btn-3d" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
                     <button class="ctrl-btn small btn-3d" id="next-btn"><i class="fa-solid fa-forward-step"></i></button>
-                    <!-- Heart Button (Functional) -->
+                    <!-- Heart Button -->
                     <button class="ctrl-btn small btn-3d" id="like-btn" title="Add to Liked Songs"><i class="fa-regular fa-heart"></i></button>
                 </div>
             </div>
 
-            <!-- Right Side: Unified Sidebar with Tabs -->
-            <div class="sidebar glass-panel">
+            <!-- Right Side: Unified Sidebar -->
+            <div class="sidebar glass-panel anim-slide-left">
                 
                 <!-- Pinned Search Bar -->
                 <div class="pinned-search">
@@ -85,10 +89,10 @@
                     </div>
                 </div>
 
-                <!-- Unified Navigation Tabs (Results hidden, Liked added) -->
+                <!-- Unified Navigation Tabs -->
                 <div class="sidebar-tabs">
                     <button class="nav-tab active" id="tab-btn-queue" onclick="switchTab('queue')">
-                        <i class="fa-solid fa-list-ol"></i> Queue <span id="queue-badge" class="badge">0</span>
+                        <i class="fa-solid fa-layer-group"></i> Queue <span id="queue-badge" class="badge">0</span>
                     </button>
                     <button class="nav-tab" id="tab-btn-liked" onclick="switchTab('liked')">
                         <i class="fa-solid fa-heart"></i> Liked
@@ -107,7 +111,7 @@
                              <h3 class="view-title">Up Next</h3>
                              <button class="clear-btn btn-3d" id="clearQueueBtn">Clear All</button>
                         </div>
-                        <div class="list-content" id="queue-list"></div>
+                        <div class="list-content custom-scroll" id="queue-list"></div>
                     </div>
 
                     <!-- View: Liked Songs -->
@@ -115,23 +119,23 @@
                         <div class="action-row">
                              <h3 class="view-title">Our Collection</h3>
                         </div>
-                        <div class="list-content" id="liked-list">
+                        <div class="list-content custom-scroll" id="liked-list">
                              <div class="empty-state">
-                                <i class="fa-regular fa-heart" style="font-size: 3rem; margin-bottom: 15px; color: rgba(255,255,255,0.2);"></i>
+                                <i class="fa-regular fa-heart" style="font-size: 3rem; margin-bottom: 15px; opacity:0.5;"></i>
                                 <p>No liked songs yet.</p>
                             </div>
                         </div>
                     </div>
 
-                    <!-- View: Results (Hidden from Tabs, shown via Search) -->
+                    <!-- View: Results -->
                     <div id="view-results" class="tab-content">
                         <div class="action-row">
                              <h3 class="view-title">Search Results</h3>
-                             <button class="clear-btn btn-3d" style="background:transparent; border:none;" onclick="switchTab('queue')"><i class="fa-solid fa-xmark"></i></button>
+                             <button class="clear-btn btn-3d" style="background:rgba(255,255,255,0.1); border:none;" onclick="switchTab('queue')"><i class="fa-solid fa-xmark"></i></button>
                         </div>
-                        <div class="list-content" id="results-list">
+                        <div class="list-content custom-scroll" id="results-list">
                             <div class="empty-state">
-                                <i class="fa-brands fa-youtube" style="font-size: 3rem; margin-bottom: 15px; color: rgba(255,255,255,0.2);"></i>
+                                <i class="fa-brands fa-youtube" style="font-size: 3rem; margin-bottom: 15px; opacity:0.5;"></i>
                                 <p>Search above to find music</p>
                             </div>
                         </div>
@@ -139,7 +143,7 @@
 
                     <!-- View: Chat -->
                     <div id="view-chat" class="tab-content chat-layout">
-                        <div class="chat-messages" id="chat-messages"></div>
+                        <div class="chat-messages custom-scroll" id="chat-messages"></div>
                         <div class="chat-input-area">
                             <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
                             <input type="text" class="chat-input" id="chatInput" placeholder="Message...">
@@ -152,7 +156,7 @@
         </div>
     </div>
 
-    <!-- Notification Toast -->
+    <!-- Notification Toast Container -->
     <div id="toast-container"></div>
 
     <!-- Lyrics Overlay -->
@@ -160,9 +164,7 @@
         <div class="modal-card lyrics-card">
             <button class="modal-close" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
             <h2 id="lyrics-title">Lyrics</h2>
-            <div class="lyrics-content" id="lyrics-content-area">
-                Loading...
-            </div>
+            <div class="lyrics-content" id="lyrics-content-area">Loading...</div>
         </div>
     </div>
 
@@ -170,20 +172,13 @@
     <div class="overlay" id="infoOverlay">
         <div class="modal-card">
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2>System & Universe Info</h2>
+            <h2>System Info</h2>
             <div class="guide-content">
-                <p class="guide-intro">Operational parameters for the Sarthak & Reechita Infinite Playlist.</p>
-                <div class="info-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:20px;">
-                    <div class="info-box" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px;">
-                        <strong style="color:var(--primary); display:block; margin-bottom:5px;">Sync Status</strong>
-                        <span style="color:#00e676;">Online & Active</span>
-                    </div>
-                     <div class="info-box" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px;">
-                         <strong style="color:#e040fb; display:block; margin-bottom:5px;">Version</strong>
-                         <span>Heartbeat v3.2</span>
-                    </div>
+                <p class="guide-intro">Operational parameters for the Infinite Playlist.</p>
+                <div class="info-grid">
+                    <div class="info-box"><strong style="color:var(--primary);">Sync Status</strong><span style="color:#00e676;">Online</span></div>
+                    <div class="info-box"><strong style="color:#e040fb;">Version</strong><span>Neon v4.0</span></div>
                 </div>
-                <div class="guide-footer">Developed with ❤️ by Sarthak</div>
             </div>
         </div>
     </div>
@@ -192,14 +187,14 @@
     <div class="overlay" id="syncOverlay">
         <div class="modal-card" style="text-align: center;">
             <h2>Sync Paused</h2>
-            <p id="overlayText" style="color:var(--text-dim); margin-bottom:20px;">Waiting for partner...</p>
-            <div style="margin:0 auto 20px; width:40px; height:40px; border:4px solid rgba(255,215,0,0.2); border-top:4px solid var(--gold); border-radius:50%; animation: spin 1s infinite linear;"></div>
-            <button class="clear-btn btn-3d" style="width:auto; padding:10px 25px; background:var(--gold); color:#000; border-bottom-color:#b29700;" id="forceSyncBtn">Resume</button>
+            <p id="overlayText" style="opacity:0.7; margin-bottom:20px;">Waiting for partner...</p>
+            <div class="loading-spinner"></div>
+            <button class="clear-btn btn-3d" style="width:auto; padding:10px 25px; background:var(--gold); color:#000;" id="forceSyncBtn">Resume</button>
         </div>
     </div>
 
-    <!-- WELCOME OVERLAY (Redesigned with Premium Input) -->
-    <div class="overlay active" id="welcomeOverlay" style="z-index: 5000; background: #05000a;">
+    <!-- WELCOME OVERLAY -->
+    <div class="overlay active" id="welcomeOverlay" style="z-index: 5000; background: #020005;">
         <div class="welcome-content">
             <div class="pulse-ring"></div>
             <div class="pulse-ring delay"></div>
