@@ -22,7 +22,7 @@ let lastBroadcaster = "System";
 let activeTab = 'queue'; 
 let currentRemoteState = null; 
 let isSwitchingSong = false; 
-let hasUserInteracted = false; // Flag to track if user clicked the welcome button
+let hasUserInteracted = false; 
 
 // --- CRITICAL SYNC FLAGS ---
 let ignoreSystemEvents = false;
@@ -103,7 +103,6 @@ function heartbeatSync() {
 }
 
 function monitorSyncHealth() {
-    // If user hasn't interacted, we cannot force play due to browser policy
     if (!hasUserInteracted) return;
 
     if (lastBroadcaster === myName || isSwitchingSong) return;
@@ -263,15 +262,12 @@ function applyRemoteCommand(state) {
     if (!player) return;
     if (Date.now() - lastLocalInteractionTime < 1500) return;
     
-    // Only apply remote play commands if user has interacted at least once
     if (!hasUserInteracted && (state.action === 'play' || state.action === 'restart')) {
-        // We can't auto-play yet, but we can load the video so it's ready
-        // But do not call player.playVideo()
         if (state.videoId !== currentVideoId) {
              const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
              const title = songInQueue ? songInQueue.title : "Syncing...";
              const uploader = songInQueue ? songInQueue.uploader : "";
-             loadAndPlayVideo(state.videoId, title, uploader, state.time, false, false); // last arg false = don't auto play
+             loadAndPlayVideo(state.videoId, title, uploader, state.time, false, false); 
         }
         return; 
     }
@@ -378,7 +374,6 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
              if(shouldPlay) player.playVideo();
         }
         
-        // If we are just loading (not playing), pause immediately
         if(!shouldPlay) {
             setTimeout(() => player.pauseVideo(), 500);
         }
@@ -414,6 +409,7 @@ function addToQueue(videoId, title, uploader, thumbnail) {
 
 function addBatchToQueue(songs) {
     if (!songs.length) return;
+    showToast("System", `Adding ${songs.length} songs to queue...`); // Visual Feedback
     const updates = {};
     songs.forEach((s, i) => {
         const newKey = queueRef.push().key;
@@ -461,13 +457,28 @@ function renderQueue(queueArray, currentVideoId) {
         const displayText = isMe ? 'Added by You' : `Added by ${user}`;
         const number = index + 1;
         
+        // Playing animation replacement logic
+        let statusIndicator = '';
+        if (song.videoId === currentVideoId) {
+            // Insert Mini Equalizer instead of text
+            statusIndicator = `
+                <div class="mini-eq-container">
+                    <div class="mini-eq-bar"></div>
+                    <div class="mini-eq-bar"></div>
+                    <div class="mini-eq-bar"></div>
+                </div>`;
+        }
+        
         item.innerHTML = `
             <i class="fa-solid fa-bars drag-handle" title="Drag to order"></i>
             <div class="song-index">${number}</div>
             <img src="${song.thumbnail}" class="song-thumb">
             <div class="song-details">
                 <h4>${song.title}</h4>
-                <span class="added-by-badge ${badgeClass}">${displayText}</span>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="added-by-badge ${badgeClass}">${displayText}</span>
+                    ${statusIndicator}
+                </div>
             </div>
             <button class="emoji-trigger" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
         `;
@@ -507,20 +518,19 @@ function getDragAfterElement(container, y) {
     }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
-// Global Search Handling: Input now always visible
+// Global Search Handling
 document.getElementById('searchInput').addEventListener('input', (e) => {
-    switchTab('results'); // Switch tab on interaction
+    switchTab('results'); 
 });
 document.getElementById('searchInput').addEventListener('focus', (e) => {
     switchTab('results');
 });
 
-// START SESSION (WELCOME) BUTTON
+// START SESSION BUTTON
 document.getElementById('startSessionBtn').addEventListener('click', () => {
     hasUserInteracted = true;
     document.getElementById('welcomeOverlay').classList.remove('active');
     
-    // Check if there is pending state to sync immediately
     if (currentRemoteState && currentRemoteState.action !== 'pause') {
          if (player && player.playVideo) player.playVideo();
     }
@@ -533,10 +543,12 @@ async function handleSearch() {
 
     if (query.includes('list=')) {
         const listId = query.split('list=')[1].split('&')[0];
+        showToast("System", "Fetching Playlist..."); // Visual feedback
         fetchPlaylist(listId);
         input.value = ''; return;
     }
     if (query.includes('spotify.com')) {
+        showToast("System", "Fetching Spotify Data..."); // Visual feedback
         fetchSpotifyData(query);
         input.value = ''; return;
     }
