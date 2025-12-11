@@ -1,897 +1,504 @@
-// --- CONFIGURATION ---
-const firebaseConfig = {
-    apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co",
-    authDomain: "our-music-player.firebaseapp.com",
-    databaseURL: "https://our-music-player-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "our-music-player",
-    storageBucket: "our-music-player.firebasestorage.app",
-    messagingSenderId: "444208622552",
-    appId: "1:444208622552:web:839ca00a5797f52d1660ad",
-    measurementId: "G-B4GFLNFCLL"
-};
-const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
+/* ------------------------------------------------------------------------------------------------------ */
+/* ---------------------------------- CORE THEME & VIBRANT GLASS ---------------------------------------- */
+/* ------------------------------------------------------------------------------------------------------ */
 
-if (typeof firebase !== 'undefined' && !firebase.apps.length) firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-const syncRef = db.ref('sync');
-const queueRef = db.ref('queue');
-const chatRef = db.ref('chat'); 
-const presenceRef = db.ref('presence');
-
-let player, currentQueue = [], currentVideoId = null;
-let lastBroadcaster = "System"; 
-let activeTab = 'queue'; 
-let currentRemoteState = null; 
-let isSwitchingSong = false; 
-let hasUserInteracted = false; 
-
-// --- CRITICAL SYNC FLAGS ---
-let ignoreSystemEvents = false;
-let ignoreTimer = null;
-let lastLocalInteractionTime = 0; 
-
-let myName = localStorage.getItem('deepSpaceUserName');
-if (!myName || myName === "null") {
-    myName = prompt("Enter your name (Sarthak or Reechita):");
-    if(!myName) myName = "Guest";
-    localStorage.setItem('deepSpaceUserName', myName);
-}
-// Normalize Name
-myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
-
-// --- PRESENCE SYSTEM ---
-const sessionKey = presenceRef.push().key;
-presenceRef.child(sessionKey).onDisconnect().remove();
-presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
-
-function suppressBroadcast(duration = 1000) {
-    ignoreSystemEvents = true;
-    if (ignoreTimer) clearTimeout(ignoreTimer);
-    ignoreTimer = setTimeout(() => {
-        ignoreSystemEvents = false;
-    }, duration);
+:root {
+    --bg-dark: #0f0518;             
+    --primary: #f50057;              
+    --primary-bright: #ff4081;
+    
+    --gold: #ffd700;                 
+    --gold-dim: #c5a000;             
+    
+    --glass-bg: rgba(22, 12, 35, 0.75); 
+    --glass-border: rgba(255, 255, 255, 0.18);
+    --glass-blur: 40px; 
+    
+    --text-main: #ffffff;           
+    --text-dim: #e0e0e0;            
+    
+    --curve-xl: 32px;                
+    --curve-m: 24px;                
+    --shadow-3d: 0 25px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255,255,255,0.15);
+    
+    --bottom-nav-height: 60px;
 }
 
-// --- YOUTUBE PLAYER ---
-function onYouTubeIframeAPIReady() {
-    player = new YT.Player('player', {
-        height: '100%', width: '100%', videoId: '',
-        playerVars: { 
-            'controls': 1, 'disablekb': 0, 'rel': 0, 'modestbranding': 1, 'autoplay': 1, 'origin': window.location.origin,
-            'playsinline': 1 
-        },
-        events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
-    });
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@500;600;700;800;900&family=Roboto:wght@500;700;900&display=swap');
+
+* { box-sizing: border-box; outline: none; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+/* --- COLORFUL SCROLLBARS --- */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { 
+    background: rgba(255,255,255,0.2); 
+    border-radius: 10px; 
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-dark); /* Ensure dark background */
+    color: var(--text-main);
+    height: 100vh;
+    height: 100dvh; 
+    overflow: hidden; 
+    width: 100vw;
+    overflow-x: hidden;
+    display: flex; justify-content: center; align-items: center; 
+    position: relative;
+    perspective: 1000px;
 }
 
-function onPlayerReady(event) {
-    if (player && player.setVolume) player.setVolume(100);
-    setInterval(heartbeatSync, 1000);
-    setInterval(monitorSyncHealth, 2000);
-    syncRef.once('value').then(snapshot => {
-        const state = snapshot.val();
-        if(state) applyRemoteCommand(state);
-    });
-    setupMediaSession();
+/* ---------------------------------- BACKGROUND -------------------------------------------------------- */
+
+.liquid-container {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    overflow: hidden; z-index: -1; background: #080010;
+    transform: translate3d(0,0,0);
 }
 
-function detectAd() {
-    if (!player) return false;
-    try {
-        const playerState = player.getPlayerState();
-        const data = player.getVideoData();
-        if (currentVideoId && data && data.video_id && data.video_id !== currentVideoId) return true;
-    } catch(e) {}
-    return false;
+.liquid-blob {
+    position: absolute; border-radius: 50%;
+    filter: blur(90px); opacity: 0.6; 
+    will-change: transform; 
+    animation: floatLiquid 20s infinite alternate ease-in-out;
 }
 
-// --- MEDIA SESSION API ---
-function setupMediaSession() {
-    if ('mediaSession' in navigator) {
-        navigator.mediaSession.setActionHandler('play', function() {
-            if(player && player.playVideo) { player.playVideo(); togglePlayPause(); }
-        });
-        navigator.mediaSession.setActionHandler('pause', function() {
-            if(player && player.pauseVideo) { player.pauseVideo(); togglePlayPause(); }
-        });
-        navigator.mediaSession.setActionHandler('previoustrack', function() { initiatePrevSong(); });
-        navigator.mediaSession.setActionHandler('nexttrack', function() { initiateNextSong(); });
-    }
+.blob-1 { top: -15%; left: -15%; width: 80vw; height: 80vw; background: #6200ea; } 
+.blob-2 { bottom: -20%; right: -10%; width: 70vw; height: 70vw; background: #c51162; animation-duration: 25s; }
+.blob-3 { top: 30%; left: 30%; width: 60vw; height: 60vw; background: #00bcd4; opacity: 0.3; animation-duration: 22s; }
+
+@keyframes floatLiquid {
+    0% { transform: translate3d(0, 0, 0) scale(1); }
+    100% { transform: translate3d(40px, -40px, 0) scale(1.05); }
 }
 
-function updateMediaSessionMetadata(title, artist, artworkUrl) {
-    if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: title || "Heart's Rhythm",
-            artist: artist || "Sarthak & Reechita",
-            album: "Our Sync",
-            artwork: [ { src: artworkUrl || 'https://via.placeholder.com/512', sizes: '512x512', type: 'image/png' } ]
-        });
-    }
+/* ---------------------------------- LAYOUT ------------------------------------------------------------ */
+
+.app-container {
+    width: 95%; max-width: 1600px; height: 95vh;
+    height: 95dvh;
+    display: flex; flex-direction: column; gap: 15px;
+    z-index: 10;
+    animation: fadeIn 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (max-height: 850px) {
+    .app-container { height: 100vh; height: 100dvh; padding: 10px 0; width: 98%; gap: 10px; }
 }
 
-// --- CORE SYNC LOGIC ---
-
-function heartbeatSync() {
-    if (player && player.getPlayerState) updatePlayPauseButton(player.getPlayerState());
-    if (isSwitchingSong) return;
-
-    if (detectAd()) {
-        broadcastState('ad_pause', 0, currentVideoId);
-        updateSyncStatus();
-        return;
-    }
-
-    if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
-        const state = player.getPlayerState();
-        if (state === YT.PlayerState.PLAYING) {
-            const duration = player.getDuration();
-            const current = player.getCurrentTime();
-            if (duration > 0 && duration - current < 1) initiateNextSong(); 
-            else broadcastState('play', current, currentVideoId);
-        }
-        else if (state === YT.PlayerState.PAUSED) {
-            broadcastState('pause', player.getCurrentTime(), currentVideoId);
-        }
-    }
+.glass-panel {
+    background: var(--glass-bg);
+    box-shadow: var(--shadow-3d);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    border-radius: var(--curve-xl); 
+    transition: transform 0.2s ease;
+    contain: content;
 }
 
-function monitorSyncHealth() {
-    if (!hasUserInteracted) return;
-    if (lastBroadcaster === myName || isSwitchingSong) return;
-    if (!player || !currentRemoteState || !player.getPlayerState) return;
-    if (Date.now() - lastLocalInteractionTime < 2000) return;
+.top-bar { 
+    display: flex; justify-content: space-between; align-items: center; padding: 20px 45px;
+    flex-shrink: 0;
+}
+.logo h1 { 
+    font-family: 'Montserrat', sans-serif; 
+    font-weight: 800; font-size: 2rem; color: white; 
+    text-shadow: 0 0 20px rgba(245, 0, 87, 0.5);
+    margin: 0; letter-spacing: -0.5px;
+}
+.info-btn { 
+    background: none; border: none; color: #fff; font-size: 1.8rem; cursor: pointer; 
+    transition: transform 0.2s;
+}
+.info-btn:hover { color: var(--primary); transform: scale(1.1); }
 
-    if (currentRemoteState.action === 'ad_pause') {
-        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-            player.pauseVideo();
-        }
-        return; 
+.main-layout { 
+    display: flex; gap: 25px; flex: 1; overflow: hidden; align-items: stretch; 
+}
+
+/* ---------------------------------- PLAYER SECTION ---------------------------------------------------- */
+
+.player-card { 
+    flex: 1.6; min-width: 480px; padding: 30px; 
+    display: flex; flex-direction: column; overflow-y: auto; gap: 15px;
+}
+
+.player-glow-container { position: relative; width: 100%; margin-bottom: 25px; flex-shrink: 0; }
+.player-glow {
+    position: absolute; top: 10px; left: 5%; width: 90%; height: 90%;
+    background: linear-gradient(135deg, #f50057, #7c4dff);
+    filter: blur(50px); opacity: 0.5; z-index: 0;
+    animation: pulseGlow 5s infinite alternate ease-in-out;
+}
+@keyframes pulseGlow {
+    0% { opacity: 0.3; transform: scale(0.95); }
+    100% { opacity: 0.6; transform: scale(1.05); }
+}
+
+.video-wrapper {
+    position: relative; width: 100%; padding-bottom: 56.25%; 
+    background: #000; border-radius: var(--curve-m); overflow: hidden;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1);
+    z-index: 1;
+}
+#player { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+.song-info-container {
+    margin-bottom: 10px; flex: 1; display: flex; flex-direction: column; justify-content: flex-start;
+    position: relative; gap: 10px;
+}
+
+.meta-row {
+    width: 100%; padding: 0 10px; display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 5px; gap: 20px;
+}
+.song-title { 
+    font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1.8rem; 
+    margin: 0; line-height: 1.2; text-align: left; color: white;
+    text-shadow: 0 0 20px rgba(245, 0, 87, 0.4); flex: 1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.equalizer {
+    display: flex; justify-content: flex-end; align-items: flex-end; gap: 4px;
+    height: 30px; flex-shrink: 0; opacity: 0.5; transition: opacity 0.3s;
+}
+.equalizer.active { opacity: 1; }
+.equalizer .bar {
+    width: 6px; background: linear-gradient(to top, var(--primary), #ffd700); 
+    border-radius: 4px; height: 10%; box-shadow: 0 0 10px var(--primary);
+    transition: height 0.1s linear; 
+}
+.equalizer.active .bar { animation: equalizeSmooth 1.2s infinite ease-in-out; }
+@keyframes equalizeSmooth {
+    0%, 100% { height: 15%; }
+    50% { height: 70%; }
+}
+.equalizer.active .bar:nth-child(1) { animation-delay: 0s; }
+.equalizer.active .bar:nth-child(2) { animation-delay: 0.2s; }
+.equalizer.active .bar:nth-child(3) { animation-delay: 0.4s; }
+.equalizer.active .bar:nth-child(4) { animation-delay: 0.1s; }
+.equalizer.active .bar:nth-child(5) { animation-delay: 0.3s; }
+
+.status-row { width: 100%; padding: 0 10px; display: flex; justify-content: center; margin-top: 5px; }
+
+.sync-status-3d {
+    font-family: 'Montserrat', sans-serif; font-size: 0.8rem; font-weight: 700; 
+    padding: 8px 20px; border-radius: 50px; 
+    box-shadow: 0 6px 0 rgba(0,0,0,0.3), 0 10px 20px rgba(0,0,0,0.4); 
+    transform: translateY(-4px); transition: all 0.3s;
+    display: inline-flex; align-items: center; gap: 10px;
+}
+.sync-status-3d.pop-anim { animation: pop-badge 0.4s ease-out; }
+
+.status-playing { background: var(--primary); color: white; box-shadow: 0 4px 0 #b0003a; }
+.status-paused { background: #455a64; color: #eceff1; box-shadow: 0 4px 0 #263238; }
+.status-ad { background: #ff3d00; color: white; box-shadow: 0 4px 0 #dd2c00; }
+.status-ad-remote { background: #ff9100; color: white; box-shadow: 0 4px 0 #e65100; }
+.status-switching { background: #7c4dff; color: white; box-shadow: 0 4px 0 #512da8; }
+
+.controls { 
+    display: flex; justify-content: center; align-items: center; 
+    gap: 40px; margin-top: auto; padding-top: 15px; 
+}
+.btn-3d { border: none; transition: all 0.15s; cursor: pointer; position: relative; }
+.btn-3d:active { transform: scale(0.92) translateY(4px); border-bottom: 0 solid transparent !important; box-shadow: none !important; }
+
+.ctrl-btn {
+    background: rgba(255,255,255,0.1); color: white; border-radius: 50%;
+    display: grid; place-items: center; border-bottom: 4px solid rgba(0,0,0,0.6);
+    box-shadow: 0 5px 20px rgba(0,0,0,0.4); backdrop-filter: blur(10px);
+}
+.ctrl-btn.small { width: 65px; height: 65px; font-size: 1.4rem; }
+.ctrl-btn.play { 
+    width: 90px; height: 90px; font-size: 2.8rem; 
+    background: var(--primary); border-bottom: 6px solid #b0003a;
+}
+
+/* ---------------------------------- SIDEBAR & NAV (Desktop) ------------------------------------------- */
+
+.sidebar { 
+    flex: 1.3; min-width: 420px; max-width: 500px; 
+    display: flex; flex-direction: column; overflow: hidden; padding: 0; 
+}
+
+/* Common Header/Nav components */
+.pinned-search { padding: 20px 25px 10px; flex-shrink: 0; z-index: 20; }
+.search-box-elegant {
+    display: flex; align-items: center; background: rgba(255,255,255,0.07); 
+    border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; 
+    padding: 8px 8px 8px 20px; backdrop-filter: blur(10px);
+}
+.search-icon { color: rgba(255,255,255,0.5); margin-right: 10px; }
+#searchInput { flex: 1; background: transparent; border: none; color: white; font-size: 1rem; height: 40px; }
+.search-submit {
+    background: var(--primary); color: white; border: none; width: 40px; height: 40px; 
+    border-radius: 12px; cursor: pointer; display: grid; place-items: center;
+}
+
+.sidebar-tabs { display: flex; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.1); flex-shrink: 0; }
+.nav-tab {
+    flex: 1; padding: 18px 0; background: transparent; border: none; color: #aaa;
+    font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 0.9rem;
+    cursor: pointer; text-transform: uppercase; border-bottom: 4px solid transparent;
+}
+.nav-tab.active { color: white; border-bottom-color: var(--primary); background: rgba(245,0,87,0.1); }
+.badge { background: var(--primary); color: white; border-radius: 10px; padding: 2px 8px; font-size: 0.75rem; margin-left: 5px; }
+
+.sidebar-content { flex: 1; overflow: hidden; position: relative; background: rgba(255,255,255,0.02); }
+.tab-content { display: none; height: 100%; flex-direction: column; animation: fadeIn 0.3s; }
+.tab-content.active { display: flex; }
+
+.list-content { flex: 1; overflow-y: auto; padding: 15px 20px; }
+.action-row { padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.view-title { font-family: 'Montserrat'; font-weight: 800; font-size: 1.1rem; color: #fff; }
+.clear-btn { background: #d32f2f; color: white; font-weight: 700; padding: 8px 18px; border-radius: 12px; border-bottom: 3px solid #9a0007; }
+
+/* Songs Item Styles */
+.song-item {
+    display: flex; align-items: center; gap: 15px; padding: 14px; 
+    background: rgba(255,255,255,0.05); border-radius: 18px; margin-bottom: 12px; 
+    cursor: pointer; border: 1px solid rgba(255,255,255,0.05);
+    transition: transform 0.2s;
+}
+.song-item:hover { background: rgba(255,255,255,0.1); transform: translateY(-2px); }
+.song-item.playing { background: linear-gradient(90deg, rgba(245, 0, 87, 0.2), rgba(245, 0, 87, 0.05)); border-color: var(--primary); }
+.song-thumb { width: 55px; height: 55px; border-radius: 12px; object-fit: cover; background: #000; }
+.song-details h4 { font-family: 'Inter'; font-size: 1.1rem; font-weight: 600; color: #fff; line-height: 1.3; }
+.added-by-badge { font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+.added-by-badge.is-me { background: rgba(245, 0, 87, 0.2); color: #ff80ab; }
+.added-by-badge.is-other { background: rgba(124, 77, 255, 0.2); color: #b388ff; }
+
+/* Drag Handle */
+.drag-handle { color: rgba(255,255,255,0.2); font-size: 1.2rem; cursor: grab; padding: 0 8px; transition: 0.2s; }
+.drag-handle:hover { color: white; transform: scale(1.2); }
+
+/* --- REFINED QUEUE DELETE BUTTON --- */
+.emoji-trigger { 
+    background: transparent; border: none; color: rgba(255,255,255,0.3); 
+    font-size: 1.1rem; cursor: pointer; 
+    width: 35px; height: 35px; display: grid; place-items: center; border-radius: 50%;
+    transition: all 0.2s ease;
+}
+.emoji-trigger:hover { 
+    color: #ff3d00; background: rgba(255, 61, 0, 0.1); transform: scale(1.1);
+}
+.emoji-trigger:active { transform: scale(0.95); }
+
+/* Chat Styles */
+.chat-layout { display: flex; flex-direction: column; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 25px; display: flex; flex-direction: column; gap: 15px; }
+.message { max-width: 85%; padding: 14px 20px; border-radius: 20px; font-size: 1rem; color: white; animation: slideUpFade 0.3s; }
+.message.me { align-self: flex-end; background: linear-gradient(135deg, #f50057, #c51162); border-bottom-right-radius: 4px; }
+.message.partner { align-self: flex-start; background: rgba(255,255,255,0.1); border-bottom-left-radius: 4px; }
+.chat-input-area { padding: 15px 25px; background: rgba(0,0,0,0.2); display: flex; gap: 12px; align-items: center; border-top: 1px solid rgba(255,255,255,0.1); }
+.chat-input { flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); padding: 14px 20px; border-radius: 25px; color: white; }
+.send-btn { width: 50px; height: 50px; border-radius: 50%; background: white; color: black; display: grid; place-items: center; }
+
+/* --- MOBILE BOTTOM NAV & SHEETS --- */
+.mobile-bottom-nav { display: none; }
+.mobile-sheet-header { display: none; }
+.mobile-close-btn { display: none; }
+
+/* ---------------------------------- OVERLAYS & MODALS ------------------------------------------------- */
+
+.overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(12px);
+    z-index: 2000; display: none; align-items: center; justify-content: center; opacity: 0; transition: 0.3s;
+}
+.overlay.active { display: flex; opacity: 1; }
+.modal-card {
+    background: linear-gradient(145deg, #16101a, #0a050f);
+    border: 1px solid rgba(255,255,255,0.15); 
+    padding: 30px; /* Reduced padding */
+    border-radius: 30px; max-width: 500px; width: 90%; text-align: left;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.8); position: relative;
+    max-height: 90vh; overflow-y: auto; animation: elasticPop 0.4s ease-out;
+}
+.modal-close { 
+    position: absolute; top: 20px; right: 25px; background: none; border: none; 
+    color: white; font-size: 2rem; cursor: pointer; transition: 0.2s;
+}
+.modal-close:hover { color: var(--primary); transform: rotate(90deg); }
+
+.modal-card h2 {
+    font-size: 1.8rem; margin-bottom: 20px;
+    background: linear-gradient(to right, #fff, #bbb);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    text-align: center; font-family: 'Montserrat', sans-serif;
+}
+
+/* --- GUIDE/INFO CONTENT (Compact) --- */
+.guide-content { font-family: 'Inter', sans-serif; color: #ccc; }
+.guide-intro { 
+    text-align: center; margin-bottom: 20px; font-size: 1rem; 
+    line-height: 1.5; color: #ddd; font-weight: 500; 
+    border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px; 
+}
+.guide-item { display: flex; gap: 15px; margin-bottom: 15px; align-items: flex-start; }
+.guide-item i { font-size: 1.3rem; color: var(--primary); margin-top: 2px; width: 25px; text-align: center; }
+.guide-item strong { display: block; color: white; margin-bottom: 4px; font-size: 1rem; font-weight: 700; }
+.guide-item p { font-size: 0.9rem; line-height: 1.4; color: #bbb; margin: 0; }
+.guide-footer { 
+    text-align: center; margin-top: 25px; font-size: 0.9rem; color: var(--gold); font-weight: 700; 
+    letter-spacing: 2px; text-transform: uppercase;
+}
+
+/* --- IMPROVED LYRICS STYLE --- */
+.lyrics-card {
+    padding: 0; max-width: 800px; height: 85vh; display: flex; flex-direction: column;
+    background: #0d0d12; border: 1px solid rgba(255,255,255,0.1);
+}
+.modal-close-floating {
+    position: absolute; top: 20px; right: 20px; z-index: 10;
+    width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.1);
+    color: white; border: none; font-size: 1.2rem; cursor: pointer;
+    backdrop-filter: blur(10px); display: grid; place-items: center; transition: 0.2s;
+}
+.modal-close-floating:hover { background: var(--primary); transform: scale(1.1); }
+
+.lyrics-header-area {
+    padding: 30px 0 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+#lyrics-title { 
+    font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 1.5rem; 
+    color: white; margin: 0; text-transform: uppercase; letter-spacing: 1px;
+}
+
+.lyrics-content {
+    flex: 1; overflow-y: auto; padding: 40px 20px;
+    text-align: center; color: rgba(255,255,255,0.85);
+    font-size: 1.3rem; line-height: 1.8; font-family: 'Inter', sans-serif; font-weight: 500;
+    white-space: pre-wrap;
+}
+.google-lyrics-btn {
+    display: inline-flex; align-items: center; gap: 10px; margin-top: 20px;
+    padding: 12px 25px; background: #4285F4; color: white; text-decoration: none;
+    border-radius: 25px; font-weight: 600;
+}
+
+/* --- TOAST NOTIFICATIONS --- */
+#toast-container {
+    position: fixed; top: 30px; right: 30px; z-index: 3000; pointer-events: none;
+    display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+}
+.toast {
+    background: rgba(20, 10, 30, 0.95); border-left: 4px solid var(--primary);
+    padding: 15px 25px; border-radius: 12px; display: flex; align-items: center; gap: 15px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5); color: white; pointer-events: auto;
+    width: 320px; backdrop-filter: blur(10px);
+    animation: toastBounce 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+@keyframes toastBounce {
+    0% { transform: translateX(100px) scale(0.8); opacity: 0; }
+    100% { transform: translateX(0) scale(1); opacity: 1; }
+}
+.toast-body h4 { font-size: 0.9rem; margin-bottom: 3px; color: var(--primary-bright); }
+.toast-body p { font-size: 0.85rem; color: #ccc; margin: 0; }
+
+/* ---------------------------------- MOBILE SPECIFIC STYLES -------------------------------------------- */
+
+@media (max-width: 1100px) {
+    .app-container { 
+        height: 100dvh; padding: 0; gap: 0; 
+        width: 100vw; max-width: 100vw; /* Strict width control */
     }
     
-    if (currentRemoteState.action === 'switching_pause') return;
-
-    const myState = player.getPlayerState();
+    /* Hide desktop elements */
+    .top-bar, .desktop-only { display: none !important; }
     
-    if (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart') {
-        let needsFix = false;
-        if (myState !== YT.PlayerState.PLAYING && myState !== YT.PlayerState.BUFFERING) {
-            if (detectAd()) return; 
-            player.playVideo(); needsFix = true;
-        }
-        // INCREASED THRESHOLD TO 3 SECONDS
-        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3.0) {
-            if (!detectAd()) { player.seekTo(currentRemoteState.time, true); needsFix = true; }
-        }
-        if (needsFix) suppressBroadcast(3000); 
-    }
-    else if (currentRemoteState.action === 'pause') {
-         if (myState === YT.PlayerState.PLAYING) {
-             player.pauseVideo();
-             suppressBroadcast(1000);
-         }
-    }
-}
-
-function updatePlayPauseButton(state) {
-    const btn = document.getElementById('play-pause-btn');
-    if (!btn) return;
-    if (isSwitchingSong) {
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-        return;
-    }
-    if (state === YT.PlayerState.PLAYING) {
-        btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-        if(navigator.mediaSession) navigator.mediaSession.playbackState = "playing";
-    }
-    else {
-        btn.innerHTML = '<i class="fa-solid fa-play"></i>';
-        if(navigator.mediaSession) navigator.mediaSession.playbackState = "paused";
-    }
-}
-
-function onPlayerStateChange(event) {
-    const state = event.data;
-    updatePlayPauseButton(state);
-    if (isSwitchingSong || ignoreSystemEvents) return;
-
-    if (detectAd()) {
-        lastBroadcaster = myName;
-        broadcastState('ad_pause', 0, currentVideoId);
-        updateSyncStatus();
-        return;
-    }
-
-    if (state === YT.PlayerState.PLAYING) {
-        if(player && player.setVolume) player.setVolume(100);
-        
-        if (Date.now() - lastLocalInteractionTime > 500) {
-             lastBroadcaster = myName; 
-             broadcastState('play', player.getCurrentTime(), currentVideoId);
-        }
-    }
-    else if (state === YT.PlayerState.PAUSED) {
-        if (Date.now() - lastLocalInteractionTime > 500) {
-             lastBroadcaster = myName; 
-             broadcastState('pause', player.getCurrentTime(), currentVideoId);
-        }
-    }
-    else if (state === YT.PlayerState.ENDED) initiateNextSong();
+    /* Main Layout: Stacked but SideBar is hidden initially */
+    .main-layout { flex-direction: column; position: relative; height: calc(100dvh - var(--bottom-nav-height)); }
     
-    updateSyncStatus();
-}
-
-function togglePlayPause() {
-    if (!player || isSwitchingSong) return;
-    
-    lastLocalInteractionTime = Date.now();
-    ignoreSystemEvents = false;
-    clearTimeout(ignoreTimer);
-    lastBroadcaster = myName; 
-
-    const state = player.getPlayerState();
-    
-    if (state === YT.PlayerState.PLAYING) {
-        player.pauseVideo();
-        broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
-    } else {
-        if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
-        else if (currentVideoId) {
-            player.setVolume(100);
-            player.playVideo();
-            broadcastState('play', player.getCurrentTime(), currentVideoId, true);
-        }
-    }
-}
-
-function initiateNextSong() {
-    if (isSwitchingSong) return;
-    const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
-    const next = currentQueue[(idx + 1) % currentQueue.length];
-    if (next) initiateSongLoad(next);
-}
-
-function initiatePrevSong() {
-    if (isSwitchingSong) return;
-    const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
-    if(idx > 0) initiateSongLoad(currentQueue[idx-1]);
-}
-
-function initiateSongLoad(songObj) {
-    if (!songObj) return;
-
-    isSwitchingSong = true;
-    lastBroadcaster = myName;
-
-    if (player && player.pauseVideo) player.pauseVideo();
-    
-    showToast("System", "Switching track...");
-    document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-
-    syncRef.set({ 
-        action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
-    });
-
-    setTimeout(() => {
-        loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
-        updateMediaSessionMetadata(songObj.title, songObj.uploader, songObj.thumbnail);
-        isSwitchingSong = false;
-    }, 500); 
-}
-
-function loadInitialData() {
-    queueRef.orderByChild('order').on('value', (snapshot) => {
-        const data = snapshot.val();
-        let list = [];
-        if (data) Object.keys(data).forEach(k => list.push({ ...data[k], key: k }));
-        list.sort((a, b) => (a.order || 0) - (b.order || 0));
-        currentQueue = list;
-        renderQueue(currentQueue, currentVideoId);
-    });
-
-    syncRef.on('value', (snapshot) => {
-        const state = snapshot.val();
-        if (state) {
-            currentRemoteState = state; 
-            if (state.lastUpdater !== myName) applyRemoteCommand(state);
-            else lastBroadcaster = myName;
-        }
-        updateSyncStatus();
-    });
-
-    chatRef.limitToLast(50).on('child_added', (snapshot) => {
-        const msg = snapshot.val();
-        displayChatMessage(msg.user, msg.text, msg.timestamp);
-        if (msg.user !== myName && activeTab !== 'chat') showToast(msg.user, msg.text);
-    });
-}
-loadInitialData();
-
-function broadcastState(action, time, videoId, force = false) {
-    if (ignoreSystemEvents && !force) return; 
-    syncRef.set({ action, time, videoId, lastUpdater: myName, timestamp: Date.now() });
-}
-
-function applyRemoteCommand(state) {
-    if (!player) return;
-    if (Date.now() - lastLocalInteractionTime < 1500) return;
-    
-    if (state.action === 'ad_pause') {
-        suppressBroadcast(2000);
-        lastBroadcaster = state.lastUpdater;
-        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-            player.pauseVideo();
-        }
-        updateSyncStatus();
-        return;
-    }
-
-    if (!hasUserInteracted && (state.action === 'play' || state.action === 'restart')) {
-        if (state.videoId !== currentVideoId) {
-             const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
-             const title = songInQueue ? songInQueue.title : "Syncing...";
-             const uploader = songInQueue ? songInQueue.uploader : "";
-             loadAndPlayVideo(state.videoId, title, uploader, state.time, false, false); 
-        }
-        return; 
+    /* Player Card: Full Screen Experience */
+    .player-card {
+        flex: 1; max-height: none; padding: 10px 15px; /* Extremely tight padding */
+        justify-content: flex-start; /* Align top */
+        gap: 10px; /* Compact gap */
+        border-radius: 0; background: transparent; box-shadow: none; border: none;
+        min-width: 0; width: 100%;
     }
     
-    suppressBroadcast(1000); 
-    lastBroadcaster = state.lastUpdater;
+    .video-wrapper { 
+        border-radius: 16px; box-shadow: 0 5px 20px rgba(0,0,0,0.4); 
+        margin-bottom: 5px; flex-shrink: 0;
+    }
+    .player-glow-container { margin-bottom: 0; flex-shrink: 0; }
+    .player-glow { display: none; } /* Disable glow for performance and cleanness */
     
-    document.getElementById('syncOverlay').classList.remove('active');
-
-    if (state.action === 'switching_pause') {
-        player.pauseVideo();
-        showToast("System", "Partner is changing track...");
-        document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-        updateSyncStatus();
-        return;
-    }
-
-    if (state.videoId !== currentVideoId) {
-        const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
-        const title = songInQueue ? songInQueue.title : "Syncing...";
-        const uploader = songInQueue ? songInQueue.uploader : "";
-        loadAndPlayVideo(state.videoId, title, uploader, state.time, false); 
-        if(state.action === 'play' || state.action === 'restart') {
-            player.setVolume(100);
-            player.playVideo();
-        }
-    } 
-    else {
-        const playerState = player.getPlayerState();
-        if (state.action === 'restart') {
-            player.seekTo(0, true); 
-            player.setVolume(100);
-            player.playVideo();
-        }
-        else if (state.action === 'play') {
-            if (Math.abs(player.getCurrentTime() - state.time) > 3.0) player.seekTo(state.time, true);
-            if (playerState !== YT.PlayerState.PLAYING) {
-                player.setVolume(100);
-                player.playVideo();
-            }
-        }
-        else if (state.action === 'pause') {
-            if (playerState !== YT.PlayerState.PAUSED) player.pauseVideo();
-        } 
-    }
-    updateSyncStatus();
-}
-
-function updateSyncStatus() {
-    const msgEl = document.getElementById('sync-status-msg');
-    const eq = document.getElementById('equalizer');
+    .song-info-container { flex: 0 0 auto; gap: 5px; }
+    .meta-row { flex-direction: column; gap: 2px; align-items: center; margin-bottom: 0; }
+    .song-title { font-size: 1.1rem; text-align: center; margin-bottom: 0; }
+    .equalizer { height: 15px; margin-top: 2px; }
+    .status-row { margin-top: 2px; }
+    .sync-status-3d { padding: 4px 10px; font-size: 0.65rem; transform: none; }
     
-    msgEl.classList.remove('pop-anim');
-    void msgEl.offsetWidth; 
-    msgEl.classList.add('pop-anim');
-
-    if (detectAd()) {
-        msgEl.innerHTML = '<i class="fa-solid fa-rectangle-ad"></i> Ad Playing';
-        msgEl.className = 'sync-status-3d status-ad';
-        if(eq) eq.classList.remove('active');
-        return;
+    /* CONTROLS: Immediately below player, very compact */
+    .controls { 
+        gap: 15px; padding-top: 5px; margin-top: 0; 
+        justify-content: center; width: 100%;
     }
-
-    if (isSwitchingSong) {
-        msgEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Switching...';
-        msgEl.className = 'sync-status-3d status-switching';
-        if(eq) eq.classList.remove('active');
-        return;
-    }
-
-    if (currentRemoteState && currentRemoteState.action === 'ad_pause') {
-        msgEl.innerHTML = `<i class="fa-solid fa-eye-slash"></i> ${currentRemoteState.lastUpdater} having Ad...`;
-        msgEl.className = 'sync-status-3d status-ad-remote';
-        if(eq) eq.classList.remove('active');
-        return;
-    }
-
-    if (currentRemoteState && currentRemoteState.action === 'switching_pause') {
-        msgEl.innerHTML = `<i class="fa-solid fa-music"></i> ${currentRemoteState.lastUpdater} picking song...`;
-        msgEl.className = 'sync-status-3d status-switching';
-        if(eq) eq.classList.remove('active');
-        return;
-    }
-
-    const playerState = player ? player.getPlayerState() : -1;
-
-    if (playerState === YT.PlayerState.PLAYING) {
-        msgEl.innerHTML = `<i class="fa-solid fa-heart-pulse"></i> Vibing Together`;
-        msgEl.className = 'sync-status-3d status-playing';
-        if(eq) eq.classList.add('active');
-    } 
-    else {
-        if(eq) eq.classList.remove('active');
-        let pauser = lastBroadcaster;
-        if (currentRemoteState && currentRemoteState.action === 'pause') {
-            pauser = currentRemoteState.lastUpdater;
-        }
-        const nameDisplay = (pauser === myName) ? "You" : pauser;
-        msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> Paused by ${nameDisplay}`;
-        msgEl.className = 'sync-status-3d status-paused';
-    }
-}
-
-function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadcast = true, shouldPlay = true) {
-    if (player && videoId) {
-        // INCREASED SUPPRESSION TO 3 SECONDS
-        if (!shouldBroadcast) suppressBroadcast(3000); 
-
-        if(currentVideoId !== videoId || !player.cueVideoById) {
-            player.loadVideoById({videoId: videoId, startSeconds: startTime});
-            player.setVolume(100); 
-        } else {
-             if(Math.abs(player.getCurrentTime() - startTime) > 3.0) player.seekTo(startTime, true);
-             if(shouldPlay) {
-                 player.setVolume(100);
-                 player.playVideo();
-             }
-        }
-        
-        if(!shouldPlay) {
-            setTimeout(() => player.pauseVideo(), 500);
-        }
-
-        currentVideoId = videoId;
-        document.getElementById('current-song-title').textContent = title;
-        
-        let artwork = 'https://via.placeholder.com/512';
-        const currentSong = currentQueue.find(s => s.videoId === videoId);
-        if(currentSong && currentSong.thumbnail) artwork = currentSong.thumbnail;
-        updateMediaSessionMetadata(title, uploader, artwork);
-
-        renderQueue(currentQueue, currentVideoId);
-        
-        if (shouldBroadcast) {
-            lastBroadcaster = myName;
-            broadcastState('restart', 0, videoId, true); 
-        }
-    }
-}
-
-// --- MODIFIED TAB SWITCHING WITH TOGGLE LOGIC ---
-function switchTab(tabName) {
-    // 1. Mobile Sheet Logic
-    if(window.innerWidth <= 1100) {
-        const sheet = document.getElementById('mobileSheet');
-        const sheetTitle = document.getElementById('mobile-sheet-title');
-        
-        // TOGGLE LOGIC: If we click the SAME tab that is currently active, and the sheet is open, CLOSE IT.
-        if (activeTab === tabName && sheet.classList.contains('active')) {
-             sheet.classList.remove('active');
-             document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
-             return; // Exit function, we just want to close
-        }
-
-        // Otherwise, set titles and open sheet
-        if(tabName === 'queue') sheetTitle.textContent = "Queue";
-        else if(tabName === 'results') sheetTitle.textContent = "Search Music";
-        else if(tabName === 'chat') sheetTitle.textContent = "Chat";
-        
-        sheet.classList.add('active');
-    }
-
-    activeTab = tabName;
+    .ctrl-btn.small { width: 40px; height: 40px; font-size: 1rem; border-width: 2px; }
+    .ctrl-btn.play { width: 60px; height: 60px; font-size: 1.6rem; border-width: 4px; }
     
-    // 2. Desktop Tab Handling
-    document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
-    const dBtn = document.getElementById('tab-btn-' + tabName);
-    if(dBtn) dBtn.classList.add('active');
-
-    // 3. Mobile Nav Handling
-    document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
-    // Find index for mobile items (approximate)
-    const mobileIndex = ['queue', 'results', 'chat'].indexOf(tabName);
-    const mobileItems = document.querySelectorAll('.mobile-nav-item');
-    if(mobileItems[mobileIndex]) mobileItems[mobileIndex].classList.add('active');
-
-    // 4. Content Visibility
-    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-    document.getElementById('view-' + tabName).classList.add('active');
-}
-
-// Mobile Sheet Close Button
-document.getElementById('mobileSheetClose').addEventListener('click', () => {
-    document.getElementById('mobileSheet').classList.remove('active');
-    // Deselect mobile nav items to show we returned to player
-    document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
-});
-
-function addToQueue(videoId, title, uploader, thumbnail) {
-    const newKey = queueRef.push().key;
-    queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, addedBy: myName, order: Date.now() })
-        .then(() => {
-            switchTab('queue');
-            if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title, uploader});
-        });
-}
-
-function addBatchToQueue(songs) {
-    if (!songs.length) return;
-    showToast("System", `Adding ${songs.length} songs to queue...`); 
-    const updates = {};
-    songs.forEach((s, i) => {
-        const newKey = queueRef.push().key;
-        updates[newKey] = { ...s, addedBy: myName, order: Date.now() + i * 100 };
-    });
-    queueRef.update(updates).then(() => switchTab('queue'));
-}
-
-function removeFromQueue(key, event) {
-    if (event) event.stopPropagation();
-    const song = currentQueue.find(s => s.key === key);
-    if (song) {
-        queueRef.child(key).remove();
-        if (song.videoId === currentVideoId) initiateNextSong();
+    /* --- MOBILE SHEET (Sidebar Transformation) --- */
+    .sidebar {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1500;
+        border-radius: 0; border: none; background: #0f0518; /* Solid background */
+        transform: translateY(110%); transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+        display: flex; flex-direction: column;
+        min-width: 0;
     }
-}
-
-function updateQueueOrder(newOrder) {
-    const updates = {};
-    newOrder.forEach((song, index) => { updates[`${song.key}/order`] = index; });
-    queueRef.update(updates);
-}
-
-function renderQueue(queueArray, currentVideoId) {
-    const list = document.getElementById('queue-list');
-    const badge = document.getElementById('queue-badge');
-    const mobileBadge = document.getElementById('mobile-queue-badge');
+    .sidebar.active { transform: translateY(0); }
     
-    list.innerHTML = '';
-    badge.textContent = queueArray.length;
-    if(mobileBadge) mobileBadge.textContent = queueArray.length;
-
-    if (queueArray.length === 0) {
-        list.innerHTML = '<div class="empty-state"><p>Queue is empty.</p></div>';
-        return;
+    /* Header for Sheets - Highly Visible Close Button */
+    .mobile-sheet-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.1);
+        background: rgba(255,255,255,0.05);
     }
-
-    queueArray.forEach((song, index) => {
-        const item = document.createElement('div');
-        item.className = `song-item ${song.videoId === currentVideoId ? 'playing' : ''}`;
-        item.draggable = true;
-        item.dataset.key = song.key;
-        item.onclick = () => initiateSongLoad(song);
-        
-        const user = song.addedBy || 'System';
-        const isMe = user === myName;
-        const badgeClass = isMe ? 'is-me' : 'is-other';
-        const displayText = isMe ? 'You' : `${user}`;
-        const number = index + 1;
-        
-        let statusIndicator = '';
-        if (song.videoId === currentVideoId) {
-            statusIndicator = `
-                <div class="mini-eq-container">
-                    <div class="mini-eq-bar"></div>
-                    <div class="mini-eq-bar"></div>
-                    <div class="mini-eq-bar"></div>
-                </div>`;
-        }
-        
-        item.innerHTML = `
-            <i class="fa-solid fa-bars drag-handle" title="Drag to order"></i>
-            <div class="song-index">${number}</div>
-            <img src="${song.thumbnail}" class="song-thumb">
-            <div class="song-details">
-                <h4>${song.title}</h4>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="added-by-badge ${badgeClass}">Added by ${displayText}</span>
-                    ${statusIndicator}
-                </div>
-            </div>
-            <button class="emoji-trigger" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
-        `;
-        list.appendChild(item);
-    });
-
-    initDragAndDrop(list);
-}
-
-function initDragAndDrop(list) {
-    let draggedItem = null;
-    list.querySelectorAll('.song-item').forEach(item => {
-        item.addEventListener('dragstart', () => { draggedItem = item; item.classList.add('dragging'); });
-        item.addEventListener('dragend', () => {
-            item.classList.remove('dragging');
-            draggedItem = null;
-            const newOrderKeys = Array.from(list.querySelectorAll('.song-item')).map(el => el.dataset.key);
-            const newOrder = newOrderKeys.map(key => currentQueue.find(s => s.key === key));
-            updateQueueOrder(newOrder);
-        });
-        item.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            const afterElement = getDragAfterElement(list, e.clientY);
-            if (afterElement == null) list.appendChild(draggedItem);
-            else list.insertBefore(draggedItem, afterElement);
-        });
-    });
-}
-
-function getDragAfterElement(container, y) {
-    const draggableElements = [...container.querySelectorAll('.song-item:not(.dragging)')];
-    return draggableElements.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
-        if (offset < 0 && offset > closest.offset) return { offset: offset, element: child };
-        else return closest;
-    }, { offset: Number.NEGATIVE_INFINITY }).element;
-}
-
-document.getElementById('lyrics-btn').addEventListener('click', () => {
-    document.getElementById('lyricsOverlay').classList.add('active');
-    fetchLyrics();
-});
-document.getElementById('closeLyricsBtn').addEventListener('click', () => {
-    document.getElementById('lyricsOverlay').classList.remove('active');
-});
-
-async function fetchLyrics() {
-    const titleEl = document.getElementById('current-song-title');
-    const lyricsContentArea = document.getElementById('lyrics-content-area');
-    const lyricsTitle = document.getElementById('lyrics-title');
-    
-    let rawTitle = "Heart's Rhythm";
-    if(titleEl && titleEl.textContent !== "Heart's Rhythm") {
-        rawTitle = titleEl.textContent;
+    #mobile-sheet-title { font-family: 'Montserrat'; font-size: 1.1rem; color: white; margin: 0; font-weight: 700; }
+    .mobile-close-btn { 
+        background: rgba(255,255,255,0.1); border: none; color: white; font-size: 1.1rem; 
+        padding: 0; width: 35px; height: 35px; border-radius: 50%; 
+        display: grid; place-items: center;
     }
     
-    const cleanTitle = rawTitle
-        .replace(/[\(\[].*?[\)\]]/g, "") 
-        .replace(/official video/gi, "")
-        .replace(/music video/gi, "")
-        .replace(/remastered/gi, "")
-        .replace(/hq/gi, "")
-        .replace(/hd/gi, "")
-        .replace(/ft\..*/gi, "") 
-        .replace(/feat\..*/gi, "")
-        .trim();
-        
-    const searchWords = cleanTitle.split(/\s+/).slice(0, 8).join(" ");
+    /* Adjust Content for Sheet */
+    .sidebar-content { padding-bottom: var(--bottom-nav-height); }
+    .list-content { padding: 10px; }
+    .action-row { padding: 10px 15px; }
+    
+    /* Mobile Chat specific */
+    .chat-layout { padding-bottom: 0; height: 100%; }
+    .chat-input-area { padding-bottom: 15px; background: #1a1a2e; }
 
-    lyricsTitle.textContent = "Lyrics: " + searchWords + "...";
-    lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
-
-    try {
-        const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchWords)}`;
-        const res = await fetch(searchUrl);
-        const data = await res.json();
-        
-        if (Array.isArray(data) && data.length > 0) {
-            const song = data[0];
-            const lyrics = song.plainLyrics || song.syncedLyrics || "Instrumental";
-            lyricsContentArea.innerHTML = `<div class="lyrics-text-block">${lyrics}</div>`;
-        } else {
-            throw new Error("No lyrics found in API");
-        }
-    } catch (e) {
-        lyricsContentArea.innerHTML = `
-            <p>Lyrics could not be loaded automatically.</p>
-            <a href="https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
-               <i class="fa-brands fa-google"></i> Search on Google
-            </a>
-        `;
+    /* --- MOBILE BOTTOM NAVIGATION --- */
+    .mobile-bottom-nav {
+        display: flex; height: var(--bottom-nav-height); 
+        background: #0a050f; /* Dark opaque bg */
+        border-top: 1px solid rgba(255,255,255,0.1);
+        position: fixed; bottom: 0; left: 0; width: 100%; z-index: 1600;
+        justify-content: space-around; align-items: center;
+    }
+    .mobile-nav-item {
+        background: none; border: none; color: #666; 
+        display: flex; flex-direction: column; align-items: center; gap: 3px;
+        font-family: 'Inter'; font-size: 0.65rem; font-weight: 600; position: relative;
+        width: 33%; padding: 8px 0;
+    }
+    .mobile-nav-item i { font-size: 1.2rem; margin-bottom: 2px; transition: 0.2s; }
+    .mobile-nav-item.active { color: var(--primary); }
+    .mobile-nav-item.active i { transform: translateY(-2px); text-shadow: 0 4px 10px rgba(245,0,87,0.5); }
+    
+    .mobile-badge {
+        position: absolute; top: 4px; right: 28%; 
+        background: var(--primary); color: white; font-size: 0.6rem; 
+        padding: 1px 5px; border-radius: 8px; border: 2px solid #0a050f;
     }
 }
-
-document.getElementById('searchInput').addEventListener('input', (e) => {
-    switchTab('results'); 
-});
-document.getElementById('searchInput').addEventListener('focus', (e) => {
-    switchTab('results');
-});
-
-document.getElementById('startSessionBtn').addEventListener('click', () => {
-    hasUserInteracted = true;
-    document.getElementById('welcomeOverlay').classList.remove('active');
-    
-    if (player && player.playVideo) player.playVideo();
-    
-    if(currentVideoId) {
-        const currentSong = currentQueue.find(s => s.videoId === currentVideoId);
-        if(currentSong) {
-             updateMediaSessionMetadata(currentSong.title, currentSong.uploader, currentSong.thumbnail);
-        }
-    }
-});
-
-async function handleSearch() {
-    const input = document.getElementById('searchInput');
-    const query = input.value.trim();
-    if (!query) return;
-
-    if (query.includes('list=')) {
-        const listId = query.split('list=')[1].split('&')[0];
-        showToast("System", "Fetching Playlist..."); 
-        fetchPlaylist(listId);
-        input.value = ''; return;
-    }
-    if (query.includes('spotify.com')) {
-        showToast("System", "Fetching Spotify Data..."); 
-        fetchSpotifyData(query);
-        input.value = ''; return;
-    }
-
-    switchTab('results');
-    document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
-    
-    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
-    
-    try {
-        const res = await fetch(searchUrl);
-        const data = await res.json();
-        const list = document.getElementById('results-list');
-        list.innerHTML = '';
-        
-        if (!data.items || data.items.length === 0) {
-            list.innerHTML = '<div class="empty-state"><p>No results found.</p></div>';
-            return;
-        }
-
-        const videoIds = data.items.map(item => item.id.videoId).join(',');
-        const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
-        const detailsRes = await fetch(detailsUrl);
-        const detailsData = await detailsRes.json();
-        
-        const durationMap = {};
-        detailsData.items.forEach(v => {
-            durationMap[v.id] = parseDuration(v.contentDetails.duration);
-        });
-
-        data.items.forEach(item => {
-            const vid = item.id.videoId;
-            const duration = durationMap[vid] || "";
-            const div = document.createElement('div');
-            div.className = 'song-item';
-            div.innerHTML = `
-                <div class="thumb-container">
-                    <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
-                    <div class="song-duration-badge">${duration}</div>
-                </div>
-                <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
-                <button class="emoji-trigger" style="color:#fff; font-size:1.1rem; position:static; width:auto; height:auto; border:none; background:transparent;"><i class="fa-solid fa-plus"></i></button>
-            `;
-            div.onclick = () => addToQueue(vid, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
-            list.appendChild(div);
-        });
-    } catch(e) { console.error(e); }
-    input.value = '';
-}
-
-function parseDuration(pt) {
-    let match = pt.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
-    if (!match) return "";
-    let h = match[1] ? parseInt(match[1]) : 0;
-    let m = match[2] ? parseInt(match[2]) : 0;
-    let s = match[3] ? parseInt(match[3]) : 0;
-    
-    if (h > 0) {
-        return `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
-    }
-    return `${m}:${s.toString().padStart(2,'0')}`;
-}
-
-async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
-    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${YOUTUBE_API_KEY}&pageToken=${pageToken}`;
-    try {
-        const res = await fetch(url);
-        const data = await res.json();
-        const songs = data.items.filter(i=>i.snippet.resourceId.kind==='youtube#video').map(i => ({
-            videoId: i.snippet.resourceId.videoId,
-            title: i.snippet.title, uploader: i.snippet.channelTitle, thumbnail: i.snippet.thumbnails.default.url
-        }));
-        allSongs = [...allSongs, ...songs];
-        if (data.nextPageToken) fetchPlaylist(playlistId, data.nextPageToken, allSongs);
-        else addBatchToQueue(allSongs);
-    } catch(e) { console.error(e); }
-}
-
-async function fetchSpotifyData(link) {
-    const proxy = `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`;
-    try {
-        const res = await fetch(proxy);
-        const data = await res.json();
-        if(data.tracks) {
-            const songs = [];
-            for (const t of data.tracks.slice(0, 10)) { 
-                const sRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(t.artist + ' ' + t.title)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`);
-                const sData = await sRes.json();
-                if(sData.items.length) {
-                    const i = sData.items[0];
-                    songs.push({ videoId: i.id.videoId, title: i.snippet.title, uploader: i.snippet.channelTitle, thumbnail: i.snippet.thumbnails.default.url });
-                }
-            }
-            addBatchToQueue(songs);
-        }
-    } catch(e) { console.error(e); }
-}
-
-function displayChatMessage(user, text, timestamp) {
-    const box = document.getElementById('chat-messages');
-    const isMe = user === myName;
-    const div = document.createElement('div');
-    div.className = `message ${isMe ? 'me' : 'partner'}`;
-    const time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    div.innerHTML = `<div class="msg-header">${user} <span style="font-size:0.85em;">${time}</span></div>${text}`;
-    box.appendChild(div);
-    box.scrollTop = box.scrollHeight;
-}
-
-function showToast(user, text) {
-    const container = document.getElementById('toast-container');
-    
-    // LIMIT TOASTS TO 3
-    if (container.children.length >= 3) {
-        container.removeChild(container.firstChild);
-    }
-
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.innerHTML = `
-        <i class="fa-solid fa-comment-dots" style="color:#ff4081; font-size:1.4rem;"></i>
-        <div class="toast-body">
-            <h4>${user}</h4>
-            <p>${text.substring(0, 40)}${text.length>40?'...':''}</p>
-        </div>
-    `;
-    toast.onclick = () => { switchTab('chat'); toast.remove(); };
-    container.appendChild(toast);
-    
-    setTimeout(() => { 
-        toast.style.opacity='0'; 
-        toast.style.transform='translateX(50px)';
-        setTimeout(()=> {
-            if(toast.parentElement) toast.remove();
-        }, 400); 
-    }, 4000);
-}
-
-document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
-document.getElementById('prev-btn').addEventListener('click', initiatePrevSong);
-document.getElementById('next-btn').addEventListener('click', initiateNextSong);
-
-document.getElementById('search-btn').addEventListener('click', handleSearch);
-document.getElementById('searchInput').addEventListener('keypress', (e) => { if(e.key==='Enter') handleSearch(); });
-
-document.getElementById('chatSendBtn').addEventListener('click', () => {
-    const val = document.getElementById('chatInput').value.trim();
-    if(val) { chatRef.push({ user: myName, text: val, timestamp: Date.now() }); document.getElementById('chatInput').value=''; }
-});
-document.getElementById('chatInput').addEventListener('keypress', (e) => {
-    if(e.key === 'Enter') document.getElementById('chatSendBtn').click();
-});
-
-document.getElementById('nativeEmojiBtn').addEventListener('click', () => {
-    document.getElementById('chatInput').focus();
-});
-
-document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
-document.getElementById('forceSyncBtn').addEventListener('click', () => {
-    document.getElementById('syncOverlay').classList.remove('active');
-    player.playVideo(); broadcastState('play', player.getCurrentTime(), currentVideoId);
-});
-document.getElementById('infoBtn').addEventListener('click', () => document.getElementById('infoOverlay').classList.add('active'));
-document.getElementById('closeInfoBtn').addEventListener('click', () => document.getElementById('infoOverlay').classList.remove('active'));
