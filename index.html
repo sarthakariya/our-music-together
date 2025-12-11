@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sarthak's ❤️ Reechita's Heart's Rhythm</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800;900&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800;900&family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -24,7 +24,7 @@
         
         <div class="top-bar glass-panel">
             <div class="logo">
-                <h1>Sarthak & Reechita</h1>
+                <h1>Sarthak's ❤️ Reechita's Heart's Rhythm</h1>
             </div>
             <button class="info-btn" id="infoBtn"><i class="fa-solid fa-circle-info"></i></button>
         </div>
@@ -43,13 +43,13 @@
                 </div>
 
                 <div class="song-info-container">
-                    <!-- Title Row -->
-                    <div class="title-section">
-                        <div class="song-title" id="current-song-title">Heart's Rhythm</div>
-                    </div>
-
-                    <!-- Layout: Controls & EQ -->
+                    <!-- Layout: Flex Row -->
                     <div class="track-row">
+                        <!-- Prominent Title -->
+                        <div class="song-title truncate-text" id="current-song-title">Heart's Rhythm</div>
+                    </div>
+                    
+                    <div class="track-status-row">
                         <!-- Enhanced 5-bar Equalizer -->
                         <div class="equalizer" id="equalizer">
                             <div class="bar"></div>
@@ -68,7 +68,7 @@
                 </div>
 
                 <div class="controls">
-                    <!-- Changed Icon to Scroll -->
+                    <!-- Icon changed to scroll (script) as requested -->
                     <button class="ctrl-btn small btn-3d" id="lyrics-btn" title="Lyrics"><i class="fa-solid fa-scroll"></i></button>
                     <button class="ctrl-btn small btn-3d" id="prev-btn"><i class="fa-solid fa-backward-step"></i></button>
                     <button class="ctrl-btn play btn-3d" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
@@ -124,16 +124,14 @@
                         </div>
                     </div>
 
-                    <!-- View: Chat (Active Vibes REMOVED) -->
+                    <!-- View: Chat (Active Vibes Removed) -->
                     <div id="view-chat" class="tab-content chat-layout">
                         <div class="chat-messages" id="chat-messages">
-                            <div style="text-align:center; color:rgba(255,255,255,0.3); font-size:0.8rem; padding-top:20px;">
-                                - New Beginnings -
-                            </div>
+                            <div style="text-align:center; opacity:0.5; margin-top:20px; font-size:0.8rem;">Chat history refreshed.</div>
                         </div>
                         <div class="chat-input-area">
                             <button class="emoji-trigger" id="nativeEmojiBtn"><i class="fa-regular fa-face-smile"></i></button>
-                            <input type="text" class="chat-input" id="chatInput" placeholder="Message...">
+                            <input type="text" class="chat-input" id="chatInput" placeholder="Write a message...">
                             <button class="send-btn btn-3d" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
                         </div>
                     </div>
@@ -146,65 +144,71 @@
     <!-- Notification Toast -->
     <div id="toast-container"></div>
 
-    <!-- Lyrics Overlay (IMPROVED) -->
+    <!-- Lyrics Overlay -->
     <div class="overlay" id="lyricsOverlay">
         <div class="modal-card lyrics-card">
-            <button class="modal-close" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
-            <div class="lyrics-header">
-                <i class="fa-solid fa-music" style="color:var(--primary);"></i>
+            <div class="lyrics-header-row">
                 <h2 id="lyrics-title">Lyrics</h2>
+                <button class="modal-close-static" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="lyrics-scroll-area">
-                <div class="lyrics-content" id="lyrics-content-area">
-                    <p>Find the words to this melody.</p>
-                </div>
-                <div style="text-align:center; margin-top:20px;">
-                    <a id="google-lyrics-btn" href="#" target="_blank" class="google-lyrics-btn">
-                        <i class="fa-brands fa-google"></i> Verify on Google
-                    </a>
-                </div>
+            <div class="lyrics-content" id="lyrics-content-area">
+                <p>Find the words to this melody.</p>
+                <a id="google-lyrics-btn" href="#" target="_blank" class="google-lyrics-btn">
+                    <i class="fa-brands fa-google"></i> Search Lyrics on Google
+                </a>
             </div>
         </div>
     </div>
 
-    <!-- Info Overlay (UPDATED CONTENT) -->
+    <!-- Info Overlay (Expanded) -->
     <div class="overlay" id="infoOverlay">
         <div class="modal-card">
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
-            <h2>Our Infinite Playlist</h2>
+            <h2>My Universe for You</h2>
             <div class="guide-content">
-                <p class="guide-intro">
-                    "Music is the space between the words we speak and the feelings we hide. This is our space."
-                </p>
+                <p class="guide-intro">I built this universe so we never have to listen alone. Every beat, every pixel, every line of code is a testament to us.</p>
                 
                 <div class="guide-item">
-                    <i class="fa-solid fa-heart-pulse"></i>
+                    <i class="fa-solid fa-infinity"></i>
                     <div>
-                        <strong>The Heartbeat Protocol</strong>
-                        <p>When you pause, I pause. When you play, I play. Distance means nothing when the rhythm is shared.</p>
+                        <strong>Always Synced</strong>
+                        <p>No matter the distance, our rhythm stays perfectly synchronized. When I press play, your world moves with mine.</p>
                     </div>
                 </div>
                 
                 <div class="guide-item">
-                    <i class="fa-solid fa-stars"></i>
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
                     <div>
-                        <strong>Our Constellation</strong>
-                        <p>Every song you queue is a star in our sky. I saved the chat, but I cleared the screen so we can write new stories today.</p>
+                        <strong>Your Songs</strong>
+                        <p>Fill this queue with the melodies that remind you of us. Build our infinite playlist.</p>
                     </div>
                 </div>
 
                 <div class="guide-item">
-                    <i class="fa-solid fa-code"></i>
+                    <i class="fa-solid fa-scroll"></i>
                     <div>
-                        <strong>Coded for Her</strong>
-                        <p>No templates, no pre-made apps. Just raw code written with you in mind. It's not perfect, but it's ours.</p>
+                        <strong>Sing Along</strong>
+                        <p>Use the script button to pull up lyrics instantly so we can sing together.</p>
                     </div>
                 </div>
 
-                <div class="guide-footer">
-                    Built with <i class="fa-solid fa-heart" style="color:var(--primary);"></i> by Sarthak<br>
-                    Exclusively for Reechita
+                <div class="guide-item">
+                    <i class="fa-brands fa-spotify"></i>
+                    <div>
+                        <strong>Spotify & YouTube</strong>
+                        <p>Paste a YouTube link or a Spotify track link in the search bar to add it directly.</p>
+                    </div>
                 </div>
+
+                <div class="guide-item">
+                    <i class="fa-solid fa-heart"></i>
+                    <div>
+                        <strong>Just for Her</strong>
+                        <p>Every animation was polished with you in mind. You are the music in my life.</p>
+                    </div>
+                </div>
+
+                <div class="guide-footer">Forever Yours, Sarthak</div>
             </div>
         </div>
     </div>
