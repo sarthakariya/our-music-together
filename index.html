@@ -198,22 +198,19 @@
         </div>
     </div>
 
-    <!-- WELCOME OVERLAY (Redesigned with Input) -->
+    <!-- WELCOME OVERLAY (Redesigned with Premium Input) -->
     <div class="overlay active" id="welcomeOverlay" style="z-index: 5000; background: #05000a;">
         <div class="welcome-content">
             <div class="pulse-ring"></div>
             <div class="pulse-ring delay"></div>
             <i class="fa-solid fa-heart welcome-icon"></i>
             <h1 class="welcome-title">Heart's Rhythm</h1>
-            <p class="welcome-subtitle">Identify yourself to enter the universe</p>
+            <p class="welcome-subtitle">Enter your name to join the universe</p>
             
-            <div class="input-wrapper-glow">
-                <input type="text" id="welcomeNameInput" class="welcome-input" placeholder="Enter your name..." autocomplete="off">
+            <div class="premium-input-container">
+                <input type="text" id="welcomeNameInput" class="premium-input" placeholder="Your Name" autocomplete="off">
+                <button class="premium-enter-btn" id="startSessionBtn"><i class="fa-solid fa-arrow-right"></i></button>
             </div>
-
-            <button class="enter-btn btn-3d" id="startSessionBtn">
-                <i class="fa-solid fa-play"></i> Enter Universe
-            </button>
         </div>
     </div>
 
