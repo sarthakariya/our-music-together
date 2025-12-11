@@ -156,10 +156,19 @@ function onPlayerStateChange(event) {
         return;
     }
 
-    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.PAUSED) {
+    if (state === YT.PlayerState.PLAYING) {
+        // Fade in volume on play start
+        if(player && player.getVolume() < 85) fadeVolume(85, 1000);
+        
         if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
-             broadcastState(state === YT.PlayerState.PLAYING ? 'play' : 'pause', player.getCurrentTime(), currentVideoId);
+             broadcastState('play', player.getCurrentTime(), currentVideoId);
+        }
+    }
+    else if (state === YT.PlayerState.PAUSED) {
+        if (Date.now() - lastLocalInteractionTime > 500) {
+             lastBroadcaster = myName; 
+             broadcastState('pause', player.getCurrentTime(), currentVideoId);
         }
     }
     else if (state === YT.PlayerState.ENDED) initiateNextSong();
@@ -191,6 +200,31 @@ function togglePlayPause() {
     }
 }
 
+// Volume Fading Helper
+function fadeVolume(targetVol, duration) {
+    return new Promise(resolve => {
+        if(!player || !player.getVolume) { resolve(); return; }
+        const startVol = player.getVolume();
+        const diff = targetVol - startVol;
+        if(diff === 0) { resolve(); return; }
+        
+        const steps = 10;
+        const stepTime = duration / steps;
+        const volStep = diff / steps;
+        
+        let currentStep = 0;
+        const fadeInterval = setInterval(() => {
+            currentStep++;
+            const newVol = startVol + (volStep * currentStep);
+            player.setVolume(newVol);
+            if(currentStep >= steps) {
+                clearInterval(fadeInterval);
+                resolve();
+            }
+        }, stepTime);
+    });
+}
+
 function initiateNextSong() {
     if (isSwitchingSong) return;
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
@@ -210,19 +244,22 @@ function initiateSongLoad(songObj) {
     isSwitchingSong = true;
     lastBroadcaster = myName;
 
-    if (player && player.pauseVideo) player.pauseVideo();
-    
-    showToast("System", "Switching track in 2.1s...");
-    document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    // Fade Out before switching
+    fadeVolume(0, 1000).then(() => {
+        if (player && player.pauseVideo) player.pauseVideo();
+        
+        showToast("System", "Switching track in 1s...");
+        document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
-    syncRef.set({ 
-        action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
+        syncRef.set({ 
+            action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
+        });
+
+        setTimeout(() => {
+            loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
+            isSwitchingSong = false;
+        }, 1200);
     });
-
-    setTimeout(() => {
-        loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
-        isSwitchingSong = false;
-    }, 2100);
 }
 
 function loadInitialData() {
@@ -278,6 +315,7 @@ function applyRemoteCommand(state) {
     document.getElementById('syncOverlay').classList.remove('active');
 
     if (state.action === 'switching_pause') {
+        fadeVolume(0, 500); // Quick fade for remote switch
         player.pauseVideo();
         showToast("System", "Partner is changing track...");
         document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
@@ -369,9 +407,13 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         if(currentVideoId !== videoId || !player.cueVideoById) {
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
+            player.setVolume(0); // Start at 0 for fade in
         } else {
              if(Math.abs(player.getCurrentTime() - startTime) > 2) player.seekTo(startTime, true);
-             if(shouldPlay) player.playVideo();
+             if(shouldPlay) {
+                 player.playVideo();
+                 fadeVolume(85, 1000);
+             }
         }
         
         if(!shouldPlay) {
@@ -380,7 +422,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         currentVideoId = videoId;
         document.getElementById('current-song-title').textContent = title;
-        document.getElementById('current-song-artist').textContent = uploader || "Unknown Artist";
+        // Artist name removed per request
         renderQueue(currentQueue, currentVideoId);
         
         if (shouldBroadcast) {
@@ -409,7 +451,7 @@ function addToQueue(videoId, title, uploader, thumbnail) {
 
 function addBatchToQueue(songs) {
     if (!songs.length) return;
-    showToast("System", `Adding ${songs.length} songs to queue...`); // Visual Feedback
+    showToast("System", `Adding ${songs.length} songs to queue...`); 
     const updates = {};
     songs.forEach((s, i) => {
         const newKey = queueRef.push().key;
@@ -457,10 +499,8 @@ function renderQueue(queueArray, currentVideoId) {
         const displayText = isMe ? 'Added by You' : `Added by ${user}`;
         const number = index + 1;
         
-        // Playing animation replacement logic
         let statusIndicator = '';
         if (song.videoId === currentVideoId) {
-            // Insert Mini Equalizer instead of text
             statusIndicator = `
                 <div class="mini-eq-container">
                     <div class="mini-eq-bar"></div>
@@ -543,12 +583,12 @@ async function handleSearch() {
 
     if (query.includes('list=')) {
         const listId = query.split('list=')[1].split('&')[0];
-        showToast("System", "Fetching Playlist..."); // Visual feedback
+        showToast("System", "Fetching Playlist..."); 
         fetchPlaylist(listId);
         input.value = ''; return;
     }
     if (query.includes('spotify.com')) {
-        showToast("System", "Fetching Spotify Data..."); // Visual feedback
+        showToast("System", "Fetching Spotify Data..."); 
         fetchSpotifyData(query);
         input.value = ''; return;
     }
