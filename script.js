@@ -30,6 +30,20 @@ let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
 
+// --- HAPTIC FEEDBACK HELPER ---
+function triggerHaptic() {
+    if (navigator.vibrate) {
+        navigator.vibrate(5); // Tiny vibration for "click" feel
+    }
+}
+
+// Attach global click listener for haptics on buttons
+document.addEventListener('click', (e) => {
+    if (e.target.closest('button') || e.target.closest('.song-item') || e.target.closest('.nav-tab') || e.target.closest('.mobile-nav-item')) {
+        triggerHaptic();
+    }
+});
+
 let myName = localStorage.getItem('deepSpaceUserName');
 if (!myName || myName === "null") {
     myName = prompt("Enter your name (Sarthak or Reechita):");
@@ -110,6 +124,30 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
     }
 }
 
+// --- BACKGROUND PLAY HACK ---
+// Chrome on mobile automatically pauses video when the tab is hidden or screen locks.
+// This listener attempts to force it back to playing if it was supposed to be playing.
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden && player && player.getPlayerState) {
+        // If we are hidden, and state is PLAYING or BUFFERING, browsers might auto-pause.
+        // We set a timeout to check if it paused, and if so, try to resume.
+        // Note: Without the Media Session API connected (which we have), this is often blocked.
+        setTimeout(() => {
+            const state = player.getPlayerState();
+            if (state === YT.PlayerState.PAUSED && currentVideoId && !isSwitchingSong) {
+                // If the user didn't explicitly pause (we assume), try to resume
+                // This is heuristic-based. Ideally we'd track "userIntendedState".
+                // Since this app is "always sync", we assume if it shouldn't be paused, we play.
+                
+                // Only force play if our remote sync state says we should be playing
+                if (currentRemoteState && (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart')) {
+                     player.playVideo();
+                }
+            }
+        }, 500);
+    }
+});
+
 // --- CORE SYNC LOGIC ---
 
 function heartbeatSync() {
@@ -159,10 +197,11 @@ function monitorSyncHealth() {
             if (detectAd()) return; 
             player.playVideo(); needsFix = true;
         }
-        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3) {
+        // INCREASED THRESHOLD TO 3 SECONDS
+        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3.0) {
             if (!detectAd()) { player.seekTo(currentRemoteState.time, true); needsFix = true; }
         }
-        if (needsFix) suppressBroadcast(1000); 
+        if (needsFix) suppressBroadcast(3000); 
     }
     else if (currentRemoteState.action === 'pause') {
          if (myState === YT.PlayerState.PLAYING) {
@@ -366,7 +405,7 @@ function applyRemoteCommand(state) {
             player.playVideo();
         }
         else if (state.action === 'play') {
-            if (Math.abs(player.getCurrentTime() - state.time) > 2) player.seekTo(state.time, true);
+            if (Math.abs(player.getCurrentTime() - state.time) > 3.0) player.seekTo(state.time, true);
             if (playerState !== YT.PlayerState.PLAYING) {
                 player.setVolume(100);
                 player.playVideo();
@@ -436,13 +475,14 @@ function updateSyncStatus() {
 
 function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadcast = true, shouldPlay = true) {
     if (player && videoId) {
-        if (!shouldBroadcast) suppressBroadcast(1500); 
+        // INCREASED SUPPRESSION TO 3 SECONDS
+        if (!shouldBroadcast) suppressBroadcast(3000); 
 
         if(currentVideoId !== videoId || !player.cueVideoById) {
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
             player.setVolume(100); 
         } else {
-             if(Math.abs(player.getCurrentTime() - startTime) > 2) player.seekTo(startTime, true);
+             if(Math.abs(player.getCurrentTime() - startTime) > 3.0) player.seekTo(startTime, true);
              if(shouldPlay) {
                  player.setVolume(100);
                  player.playVideo();
@@ -470,38 +510,45 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
     }
 }
 
-// --- MODIFIED TAB SWITCHING FOR MOBILE ---
+// --- MODIFIED TAB SWITCHING WITH TOGGLE LOGIC ---
 function switchTab(tabName) {
+    // 1. Mobile Sheet Logic
+    if(window.innerWidth <= 1100) {
+        const sheet = document.getElementById('mobileSheet');
+        const sheetTitle = document.getElementById('mobile-sheet-title');
+        
+        // TOGGLE LOGIC: If we click the SAME tab that is currently active, and the sheet is open, CLOSE IT.
+        if (activeTab === tabName && sheet.classList.contains('active')) {
+             sheet.classList.remove('active');
+             document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
+             return; // Exit function, we just want to close
+        }
+
+        // Otherwise, set titles and open sheet
+        if(tabName === 'queue') sheetTitle.textContent = "Queue";
+        else if(tabName === 'results') sheetTitle.textContent = "Search Music";
+        else if(tabName === 'chat') sheetTitle.textContent = "Chat";
+        
+        sheet.classList.add('active');
+    }
+
     activeTab = tabName;
     
-    // 1. Desktop Tab Handling
+    // 2. Desktop Tab Handling
     document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
     const dBtn = document.getElementById('tab-btn-' + tabName);
     if(dBtn) dBtn.classList.add('active');
 
-    // 2. Mobile Nav Handling
+    // 3. Mobile Nav Handling
     document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
     // Find index for mobile items (approximate)
     const mobileIndex = ['queue', 'results', 'chat'].indexOf(tabName);
     const mobileItems = document.querySelectorAll('.mobile-nav-item');
     if(mobileItems[mobileIndex]) mobileItems[mobileIndex].classList.add('active');
 
-    // 3. Content Visibility
+    // 4. Content Visibility
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     document.getElementById('view-' + tabName).classList.add('active');
-    
-    // 4. Mobile Sheet Logic
-    // If we are on mobile (screen width < 1100), switching tab means opening the sheet
-    if(window.innerWidth <= 1100) {
-        const sheet = document.getElementById('mobileSheet');
-        const title = document.getElementById('mobile-sheet-title');
-        
-        if(tabName === 'queue') title.textContent = "Queue";
-        else if(tabName === 'results') title.textContent = "Search Music";
-        else if(tabName === 'chat') title.textContent = "Chat";
-        
-        sheet.classList.add('active');
-    }
 }
 
 // Mobile Sheet Close Button
