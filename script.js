@@ -516,12 +516,13 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 }
 
 // --- MODIFIED TAB SWITCHING WITH TOGGLE LOGIC ---
-function switchTab(tabName) {
+function switchTab(tabName, forceOpen = false) {
     if(window.innerWidth <= 1100) {
         const sheet = document.getElementById('mobileSheet');
         const sheetTitle = document.getElementById('mobile-sheet-title');
         
-        if (activeTab === tabName && sheet.classList.contains('active')) {
+        // Only toggle off if NOT forced open (i.e. nav button click vs search input)
+        if (!forceOpen && activeTab === tabName && sheet.classList.contains('active')) {
              sheet.classList.remove('active');
              document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
              return; 
@@ -607,6 +608,16 @@ function updateQueueOrder(newOrder) {
     queueRef.update(updates);
 }
 
+// HELPER: Auto scroll to playing song
+function scrollToCurrentSong() {
+    setTimeout(() => {
+        const activeItem = document.querySelector('.song-item.playing');
+        if (activeItem) {
+            activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, 100);
+}
+
 function renderQueue(queueArray, currentVideoId) {
     const list = document.getElementById('queue-list');
     const badge = document.getElementById('queue-badge');
@@ -661,6 +672,7 @@ function renderQueue(queueArray, currentVideoId) {
     });
 
     initDragAndDrop(list);
+    scrollToCurrentSong(); // Auto scroll on render
 }
 
 function initDragAndDrop(list) {
@@ -846,11 +858,12 @@ async function fetchLyrics() {
     }
 }
 
+// FORCE OPEN ON SEARCH
 document.getElementById('searchInput').addEventListener('input', (e) => {
-    switchTab('results'); 
+    switchTab('results', true); 
 });
 document.getElementById('searchInput').addEventListener('focus', (e) => {
-    switchTab('results');
+    switchTab('results', true);
 });
 
 document.getElementById('startSessionBtn').addEventListener('click', () => {
@@ -890,12 +903,7 @@ async function handleSearch() {
     }
     
     // 3. YouTube Music Links (Convert to Search or ID)
-    // If it's a direct music.youtube link to a video, just search the video ID or let generic search handle it
-    // because API search handles video IDs well.
-    // However, if it contains a list, it's caught above.
-    // We just proceed to search if no list param.
-
-    switchTab('results');
+    switchTab('results', true); // Force Open
     document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
     
     const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
@@ -1069,10 +1077,6 @@ document.getElementById('chatSendBtn').addEventListener('click', () => {
 });
 document.getElementById('chatInput').addEventListener('keypress', (e) => {
     if(e.key === 'Enter') document.getElementById('chatSendBtn').click();
-});
-
-document.getElementById('nativeEmojiBtn').addEventListener('click', () => {
-    document.getElementById('chatInput').focus();
 });
 
 document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
