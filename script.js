@@ -679,6 +679,39 @@ document.getElementById('closeLyricsBtn').addEventListener('click', () => {
     document.getElementById('lyricsOverlay').classList.remove('active');
 });
 
+// --- SMART TITLE CLEANER (AI-MIMIC) ---
+function smartCleanTitle(title) {
+    // 1. Aggressive Strip: Remove anything inside brackets/parentheses FIRST
+    // This removes (Official Video), [4K], etc. immediately.
+    let processed = title.replace(/\s*[\(\[].*?[\)\]]/g, '');
+
+    // 2. Remove "ft." or "feat." sections often outside brackets
+    // Example: "Song Name ft. Artist" -> "Song Name"
+    processed = processed.replace(/\s(ft\.|feat\.|featuring)\s.*/gi, '');
+
+    // 3. Remove known artifact keywords (case insensitive, whole word boundary)
+    const artifacts = [
+        "official video", "official audio", "official music video", 
+        "official lyric video", "music video", "lyric video", "visualizer",
+        "official", "video", "audio", "lyrics", "lyric",
+        "hq", "hd", "4k", "remastered", "live", "performance", "mv",
+        "with", "prod\\.", "dir\\."
+    ];
+    // Create big regex OR pattern
+    const artifactRegex = new RegExp(`\\b(${artifacts.join('|')})\\b`, 'gi');
+    processed = processed.replace(artifactRegex, '');
+
+    // 4. Remove separators like | or - if they are dangling or excessive
+    // If "Artist - Title", keep them but remove the dash to make it a search string "Artist Title"
+    processed = processed.replace(/\|/g, ' '); 
+    processed = processed.replace(/-/g, ' '); 
+
+    // 5. Collapse multiple spaces and trim
+    processed = processed.replace(/\s+/g, ' ').trim();
+
+    return processed;
+}
+
 async function fetchLyrics() {
     const titleEl = document.getElementById('current-song-title');
     const lyricsContentArea = document.getElementById('lyrics-content-area');
@@ -689,32 +722,13 @@ async function fetchLyrics() {
         rawTitle = titleEl.textContent;
     }
     
-    // --- IMPROVED TITLE CLEANING ---
-    // 1. Remove parenthetical/bracketed content often containing junk
-    let cleanTitle = rawTitle.replace(/[\(\[].*?[\)\]]/g, " ");
+    // --- APPLY SMART CLEANING ---
+    const cleanTitle = smartCleanTitle(rawTitle);
     
-    // 2. Remove specific junk words
-    const junkWords = [
-        "official video", "official audio", "official music video", 
-        "video", "audio", "lyrics", "lyric video", 
-        "remastered", "hq", "hd", "4k", 
-        "ft\\.", "feat\\.", "featuring", 
-        "live", "performance", "visualizer"
-    ];
-    
-    junkWords.forEach(word => {
-        const regex = new RegExp(word, "gi");
-        cleanTitle = cleanTitle.replace(regex, " ");
-    });
-    
-    // 3. Clean up special chars and extra spaces
-    cleanTitle = cleanTitle.replace(/[\|\•\-\_\:\/]/g, " "); // Replace separators with space
-    cleanTitle = cleanTitle.replace(/\s+/g, " ").trim();
-    
-    // 4. Use first 8 words to query
+    // Use first 8 words to query to avoid query overflow, but usually cleanTitle is short now
     const searchWords = cleanTitle.split(/\s+/).slice(0, 8).join(" ");
 
-    lyricsTitle.textContent = "Lyrics: " + searchWords + "...";
+    lyricsTitle.textContent = "Searching: " + cleanTitle;
     lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
 
     try {
@@ -736,7 +750,8 @@ async function fetchLyrics() {
     } catch (e) {
         lyricsContentArea.innerHTML = `
             <p>Lyrics could not be loaded automatically.</p>
-            <a href="https://www.google.com/search?q=${encodeURIComponent(rawTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
+            <p style="font-size:0.9rem; color:#aaa;">Searched for: "${cleanTitle}"</p>
+            <a href="https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
                <i class="fa-brands fa-google"></i> Search on Google
             </a>
         `;
