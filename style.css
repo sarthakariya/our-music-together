@@ -21,7 +21,7 @@
     --curve-m: 24px;                
     --shadow-3d: 0 25px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255,255,255,0.15);
     
-    --bottom-nav-height: 80px; /* Increased to account for floating pill */
+    --bottom-nav-height: 60px;
 }
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@500;600;700;800;900&family=Roboto:wght@500;700;900&display=swap');
@@ -296,11 +296,9 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 }
 
 .pinned-search { padding: 20px 25px 10px; flex-shrink: 0; z-index: 20; }
-/* UPDATED: Extremely Curvy Search Bar */
 .search-box-elegant {
     display: flex; align-items: center; background: rgba(255,255,255,0.07); 
-    border: 1px solid rgba(255,255,255,0.15); 
-    border-radius: 50px; /* Full pill shape */
+    border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; 
     padding: 8px 8px 8px 20px; backdrop-filter: blur(10px);
     transition: background 0.2s, border-color 0.2s;
 }
@@ -313,8 +311,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 #searchInput { flex: 1; background: transparent; border: none; color: white; font-size: 1rem; height: 40px; }
 .search-submit {
     background: var(--primary); color: white; border: none; width: 40px; height: 40px; 
-    border-radius: 50%; /* Match curvy theme */
-    cursor: pointer; display: grid; place-items: center;
+    border-radius: 12px; cursor: pointer; display: grid; place-items: center;
 }
 .search-submit:hover { background: var(--primary-bright); transform: scale(1.05); }
 
@@ -335,7 +332,6 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .list-content { 
     flex: 1; overflow-y: auto; padding: 15px 20px; 
     -webkit-overflow-scrolling: touch; /* Momentum scrolling on iOS */
-    contain: content; /* Performance Optimization */
 }
 .action-row { padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
 .view-title { font-family: 'Montserrat'; font-weight: 800; font-size: 1.1rem; color: #fff; }
@@ -346,11 +342,8 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     display: flex; align-items: center; gap: 15px; padding: 14px; 
     background: rgba(255,255,255,0.05); border-radius: 18px; margin-bottom: 12px; 
     cursor: pointer; border: 1px solid rgba(255,255,255,0.05);
-    /* SMOOTHNESS HACK: GPU Acceleration */
-    transform: translateZ(0); 
-    will-change: transform;
 }
-.song-item:hover { background: rgba(255,255,255,0.15); transform: translateY(-2px) translateZ(0); border-color: rgba(255,255,255,0.2); }
+.song-item:hover { background: rgba(255,255,255,0.15); transform: translateY(-2px); border-color: rgba(255,255,255,0.2); }
 .song-item.playing { background: linear-gradient(90deg, rgba(245, 0, 87, 0.2), rgba(245, 0, 87, 0.05)); border-color: var(--primary); }
 .song-thumb { width: 55px; height: 55px; border-radius: 12px; object-fit: cover; background: #000; }
 .song-details h4 { font-family: 'Inter'; font-size: 1.1rem; font-weight: 600; color: #fff; line-height: 1.3; }
@@ -508,17 +501,19 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     /* Very smooth and fluid transition */
     transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), 
                 opacity 0.6s ease, 
+                filter 0.6s ease,
                 color 0.6s ease;
     margin: 0;
     cursor: default;
     font-size: 1.5rem;
     transform: scale(0.95);
-    filter: none; /* REMOVED BLURRY EFFECT */
+    filter: blur(2px); /* Inactive lines are slightly blurred */
     color: rgba(255,255,255,0.6);
 }
 .lyrics-line.active {
     opacity: 1;
     transform: scale(1.15); /* Slightly larger scale for emphasis */
+    filter: blur(0);
     color: #ffffff; /* White instead of pink */
     font-weight: 800;
     text-shadow: 0 0 40px rgba(255, 255, 255, 0.4); /* Soft white glow */
@@ -556,7 +551,6 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     .top-bar { 
         display: flex !important; padding: 10px 15px; justify-content: center;
         background: transparent; box-shadow: none; border: none; backdrop-filter: none;
-        margin-bottom: 25px; /* Added EXTRA gap below heading */
     }
     .logo h1 { font-size: 1rem; text-shadow: 0 0 10px rgba(245, 0, 87, 0.4); }
     .info-btn { display: none; } 
@@ -648,86 +642,39 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     }
     .mobile-close-btn:active { background: rgba(255,255,255,0.2); }
     
-    /* Adjust Content for Sheet - COMPACT */
+    /* Adjust Content for Sheet */
     .sidebar-content { padding-bottom: var(--bottom-nav-height); }
     .list-content { padding: 10px; }
     .action-row { padding: 10px 15px; }
     
-    /* COMPACT LIST ITEMS ON MOBILE */
-    .song-item { 
-        padding: 10px; 
-        gap: 10px; 
-        margin-bottom: 8px;
-        animation: fadeIn 0.3s ease forwards;
-        transform: translateZ(0); /* Force GPU */
-    }
-    .song-thumb { width: 45px; height: 45px; border-radius: 8px; }
-    .song-details h4 { font-size: 0.9rem; margin-bottom: 2px; } /* Smaller text */
-    .song-details p { font-size: 0.75rem; }
-    .song-index { font-size: 0.8rem; margin-right: 5px; }
-    
-    /* Mobile Chat specific - COMPACT */
+    /* Mobile Chat specific */
     .chat-layout { padding-bottom: 0; height: 100%; }
-    .chat-messages { padding: 15px; gap: 10px; }
-    .message { 
-        font-size: 0.9rem; /* Smaller message text */
-        padding: 10px 15px; 
-        max-width: 90%; 
-    }
-    .msg-header { font-size: 0.75rem; margin-bottom: 2px; }
+    .chat-input-area { padding-bottom: 15px; background: #1a1a2e; }
 
-    /* Compact Chat Input */
-    .chat-input-area { 
-        padding: 10px 15px 15px; 
-        background: #1a1a2e; 
-        gap: 8px;
-    }
-    .chat-input {
-        padding: 10px 15px;
-        height: 40px; /* Smaller input */
-        font-size: 0.9rem;
-    }
-    .send-btn {
-        width: 40px; height: 40px; /* Smaller button, not cropped */
-        font-size: 1rem;
-    }
-
-    /* --- FLOATING PILL MOBILE NAV --- */
+    /* --- MOBILE BOTTOM NAV --- */
     .mobile-bottom-nav {
-        display: flex;
-        position: fixed;
-        bottom: 20px; /* Float up */
-        left: 50%;
-        transform: translateX(-50%);
-        width: 85%; /* Not full width */
-        max-width: 400px;
-        height: 65px; /* Slightly taller for pill shape aesthetics */
-        border-radius: 40px; /* Pill shape */
-        background: rgba(22, 12, 35, 0.85); /* Glassy dark */
-        backdrop-filter: blur(15px);
-        border: 1px solid rgba(255,255,255,0.15);
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        z-index: 1600;
-        justify-content: space-evenly;
-        align-items: center;
-        padding: 0 10px;
+        display: flex; height: var(--bottom-nav-height); 
+        background: #0a050f; /* Dark opaque bg */
+        border-top: 1px solid rgba(255,255,255,0.1);
+        position: fixed; bottom: 0; left: 0; width: 100%; z-index: 1600;
+        justify-content: space-around; align-items: center;
+        box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
     }
     .mobile-nav-item {
-        background: none; border: none; color: rgba(255,255,255,0.5); 
-        display: flex; flex-direction: column; align-items: center; gap: 4px;
-        font-family: 'Inter'; font-size: 0.7rem; font-weight: 600; position: relative;
-        padding: 5px 10px;
+        background: none; border: none; color: #666; 
+        display: flex; flex-direction: column; align-items: center; gap: 3px;
+        font-family: 'Inter'; font-size: 0.65rem; font-weight: 600; position: relative;
+        width: 33%; padding: 8px 0;
         transition: color 0.2s, transform 0.2s;
-        flex: 1;
     }
-    .mobile-nav-item i { font-size: 1.3rem; margin-bottom: 0; transition: 0.2s; }
-    .mobile-nav-item.active { color: var(--primary-bright); transform: translateY(-2px); }
-    .mobile-nav-item.active i { text-shadow: 0 0 15px rgba(245,0,87,0.6); }
+    .mobile-nav-item i { font-size: 1.2rem; margin-bottom: 2px; transition: 0.2s; }
+    .mobile-nav-item.active { color: var(--primary); transform: translateY(-2px); }
+    .mobile-nav-item.active i { text-shadow: 0 4px 10px rgba(245,0,87,0.5); }
     
     .mobile-badge {
-        position: absolute; top: 0; right: 25%; 
+        position: absolute; top: 4px; right: 28%; 
         background: var(--primary); color: white; font-size: 0.6rem; 
-        padding: 2px 5px; border-radius: 8px; border: 2px solid #0a050f;
+        padding: 1px 5px; border-radius: 8px; border: 2px solid #0a050f;
         box-shadow: 0 2px 5px rgba(0,0,0,0.3);
     }
 }
