@@ -249,6 +249,8 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .controls { 
     display: flex; justify-content: center; align-items: center; 
     gap: 30px; margin-top: auto; padding-top: 15px; 
+    z-index: 100; /* Ensure clickable */
+    position: relative;
 }
 .btn-3d { border: none; position: relative; }
 /* Override generic active with specific 3D active */
@@ -361,12 +363,20 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .song-item .emoji-trigger { margin-left: auto; flex-shrink: 0; }
 
 /* Chat Styles */
-.chat-layout { display: flex; flex-direction: column; }
+.chat-layout { display: flex; flex-direction: column; position: relative; }
 .chat-messages { flex: 1; overflow-y: auto; padding: 25px; display: flex; flex-direction: column; gap: 15px; -webkit-overflow-scrolling: touch; }
 .message { max-width: 85%; padding: 14px 20px; border-radius: 20px; font-size: 1rem; color: white; animation: slideUpFade 0.3s; }
 .message.me { align-self: flex-end; background: linear-gradient(135deg, #f50057, #c51162); border-bottom-right-radius: 4px; }
 .message.partner { align-self: flex-start; background: rgba(255,255,255,0.1); border-bottom-left-radius: 4px; }
-.chat-input-area { padding: 15px 25px; background: rgba(0,0,0,0.2); display: flex; gap: 12px; align-items: center; border-top: 1px solid rgba(255,255,255,0.1); }
+
+/* Updated Chat Input Area: Transparent & Floating */
+.chat-input-area { 
+    padding: 15px 25px; 
+    background: rgba(0,0,0,0.4); 
+    display: flex; gap: 12px; align-items: center; 
+    border-top: 1px solid rgba(255,255,255,0.1); 
+    backdrop-filter: blur(10px);
+}
 .chat-input { 
     flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); 
     padding: 14px 20px; border-radius: 25px; color: white; font-size: 16px; 
@@ -536,6 +546,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
         gap: 15px; 
         border-radius: 0; background: transparent; box-shadow: none; border: none;
         min-width: 0; width: 100%;
+        position: relative; z-index: 10;
     }
     
     .anim-delay-1 { animation: slideUpSmooth 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; opacity: 0; transform: translateY(20px); }
@@ -590,9 +601,9 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
         padding: 0; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
     }
     
-    /* PADDING for Floating Pill */
-    .sidebar-content { padding-bottom: calc(var(--pill-height) + var(--pill-float) + 20px); }
-    .list-content { padding: 10px; }
+    /* PADDING for Content to Scroll Past Floating Pill */
+    .sidebar-content { padding-bottom: 0; }
+    .list-content { padding: 10px 10px calc(var(--pill-height) + var(--pill-float) + 20px); }
     .action-row { padding: 10px 15px; }
     
     /* SMALLER TEXT ON MOBILE */
@@ -602,16 +613,28 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     .song-details p { font-size: 0.7rem; }
     .song-index { font-size: 0.75rem; margin-right: 5px; }
     
-    .chat-layout { padding-bottom: 0; height: 100%; }
-    .chat-messages { padding: 15px; gap: 10px; }
+    .chat-layout { padding-bottom: 0; height: 100%; display: flex; flex-direction: column; }
+    /* Chat Messages need extra padding at bottom so text goes behind input */
+    .chat-messages { 
+        padding: 15px 15px calc(var(--pill-height) + var(--pill-float) + 60px); 
+        gap: 10px; 
+    }
     .message { font-size: 0.85rem; padding: 10px 15px; max-width: 90%; }
     .msg-header { font-size: 0.7rem; margin-bottom: 2px; }
 
+    /* Floating Input above Pill */
     .chat-input-area { 
-        padding: 10px 15px calc(var(--pill-height) + var(--pill-float) + 20px); 
-        background: #1a1a2e; gap: 8px;
+        padding: 10px 15px;
+        background: rgba(15, 5, 24, 0.8);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        gap: 8px;
+        position: absolute; bottom: calc(var(--pill-float) + var(--pill-height) + 10px); 
+        left: 2.5%; width: 95%; border-radius: 40px;
+        border: 1px solid rgba(255,255,255,0.1);
+        box-shadow: 0 5px 20px rgba(0,0,0,0.4);
     }
-    .chat-input { padding: 10px 15px; height: 38px; font-size: 0.85rem; }
+    .chat-input { padding: 10px 15px; height: 38px; font-size: 0.85rem; background: rgba(255,255,255,0.1); }
     .send-btn { width: 38px; height: 38px; font-size: 0.9rem; }
 
     /* --- FLOATING PILL NAV --- */
