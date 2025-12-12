@@ -25,6 +25,10 @@ let currentRemoteState = null;
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
 
+// --- LYRICS SYNC VARIABLES ---
+let currentLyrics = null;
+let lyricsInterval = null;
+
 // --- CRITICAL SYNC FLAGS ---
 let ignoreSystemEvents = false;
 let ignoreTimer = null;
@@ -677,19 +681,13 @@ document.getElementById('lyrics-btn').addEventListener('click', () => {
 });
 document.getElementById('closeLyricsBtn').addEventListener('click', () => {
     document.getElementById('lyricsOverlay').classList.remove('active');
+    stopLyricsSync(); // STOP SYNC TO SAVE PERF
 });
 
 // --- SMART TITLE CLEANER (AI-MIMIC) ---
 function smartCleanTitle(title) {
-    // 1. Aggressive Strip: Remove anything inside brackets/parentheses FIRST
-    // This removes (Official Video), [4K], etc. immediately.
     let processed = title.replace(/\s*[\(\[].*?[\)\]]/g, '');
-
-    // 2. Remove "ft." or "feat." sections often outside brackets
-    // Example: "Song Name ft. Artist" -> "Song Name"
     processed = processed.replace(/\s(ft\.|feat\.|featuring)\s.*/gi, '');
-
-    // 3. Remove known artifact keywords (case insensitive, whole word boundary)
     const artifacts = [
         "official video", "official audio", "official music video", 
         "official lyric video", "music video", "lyric video", "visualizer",
@@ -697,19 +695,84 @@ function smartCleanTitle(title) {
         "hq", "hd", "4k", "remastered", "live", "performance", "mv",
         "with", "prod\\.", "dir\\."
     ];
-    // Create big regex OR pattern
     const artifactRegex = new RegExp(`\\b(${artifacts.join('|')})\\b`, 'gi');
     processed = processed.replace(artifactRegex, '');
-
-    // 4. Remove separators like | or - if they are dangling or excessive
-    // If "Artist - Title", keep them but remove the dash to make it a search string "Artist Title"
     processed = processed.replace(/\|/g, ' '); 
     processed = processed.replace(/-/g, ' '); 
-
-    // 5. Collapse multiple spaces and trim
     processed = processed.replace(/\s+/g, ' ').trim();
-
     return processed;
+}
+
+// --- SYNCED LYRICS LOGIC ---
+
+function parseSyncedLyrics(lrc) {
+    const lines = lrc.split('\n');
+    const result = [];
+    const timeReg = /\[(\d{2}):(\d{2}(?:\.\d+)?)\]/;
+    
+    lines.forEach(line => {
+        const match = line.match(timeReg);
+        if (match) {
+            const min = parseFloat(match[1]);
+            const sec = parseFloat(match[2]);
+            const time = min * 60 + sec;
+            const text = line.replace(timeReg, '').trim();
+            if(text) result.push({ time, text });
+        }
+    });
+    return result;
+}
+
+function renderSyncedLyrics(lyrics) {
+    const container = document.getElementById('lyrics-content-area');
+    container.innerHTML = '';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'synced-lyrics-wrapper';
+    
+    lyrics.forEach((line, index) => {
+        const p = document.createElement('p');
+        p.className = 'lyrics-line';
+        p.id = 'lyric-line-' + index;
+        p.textContent = line.text;
+        wrapper.appendChild(p);
+    });
+    container.appendChild(wrapper);
+}
+
+function startLyricsSync() {
+    if(lyricsInterval) clearInterval(lyricsInterval);
+    lyricsInterval = setInterval(syncLyricsDisplay, 300); 
+}
+
+function stopLyricsSync() {
+    if(lyricsInterval) clearInterval(lyricsInterval);
+}
+
+function syncLyricsDisplay() {
+    if(!player || !player.getCurrentTime || !currentLyrics) return;
+    const time = player.getCurrentTime();
+    
+    // Find active line based on current time
+    let activeIndex = -1;
+    for(let i = 0; i < currentLyrics.length; i++) {
+        if(currentLyrics[i].time <= time) {
+            activeIndex = i;
+        } else {
+            break;
+        }
+    }
+    
+    if(activeIndex !== -1) {
+        // Reset previous active lines
+        const allLines = document.querySelectorAll('.lyrics-line');
+        allLines.forEach(l => l.classList.remove('active'));
+        
+        const activeLine = document.getElementById('lyric-line-' + activeIndex);
+        if(activeLine) {
+            activeLine.classList.add('active');
+            activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
 }
 
 async function fetchLyrics() {
@@ -722,13 +785,10 @@ async function fetchLyrics() {
         rawTitle = titleEl.textContent;
     }
     
-    // --- APPLY SMART CLEANING ---
     const cleanTitle = smartCleanTitle(rawTitle);
-    
-    // Use first 8 words to query to avoid query overflow, but usually cleanTitle is short now
     const searchWords = cleanTitle.split(/\s+/).slice(0, 8).join(" ");
 
-    lyricsTitle.textContent = "Searching: " + cleanTitle;
+    lyricsTitle.textContent = "Lyrics: " + cleanTitle;
     lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
 
     try {
@@ -737,17 +797,26 @@ async function fetchLyrics() {
         const data = await res.json();
         
         if (Array.isArray(data) && data.length > 0) {
-            // Find best match - prefer synced lyrics
+            // Prefer synced lyrics
             const song = data.find(s => s.syncedLyrics) || data[0];
-            const lyrics = song.syncedLyrics || song.plainLyrics || "Instrumental";
             
-            // Format lyrics for better readability
-            const formattedLyrics = lyrics.replace(/\n/g, "<br>");
-            lyricsContentArea.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${formattedLyrics}</div>`;
+            if (song.syncedLyrics) {
+                // FOUND SYNCED LYRICS!
+                currentLyrics = parseSyncedLyrics(song.syncedLyrics);
+                renderSyncedLyrics(currentLyrics);
+                startLyricsSync();
+            } else {
+                // Fallback to plain text
+                currentLyrics = null;
+                stopLyricsSync();
+                const text = song.plainLyrics || "Instrumental";
+                lyricsContentArea.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${text.replace(/\n/g, "<br>")}</div>`;
+            }
         } else {
             throw new Error("No lyrics found");
         }
     } catch (e) {
+        stopLyricsSync();
         lyricsContentArea.innerHTML = `
             <p>Lyrics could not be loaded automatically.</p>
             <p style="font-size:0.9rem; color:#aaa;">Searched for: "${cleanTitle}"</p>
