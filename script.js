@@ -24,6 +24,7 @@ let activeTab = 'queue';
 let currentRemoteState = null; 
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
+let unreadChatCount = 0;
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -346,10 +347,33 @@ function loadInitialData() {
     chatRef.limitToLast(50).on('child_added', (snapshot) => {
         const msg = snapshot.val();
         displayChatMessage(msg.user, msg.text, msg.timestamp, msg.image);
-        if (msg.user !== myName && activeTab !== 'chat') showToast(msg.user, msg.text);
+        if (msg.user !== myName && activeTab !== 'chat') {
+            showToast(msg.user, msg.text);
+            unreadChatCount++;
+            updateChatBadges();
+        }
     });
 }
 loadInitialData();
+
+function updateChatBadges() {
+    const desktopBadge = document.getElementById('chat-badge');
+    const mobileBadge = document.getElementById('mobile-chat-badge');
+    
+    if (unreadChatCount > 0) {
+        if(desktopBadge) {
+            desktopBadge.textContent = unreadChatCount;
+            desktopBadge.style.display = 'inline-block';
+        }
+        if(mobileBadge) {
+            mobileBadge.textContent = unreadChatCount;
+            mobileBadge.style.display = 'block';
+        }
+    } else {
+        if(desktopBadge) desktopBadge.style.display = 'none';
+        if(mobileBadge) mobileBadge.style.display = 'none';
+    }
+}
 
 function broadcastState(action, time, videoId, force = false) {
     if (ignoreSystemEvents && !force) return; 
@@ -537,6 +561,12 @@ function switchTab(tabName, forceOpen = false) {
 
     activeTab = tabName;
     
+    // Reset Chat Badge if opening Chat
+    if (tabName === 'chat') {
+        unreadChatCount = 0;
+        updateChatBadges();
+    }
+    
     document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
     const dBtn = document.getElementById('tab-btn-' + tabName);
     if(dBtn) dBtn.classList.add('active');
@@ -562,13 +592,9 @@ function addToQueue(videoId, title, uploader, thumbnail) {
             // REMOVED switchTab('queue') here to prevent auto-open on mobile add
             showToast("System", `Added ${title}`);
             
-            // SEND SYSTEM MESSAGE WITH THUMBNAIL
-            chatRef.push({ 
-                user: "System", 
-                text: `${myName} added <b>${title}</b> to the queue.`, 
-                image: thumbnail, // Add image property
-                timestamp: Date.now() 
-            });
+            // REMOVED CHAT PUSH: user asked to remove system msg from chat
+            // Only keeping Toast above.
+            
             if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title, uploader});
         });
 }
@@ -582,17 +608,7 @@ function addBatchToQueue(songs) {
         updates[newKey] = { ...s, addedBy: myName, order: Date.now() + i * 100 };
     });
     queueRef.update(updates).then(() => {
-        // REMOVED switchTab('queue') here too
-        
-        // SEND SYSTEM MESSAGE FOR BATCH (Use 1st song thumb)
-        if(songs.length > 0) {
-            chatRef.push({ 
-                user: "System", 
-                text: `${myName} added <b>${songs.length}</b> songs from a playlist.`, 
-                image: songs[0].thumbnail,
-                timestamp: Date.now() 
-            });
-        }
+        // REMOVED CHAT PUSH
     });
 }
 
@@ -874,6 +890,50 @@ async function fetchLyrics(manualQuery = null) {
             throw new Error("No lyrics found");
         }
     } catch (e) {
+        // --- BACKUP FALLBACK LOGIC ---
+        // If the primary search (lrclib) fails, we try lyrics.ovh as a simple text fallback
+        // This is useful for some international/Indian songs
+        if(!manualQuery) {
+            try {
+                // Attempt to guess Artist and Title from the string (often "Title - Artist" or "Artist - Title")
+                // We will try both combinations.
+                const titleText = document.getElementById('current-song-title').textContent;
+                // Simple split by dash
+                if(titleText.includes('-')) {
+                   const parts = titleText.split('-');
+                   const p1 = parts[0].trim();
+                   const p2 = parts[1].trim();
+                   
+                   // Try Artist / Title
+                   let fallbackUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(p1)}/${encodeURIComponent(p2)}`;
+                   let fRes = await fetch(fallbackUrl);
+                   let fData = await fRes.json();
+                   
+                   if(fData.lyrics) {
+                        currentLyrics = null;
+                        stopLyricsSync();
+                        lyricsContentArea.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${fData.lyrics.replace(/\n/g, "<br>")}</div>`;
+                        return; // Success fallback
+                   }
+                   
+                   // Try Title / Artist (swap)
+                   fallbackUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(p2)}/${encodeURIComponent(p1)}`;
+                   fRes = await fetch(fallbackUrl);
+                   fData = await fRes.json();
+                   
+                   if(fData.lyrics) {
+                        currentLyrics = null;
+                        stopLyricsSync();
+                        lyricsContentArea.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${fData.lyrics.replace(/\n/g, "<br>")}</div>`;
+                        return; // Success fallback
+                   }
+                }
+            } catch(err) {
+                // Silent fail on fallback
+                console.log("Fallback lyrics failed");
+            }
+        }
+        
         stopLyricsSync();
         
         // Show Manual Search Bar with Animation
