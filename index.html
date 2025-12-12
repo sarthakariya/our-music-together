@@ -128,7 +128,6 @@
                     <div id="view-chat" class="tab-content chat-layout">
                         <div class="chat-messages" id="chat-messages"></div>
                         <div class="chat-input-area">
-                            <!-- Removed Emoji Button -->
                             <input type="text" class="chat-input" id="chatInput" placeholder="Write a message...">
                             <button class="send-btn btn-3d" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
                         </div>
@@ -166,12 +165,16 @@
             <button class="modal-close-floating" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
             <div class="lyrics-header-area">
                 <h2 id="lyrics-title">Lyrics</h2>
+                <!-- Manual Lyrics Search Bar -->
+                <div class="lyrics-search-bar" id="lyricsSearchBar" style="display:none; margin-top:10px; padding:0 20px;">
+                     <div class="search-box-elegant" style="border-radius:25px; height:40px;">
+                        <input type="text" id="manualLyricsInput" placeholder="Wrong song? Search manually..." style="font-size:0.9rem;">
+                        <button class="search-submit" id="manualLyricsBtn" style="width:32px; height:32px;"><i class="fa-solid fa-search" style="font-size:0.8rem;"></i></button>
+                     </div>
+                </div>
             </div>
             <div class="lyrics-content" id="lyrics-content-area">
                 <p>Find the words to this melody.</p>
-                <a id="google-lyrics-btn" href="#" target="_blank" class="google-lyrics-btn">
-                    <i class="fa-brands fa-google"></i> Search Lyrics on Google
-                </a>
             </div>
         </div>
     </div>
