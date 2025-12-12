@@ -1071,10 +1071,6 @@ document.getElementById('chatInput').addEventListener('keypress', (e) => {
     if(e.key === 'Enter') document.getElementById('chatSendBtn').click();
 });
 
-document.getElementById('nativeEmojiBtn').addEventListener('click', () => {
-    document.getElementById('chatInput').focus();
-});
-
 document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
 document.getElementById('forceSyncBtn').addEventListener('click', () => {
     document.getElementById('syncOverlay').classList.remove('active');
