@@ -125,21 +125,11 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
 }
 
 // --- BACKGROUND PLAY HACK ---
-// Chrome on mobile automatically pauses video when the tab is hidden or screen locks.
-// This listener attempts to force it back to playing if it was supposed to be playing.
 document.addEventListener('visibilitychange', function() {
     if (document.hidden && player && player.getPlayerState) {
-        // If we are hidden, and state is PLAYING or BUFFERING, browsers might auto-pause.
-        // We set a timeout to check if it paused, and if so, try to resume.
-        // Note: Without the Media Session API connected (which we have), this is often blocked.
         setTimeout(() => {
             const state = player.getPlayerState();
             if (state === YT.PlayerState.PAUSED && currentVideoId && !isSwitchingSong) {
-                // If the user didn't explicitly pause (we assume), try to resume
-                // This is heuristic-based. Ideally we'd track "userIntendedState".
-                // Since this app is "always sync", we assume if it shouldn't be paused, we play.
-                
-                // Only force play if our remote sync state says we should be playing
                 if (currentRemoteState && (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart')) {
                      player.playVideo();
                 }
@@ -151,7 +141,11 @@ document.addEventListener('visibilitychange', function() {
 // --- CORE SYNC LOGIC ---
 
 function heartbeatSync() {
-    if (player && player.getPlayerState) updatePlayPauseButton(player.getPlayerState());
+    // Only update button from heartbeat if user hasn't interacted recently (to avoid flicker)
+    if (player && player.getPlayerState && Date.now() - lastLocalInteractionTime > 1000) {
+        updatePlayPauseButton(player.getPlayerState());
+    }
+    
     if (isSwitchingSong) return;
 
     if (detectAd()) {
@@ -197,7 +191,6 @@ function monitorSyncHealth() {
             if (detectAd()) return; 
             player.playVideo(); needsFix = true;
         }
-        // INCREASED THRESHOLD TO 3 SECONDS
         if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3.0) {
             if (!detectAd()) { player.seekTo(currentRemoteState.time, true); needsFix = true; }
         }
@@ -214,10 +207,10 @@ function monitorSyncHealth() {
 function updatePlayPauseButton(state) {
     const btn = document.getElementById('play-pause-btn');
     if (!btn) return;
-    if (isSwitchingSong) {
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-        return;
-    }
+    
+    // Don't overwrite spinning state
+    if (isSwitchingSong) return;
+
     if (state === YT.PlayerState.PLAYING) {
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
         if(navigator.mediaSession) navigator.mediaSession.playbackState = "playing";
@@ -230,7 +223,11 @@ function updatePlayPauseButton(state) {
 
 function onPlayerStateChange(event) {
     const state = event.data;
-    updatePlayPauseButton(state);
+    // Only update button if not recently interacted locally
+    if(Date.now() - lastLocalInteractionTime > 500) {
+        updatePlayPauseButton(state);
+    }
+
     if (isSwitchingSong || ignoreSystemEvents) return;
 
     if (detectAd()) {
@@ -242,7 +239,6 @@ function onPlayerStateChange(event) {
 
     if (state === YT.PlayerState.PLAYING) {
         if(player && player.setVolume) player.setVolume(100);
-        
         if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
              broadcastState('play', player.getCurrentTime(), currentVideoId);
@@ -268,11 +264,16 @@ function togglePlayPause() {
     lastBroadcaster = myName; 
 
     const state = player.getPlayerState();
-    
+    const btn = document.getElementById('play-pause-btn');
+
+    // --- OPTIMISTIC UI UPDATE ---
+    // Change icon immediately before player responds
     if (state === YT.PlayerState.PLAYING) {
+        btn.innerHTML = '<i class="fa-solid fa-play"></i>'; // Turn to Play icon immediately
         player.pauseVideo();
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
+        btn.innerHTML = '<i class="fa-solid fa-pause"></i>'; // Turn to Pause icon immediately
         if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
         else if (currentVideoId) {
             player.setVolume(100);
@@ -304,6 +305,7 @@ function initiateSongLoad(songObj) {
     if (player && player.pauseVideo) player.pauseVideo();
     
     showToast("System", "Switching track...");
+    // Optimistic loading state
     document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
     syncRef.set({ 
@@ -475,7 +477,6 @@ function updateSyncStatus() {
 
 function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadcast = true, shouldPlay = true) {
     if (player && videoId) {
-        // INCREASED SUPPRESSION TO 3 SECONDS
         if (!shouldBroadcast) suppressBroadcast(3000); 
 
         if(currentVideoId !== videoId || !player.cueVideoById) {
@@ -512,19 +513,16 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
 // --- MODIFIED TAB SWITCHING WITH TOGGLE LOGIC ---
 function switchTab(tabName) {
-    // 1. Mobile Sheet Logic
     if(window.innerWidth <= 1100) {
         const sheet = document.getElementById('mobileSheet');
         const sheetTitle = document.getElementById('mobile-sheet-title');
         
-        // TOGGLE LOGIC: If we click the SAME tab that is currently active, and the sheet is open, CLOSE IT.
         if (activeTab === tabName && sheet.classList.contains('active')) {
              sheet.classList.remove('active');
              document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
-             return; // Exit function, we just want to close
+             return; 
         }
 
-        // Otherwise, set titles and open sheet
         if(tabName === 'queue') sheetTitle.textContent = "Queue";
         else if(tabName === 'results') sheetTitle.textContent = "Search Music";
         else if(tabName === 'chat') sheetTitle.textContent = "Chat";
@@ -534,27 +532,21 @@ function switchTab(tabName) {
 
     activeTab = tabName;
     
-    // 2. Desktop Tab Handling
     document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
     const dBtn = document.getElementById('tab-btn-' + tabName);
     if(dBtn) dBtn.classList.add('active');
 
-    // 3. Mobile Nav Handling
     document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
-    // Find index for mobile items (approximate)
     const mobileIndex = ['queue', 'results', 'chat'].indexOf(tabName);
     const mobileItems = document.querySelectorAll('.mobile-nav-item');
     if(mobileItems[mobileIndex]) mobileItems[mobileIndex].classList.add('active');
 
-    // 4. Content Visibility
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     document.getElementById('view-' + tabName).classList.add('active');
 }
 
-// Mobile Sheet Close Button
 document.getElementById('mobileSheetClose').addEventListener('click', () => {
     document.getElementById('mobileSheet').classList.remove('active');
-    // Deselect mobile nav items to show we returned to player
     document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
 });
 
@@ -697,17 +689,29 @@ async function fetchLyrics() {
         rawTitle = titleEl.textContent;
     }
     
-    const cleanTitle = rawTitle
-        .replace(/[\(\[].*?[\)\]]/g, "") 
-        .replace(/official video/gi, "")
-        .replace(/music video/gi, "")
-        .replace(/remastered/gi, "")
-        .replace(/hq/gi, "")
-        .replace(/hd/gi, "")
-        .replace(/ft\..*/gi, "") 
-        .replace(/feat\..*/gi, "")
-        .trim();
-        
+    // --- IMPROVED TITLE CLEANING ---
+    // 1. Remove parenthetical/bracketed content often containing junk
+    let cleanTitle = rawTitle.replace(/[\(\[].*?[\)\]]/g, " ");
+    
+    // 2. Remove specific junk words
+    const junkWords = [
+        "official video", "official audio", "official music video", 
+        "video", "audio", "lyrics", "lyric video", 
+        "remastered", "hq", "hd", "4k", 
+        "ft\\.", "feat\\.", "featuring", 
+        "live", "performance", "visualizer"
+    ];
+    
+    junkWords.forEach(word => {
+        const regex = new RegExp(word, "gi");
+        cleanTitle = cleanTitle.replace(regex, " ");
+    });
+    
+    // 3. Clean up special chars and extra spaces
+    cleanTitle = cleanTitle.replace(/[\|\•\-\_\:\/]/g, " "); // Replace separators with space
+    cleanTitle = cleanTitle.replace(/\s+/g, " ").trim();
+    
+    // 4. Use first 8 words to query
     const searchWords = cleanTitle.split(/\s+/).slice(0, 8).join(" ");
 
     lyricsTitle.textContent = "Lyrics: " + searchWords + "...";
@@ -719,16 +723,20 @@ async function fetchLyrics() {
         const data = await res.json();
         
         if (Array.isArray(data) && data.length > 0) {
-            const song = data[0];
-            const lyrics = song.plainLyrics || song.syncedLyrics || "Instrumental";
-            lyricsContentArea.innerHTML = `<div class="lyrics-text-block">${lyrics}</div>`;
+            // Find best match - prefer synced lyrics
+            const song = data.find(s => s.syncedLyrics) || data[0];
+            const lyrics = song.syncedLyrics || song.plainLyrics || "Instrumental";
+            
+            // Format lyrics for better readability
+            const formattedLyrics = lyrics.replace(/\n/g, "<br>");
+            lyricsContentArea.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${formattedLyrics}</div>`;
         } else {
-            throw new Error("No lyrics found in API");
+            throw new Error("No lyrics found");
         }
     } catch (e) {
         lyricsContentArea.innerHTML = `
             <p>Lyrics could not be loaded automatically.</p>
-            <a href="https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
+            <a href="https://www.google.com/search?q=${encodeURIComponent(rawTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
                <i class="fa-brands fa-google"></i> Search on Google
             </a>
         `;
