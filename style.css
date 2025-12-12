@@ -156,7 +156,7 @@ body {
     position: relative; gap: 10px;
 }
 
-/* DESKTOP LAYOUT FOR SONG INFO */
+/* DESKTOP LAYOUT FOR SONG INFO - CENTERING STATUS */
 @media (min-width: 1101px) {
     .song-info-container {
         display: grid;
@@ -169,7 +169,8 @@ body {
     }
     .song-title { grid-area: title; font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1.8rem; text-shadow: 0 0 20px rgba(245, 0, 87, 0.4); margin: 0; }
     .equalizer { grid-area: eq; }
-    .status-row { grid-area: status; justify-content: flex-start; margin-top: 5px; }
+    /* Centering the Status Row on Desktop */
+    .status-row { grid-area: status; justify-content: center; margin-top: 5px; display: flex; }
 }
 
 .equalizer {
@@ -210,7 +211,7 @@ body {
 
 .controls { 
     display: flex; justify-content: center; align-items: center; 
-    gap: 40px; margin-top: auto; padding-top: 15px; 
+    gap: 30px; margin-top: auto; padding-top: 15px; 
 }
 .btn-3d { border: none; transition: all 0.15s; cursor: pointer; position: relative; }
 .btn-3d:active { transform: scale(0.92) translateY(4px); border-bottom: 0 solid transparent !important; box-shadow: none !important; }
@@ -418,11 +419,11 @@ body {
     /* Show top bar on mobile but smaller */
     .desktop-only { display: none !important; }
     .top-bar { 
-        display: flex !important; padding: 10px 15px; 
+        display: flex !important; padding: 10px 15px; justify-content: center;
         background: transparent; box-shadow: none; border: none; backdrop-filter: none;
     }
     .logo h1 { font-size: 1rem; text-shadow: 0 0 10px rgba(245, 0, 87, 0.4); }
-    .info-btn { font-size: 1.4rem; }
+    .info-btn { display: none; } /* Hide the old position if duplicated by accident, though we moved it in HTML */
     
     /* Main Layout: Stacked */
     .main-layout { flex-direction: column; position: relative; height: calc(100dvh - var(--bottom-nav-height)); }
@@ -435,9 +436,18 @@ body {
         gap: 15px; /* Compact gap */
         border-radius: 0; background: transparent; box-shadow: none; border: none;
         min-width: 0; width: 100%;
-        animation: fadeInMobile 0.5s ease-out;
+        /* No animation on container itself to allow staggered children */
     }
-    @keyframes fadeInMobile { from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
+    
+    /* --- MOBILE ANIMATIONS (Staggered Entry) --- */
+    .anim-delay-1 { animation: slideUpSmooth 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; opacity: 0; transform: translateY(20px); }
+    .anim-delay-2 { animation: slideUpSmooth 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s forwards; opacity: 0; transform: translateY(20px); }
+    .anim-delay-3 { animation: slideUpSmooth 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.2s forwards; opacity: 0; transform: translateY(20px); }
+    
+    @keyframes slideUpSmooth {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
     
     .video-wrapper { 
         border-radius: 16px; box-shadow: 0 5px 20px rgba(0,0,0,0.4); 
@@ -467,13 +477,15 @@ body {
     .status-row { order: 3; margin-top: 5px; }
     .sync-status-3d { padding: 4px 10px; font-size: 0.65rem; transform: none; }
     
-    /* CONTROLS: Below Title */
+    /* CONTROLS: Below Title - 5 Items Row */
     .controls { 
         order: 3;
-        gap: 20px; padding-top: 5px; margin-top: 0; 
+        gap: 15px; /* Tighter gap for 5 buttons */
+        padding-top: 5px; margin-top: 0; 
         justify-content: center; width: 100%;
+        margin-bottom: 10px;
     }
-    .ctrl-btn.small { width: 45px; height: 45px; font-size: 1rem; border-width: 2px; }
+    .ctrl-btn.small { width: 45px; height: 45px; font-size: 1.1rem; border-width: 2px; }
     .ctrl-btn.play { width: 70px; height: 70px; font-size: 1.8rem; border-width: 4px; }
     
     /* --- MOBILE SHEET (Sidebar Transformation) --- */
