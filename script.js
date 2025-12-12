@@ -563,7 +563,7 @@ function addToQueue(videoId, title, uploader, thumbnail) {
             chatRef.push({ 
                 user: "System", 
                 text: `Added <b>${title}</b> to the queue.`, 
-                image: thumbnail,
+                image: thumbnail, // Add image property
                 timestamp: Date.now() 
             });
             if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title, uploader});
@@ -871,7 +871,9 @@ async function handleSearch() {
     const query = input.value.trim();
     if (!query) return;
 
-    // --- ENHANCED PLAYLIST DETECTION ---
+    // --- ENHANCED LINK DETECTION ---
+    
+    // 1. YouTube Playlist (Link or Param)
     const ytPlaylistMatch = query.match(/[?&]list=([^#\&\?]+)/);
     if (ytPlaylistMatch) {
         showToast("System", "Fetching YouTube Playlist..."); 
@@ -879,22 +881,18 @@ async function handleSearch() {
         input.value = ''; return;
     }
     
+    // 2. Spotify Links
     if (query.includes('spotify.com')) {
         showToast("System", "Fetching Spotify Data..."); 
         fetchSpotifyData(query);
         input.value = ''; return;
     }
     
-    // Check for YouTube Music links which are video links in disguise
-    if (query.includes('music.youtube.com') || query.includes('youtube.com/watch')) {
-        const vidMatch = query.match(/[?&]v=([^#\&\?]+)/);
-        if(vidMatch) {
-             // Treat as a direct ID search logic if needed, 
-             // but standard search API handles this okay usually. 
-             // We can strip the ID and search, OR just let the API find it.
-             // Let's pass it to search to find metadata.
-        }
-    }
+    // 3. YouTube Music Links (Convert to Search or ID)
+    // If it's a direct music.youtube link to a video, just search the video ID or let generic search handle it
+    // because API search handles video IDs well.
+    // However, if it contains a list, it's caught above.
+    // We just proceed to search if no list param.
 
     switchTab('results');
     document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
@@ -971,8 +969,7 @@ async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
         const data = await res.json();
         const songs = data.items.filter(i=>i.snippet.resourceId.kind==='youtube#video').map(i => ({
             videoId: i.snippet.resourceId.videoId,
-            // Clean titles in playlists too? Maybe safer to keep original here for identification, 
-            // but let's clean them for consistency with user request
+            // Clean titles in playlists too
             title: smartCleanTitle(i.snippet.title), 
             uploader: i.snippet.channelTitle, 
             thumbnail: i.snippet.thumbnails.default.url
