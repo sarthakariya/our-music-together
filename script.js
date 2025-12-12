@@ -825,6 +825,10 @@ async function fetchLyrics(manualQuery = null) {
     
     let searchWords = "";
     
+    // Reset state: Hide Search Bar initially
+    searchBar.classList.remove('visible');
+    searchBar.style.display = 'none'; // Ensure it's hidden from layout
+    
     if(manualQuery) {
         searchWords = manualQuery;
         lyricsTitle.textContent = "Search: " + manualQuery;
@@ -840,7 +844,6 @@ async function fetchLyrics(manualQuery = null) {
     }
 
     lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
-    searchBar.style.display = "block"; // Always show manual search bar
 
     try {
         const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchWords)}`;
@@ -863,14 +866,24 @@ async function fetchLyrics(manualQuery = null) {
                 const text = song.plainLyrics || "Instrumental";
                 lyricsContentArea.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${text.replace(/\n/g, "<br>")}</div>`;
             }
+            // Ensure bar remains hidden on success
+            searchBar.classList.remove('visible');
+            setTimeout(() => { if(!searchBar.classList.contains('visible')) searchBar.style.display = 'none'; }, 500);
+
         } else {
             throw new Error("No lyrics found");
         }
     } catch (e) {
         stopLyricsSync();
+        
+        // Show Manual Search Bar with Animation
+        searchBar.style.display = 'block';
+        // Small timeout to allow display:block to apply before adding class for opacity transition
+        setTimeout(() => searchBar.classList.add('visible'), 10);
+        
         lyricsContentArea.innerHTML = `
-            <p style="opacity:0.7;">Lyrics not found via API.</p>
-            <p style="font-size:0.9rem; color:#aaa; margin-bottom:20px;">Try searching manually above.</p>
+            <p style="opacity:0.7; margin-bottom: 5px;">Lyrics not found via API.</p>
+            <p style="font-size:0.9rem; color:#aaa; margin-bottom:20px;">Use the search bar above to try manually.</p>
         `;
     }
 }
