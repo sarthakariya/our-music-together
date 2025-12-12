@@ -642,7 +642,7 @@ function renderQueue(queueArray, currentVideoId) {
     const badge = document.getElementById('queue-badge');
     const mobileBadge = document.getElementById('mobile-queue-badge');
     
-    list.innerHTML = '';
+    // Perform cleanup and update counts
     badge.textContent = queueArray.length;
     if(mobileBadge) mobileBadge.textContent = queueArray.length;
 
@@ -650,6 +650,9 @@ function renderQueue(queueArray, currentVideoId) {
         list.innerHTML = '<div class="empty-state"><p>Queue is empty.</p></div>';
         return;
     }
+    
+    // OPTIMIZATION: Use DocumentFragment to batch append
+    const fragment = document.createDocumentFragment();
 
     queueArray.forEach((song, index) => {
         const item = document.createElement('div');
@@ -687,8 +690,11 @@ function renderQueue(queueArray, currentVideoId) {
             </div>
             <button class="emoji-trigger" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
         `;
-        list.appendChild(item);
+        fragment.appendChild(item);
     });
+
+    list.innerHTML = '';
+    list.appendChild(fragment);
 
     initDragAndDrop(list);
     scrollToCurrentSong(); // Auto scroll on render
