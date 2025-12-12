@@ -345,7 +345,7 @@ function loadInitialData() {
 
     chatRef.limitToLast(50).on('child_added', (snapshot) => {
         const msg = snapshot.val();
-        displayChatMessage(msg.user, msg.text, msg.timestamp);
+        displayChatMessage(msg.user, msg.text, msg.timestamp, msg.image);
         if (msg.user !== myName && activeTab !== 'chat') showToast(msg.user, msg.text);
     });
 }
@@ -559,6 +559,13 @@ function addToQueue(videoId, title, uploader, thumbnail) {
     queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, addedBy: myName, order: Date.now() })
         .then(() => {
             switchTab('queue');
+            // SEND SYSTEM MESSAGE WITH THUMBNAIL
+            chatRef.push({ 
+                user: "System", 
+                text: `Added <b>${title}</b> to the queue.`, 
+                image: thumbnail,
+                timestamp: Date.now() 
+            });
             if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title, uploader});
         });
 }
@@ -571,7 +578,18 @@ function addBatchToQueue(songs) {
         const newKey = queueRef.push().key;
         updates[newKey] = { ...s, addedBy: myName, order: Date.now() + i * 100 };
     });
-    queueRef.update(updates).then(() => switchTab('queue'));
+    queueRef.update(updates).then(() => {
+        switchTab('queue');
+        // SEND SYSTEM MESSAGE FOR BATCH (Use 1st song thumb)
+        if(songs.length > 0) {
+            chatRef.push({ 
+                user: "System", 
+                text: `Added <b>${songs.length}</b> songs from a playlist.`, 
+                image: songs[0].thumbnail,
+                timestamp: Date.now() 
+            });
+        }
+    });
 }
 
 function removeFromQueue(key, event) {
@@ -853,16 +871,29 @@ async function handleSearch() {
     const query = input.value.trim();
     if (!query) return;
 
-    if (query.includes('list=')) {
-        const listId = query.split('list=')[1].split('&')[0];
-        showToast("System", "Fetching Playlist..."); 
-        fetchPlaylist(listId);
+    // --- ENHANCED PLAYLIST DETECTION ---
+    const ytPlaylistMatch = query.match(/[?&]list=([^#\&\?]+)/);
+    if (ytPlaylistMatch) {
+        showToast("System", "Fetching YouTube Playlist..."); 
+        fetchPlaylist(ytPlaylistMatch[1]);
         input.value = ''; return;
     }
+    
     if (query.includes('spotify.com')) {
         showToast("System", "Fetching Spotify Data..."); 
         fetchSpotifyData(query);
         input.value = ''; return;
+    }
+    
+    // Check for YouTube Music links which are video links in disguise
+    if (query.includes('music.youtube.com') || query.includes('youtube.com/watch')) {
+        const vidMatch = query.match(/[?&]v=([^#\&\?]+)/);
+        if(vidMatch) {
+             // Treat as a direct ID search logic if needed, 
+             // but standard search API handles this okay usually. 
+             // We can strip the ID and search, OR just let the API find it.
+             // Let's pass it to search to find metadata.
+        }
     }
 
     switchTab('results');
@@ -894,6 +925,11 @@ async function handleSearch() {
         data.items.forEach(item => {
             const vid = item.id.videoId;
             const duration = durationMap[vid] || "";
+            
+            // --- CLEAN TITLE FOR DISPLAY & ADDING ---
+            const rawTitle = item.snippet.title;
+            const shortTitle = smartCleanTitle(rawTitle); // Use the cleaner!
+
             const div = document.createElement('div');
             div.className = 'song-item';
             div.innerHTML = `
@@ -901,10 +937,14 @@ async function handleSearch() {
                     <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
                     <div class="song-duration-badge">${duration}</div>
                 </div>
-                <div class="song-details"><h4>${item.snippet.title}</h4><p>${item.snippet.channelTitle}</p></div>
+                <div class="song-details">
+                    <h4>${shortTitle}</h4>
+                    <p>${item.snippet.channelTitle}</p>
+                </div>
                 <button class="emoji-trigger" style="color:#fff; font-size:1.1rem; position:static; width:auto; height:auto; border:none; background:transparent;"><i class="fa-solid fa-plus"></i></button>
             `;
-            div.onclick = () => addToQueue(vid, item.snippet.title, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
+            // Add SHORT title to queue
+            div.onclick = () => addToQueue(vid, shortTitle, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
             list.appendChild(div);
         });
     } catch(e) { console.error(e); }
@@ -931,7 +971,11 @@ async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
         const data = await res.json();
         const songs = data.items.filter(i=>i.snippet.resourceId.kind==='youtube#video').map(i => ({
             videoId: i.snippet.resourceId.videoId,
-            title: i.snippet.title, uploader: i.snippet.channelTitle, thumbnail: i.snippet.thumbnails.default.url
+            // Clean titles in playlists too? Maybe safer to keep original here for identification, 
+            // but let's clean them for consistency with user request
+            title: smartCleanTitle(i.snippet.title), 
+            uploader: i.snippet.channelTitle, 
+            thumbnail: i.snippet.thumbnails.default.url
         }));
         allSongs = [...allSongs, ...songs];
         if (data.nextPageToken) fetchPlaylist(playlistId, data.nextPageToken, allSongs);
@@ -946,12 +990,19 @@ async function fetchSpotifyData(link) {
         const data = await res.json();
         if(data.tracks) {
             const songs = [];
-            for (const t of data.tracks.slice(0, 10)) { 
-                const sRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(t.artist + ' ' + t.title)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`);
+            // Limit to 20 to avoid rate limits on big playlists
+            for (const t of data.tracks.slice(0, 20)) { 
+                const query = t.artist + ' ' + t.title;
+                const sRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`);
                 const sData = await sRes.json();
                 if(sData.items.length) {
                     const i = sData.items[0];
-                    songs.push({ videoId: i.id.videoId, title: i.snippet.title, uploader: i.snippet.channelTitle, thumbnail: i.snippet.thumbnails.default.url });
+                    songs.push({ 
+                        videoId: i.id.videoId, 
+                        title: smartCleanTitle(i.snippet.title), // Clean title
+                        uploader: i.snippet.channelTitle, 
+                        thumbnail: i.snippet.thumbnails.default.url 
+                    });
                 }
             }
             addBatchToQueue(songs);
@@ -959,13 +1010,21 @@ async function fetchSpotifyData(link) {
     } catch(e) { console.error(e); }
 }
 
-function displayChatMessage(user, text, timestamp) {
+function displayChatMessage(user, text, timestamp, image = null) {
     const box = document.getElementById('chat-messages');
     const isMe = user === myName;
     const div = document.createElement('div');
     div.className = `message ${isMe ? 'me' : 'partner'}`;
     const time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    div.innerHTML = `<div class="msg-header">${user} <span style="font-size:0.85em;">${time}</span></div>${text}`;
+    
+    let content = `<div class="msg-header">${user} <span style="font-size:0.85em;">${time}</span></div>${text}`;
+    
+    // --- IMAGE SUPPORT ---
+    if(image) {
+        content += `<img src="${image}" class="chat-message-thumb" alt="Song thumbnail">`;
+    }
+
+    div.innerHTML = content;
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
