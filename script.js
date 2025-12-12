@@ -559,7 +559,9 @@ function addToQueue(videoId, title, uploader, thumbnail) {
     const newKey = queueRef.push().key;
     queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, addedBy: myName, order: Date.now() })
         .then(() => {
-            switchTab('queue');
+            // REMOVED switchTab('queue') here to prevent auto-open on mobile add
+            showToast("System", `Added ${title}`);
+            
             // SEND SYSTEM MESSAGE WITH THUMBNAIL
             chatRef.push({ 
                 user: "System", 
@@ -580,7 +582,8 @@ function addBatchToQueue(songs) {
         updates[newKey] = { ...s, addedBy: myName, order: Date.now() + i * 100 };
     });
     queueRef.update(updates).then(() => {
-        switchTab('queue');
+        // REMOVED switchTab('queue') here too
+        
         // SEND SYSTEM MESSAGE FOR BATCH (Use 1st song thumb)
         if(songs.length > 0) {
             chatRef.push({ 
@@ -711,7 +714,17 @@ document.getElementById('lyrics-btn').addEventListener('click', () => {
 });
 document.getElementById('closeLyricsBtn').addEventListener('click', () => {
     document.getElementById('lyricsOverlay').classList.remove('active');
-    stopLyricsSync(); // STOP SYNC TO SAVE PERF
+    stopLyricsSync(); 
+});
+
+// Manual Search Logic
+document.getElementById('manualLyricsBtn').addEventListener('click', () => {
+    const input = document.getElementById('manualLyricsInput');
+    const query = input.value.trim();
+    if(query) fetchLyrics(query);
+});
+document.getElementById('manualLyricsInput').addEventListener('keypress', (e) => {
+    if(e.key === 'Enter') document.getElementById('manualLyricsBtn').click();
 });
 
 // --- SMART TITLE CLEANER (AI-MIMIC) ---
@@ -805,22 +818,29 @@ function syncLyricsDisplay() {
     }
 }
 
-async function fetchLyrics() {
-    const titleEl = document.getElementById('current-song-title');
+async function fetchLyrics(manualQuery = null) {
     const lyricsContentArea = document.getElementById('lyrics-content-area');
     const lyricsTitle = document.getElementById('lyrics-title');
+    const searchBar = document.getElementById('lyricsSearchBar');
     
-    let rawTitle = "Heart's Rhythm";
-    if(titleEl && titleEl.textContent !== "Heart's Rhythm") {
-        rawTitle = titleEl.textContent;
+    let searchWords = "";
+    
+    if(manualQuery) {
+        searchWords = manualQuery;
+        lyricsTitle.textContent = "Search: " + manualQuery;
+    } else {
+        const titleEl = document.getElementById('current-song-title');
+        let rawTitle = "Heart's Rhythm";
+        if(titleEl && titleEl.textContent !== "Heart's Rhythm") {
+            rawTitle = titleEl.textContent;
+        }
+        const cleanTitle = smartCleanTitle(rawTitle);
+        searchWords = cleanTitle.split(/\s+/).slice(0, 5).join(" ");
+        lyricsTitle.textContent = "Lyrics: " + cleanTitle;
     }
-    
-    const cleanTitle = smartCleanTitle(rawTitle);
-    // Use first 5 words for cleaner search
-    const searchWords = cleanTitle.split(/\s+/).slice(0, 5).join(" ");
 
-    lyricsTitle.textContent = "Lyrics: " + cleanTitle;
     lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
+    searchBar.style.display = "block"; // Always show manual search bar
 
     try {
         const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchWords)}`;
@@ -849,11 +869,8 @@ async function fetchLyrics() {
     } catch (e) {
         stopLyricsSync();
         lyricsContentArea.innerHTML = `
-            <p>Lyrics could not be loaded automatically.</p>
-            <p style="font-size:0.9rem; color:#aaa;">Searched for: "${cleanTitle}"</p>
-            <a href="https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' lyrics')}" target="_blank" class="google-lyrics-btn">
-               <i class="fa-brands fa-google"></i> Search on Google
-            </a>
+            <p style="opacity:0.7;">Lyrics not found via API.</p>
+            <p style="font-size:0.9rem; color:#aaa; margin-bottom:20px;">Try searching manually above.</p>
         `;
     }
 }
