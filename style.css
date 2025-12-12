@@ -465,6 +465,26 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 }
 .google-lyrics-btn:active { transform: scale(0.95); }
 
+/* --- SYNCED LYRICS STYLES --- */
+.synced-lyrics-wrapper {
+    padding-bottom: 50vh; /* Spacer to allow last lines to center */
+}
+.lyrics-line {
+    opacity: 0.4;
+    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    margin: 12px 0;
+    cursor: default;
+    font-size: 1.2rem;
+    transform: scale(0.95);
+}
+.lyrics-line.active {
+    opacity: 1;
+    transform: scale(1.05);
+    color: var(--primary-bright);
+    font-weight: 700;
+    text-shadow: 0 0 15px rgba(245, 0, 87, 0.5);
+}
+
 /* --- TOAST NOTIFICATIONS --- */
 #toast-container {
     position: fixed; top: 30px; right: 30px; z-index: 3000; pointer-events: none;
