@@ -363,7 +363,9 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .song-item .emoji-trigger { margin-left: auto; flex-shrink: 0; }
 
 /* Chat Styles */
-.chat-layout { display: flex; flex-direction: column; position: relative; }
+/* FIX: Removed 'display: flex' to prevent overlapping tabs. Inheritance from .tab-content handles display. */
+.chat-layout { flex-direction: column; position: relative; }
+
 .chat-messages { flex: 1; overflow-y: auto; padding: 25px; display: flex; flex-direction: column; gap: 15px; -webkit-overflow-scrolling: touch; }
 .message { max-width: 85%; padding: 14px 20px; border-radius: 20px; font-size: 1rem; color: white; animation: slideUpFade 0.3s; }
 .message.me { align-self: flex-end; background: linear-gradient(135deg, #f50057, #c51162); border-bottom-right-radius: 4px; }
@@ -462,13 +464,64 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 
 /* Manual Lyrics Search Styles */
 .lyrics-search-bar {
-    opacity: 0;
+    margin-top: 15px; 
+    width: 100%;
+    display: none; /* Default hidden */
+    justify-content: center;
+    opacity: 0; 
     transform: translateY(-10px);
-    transition: opacity 0.5s ease, transform 0.5s ease;
+    transition: all 0.4s ease;
+    pointer-events: none; 
 }
 .lyrics-search-bar.visible {
     opacity: 1;
     transform: translateY(0);
+    pointer-events: auto;
+    display: flex !important;
+}
+
+.modern-search-input-container {
+    position: relative;
+    width: 80%;
+    max-width: 400px;
+}
+
+.modern-search-input {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 30px;
+    padding: 12px 45px 12px 20px;
+    color: white;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.modern-search-input:focus {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: var(--primary);
+    box-shadow: 0 0 15px rgba(245, 0, 87, 0.3);
+    transform: scale(1.02);
+}
+
+.modern-search-icon-btn {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    transition: color 0.3s, background 0.3s;
+}
+
+.modern-search-icon-btn:hover {
+    color: var(--primary);
+    background: rgba(255,255,255,0.05);
 }
 
 .lyrics-content {
