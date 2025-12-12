@@ -398,26 +398,6 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     border: 1px solid rgba(255,255,255,0.2);
 }
 
-/* --- SYNCED LYRICS STYLES --- */
-.synced-lyrics-wrapper {
-    padding-bottom: 50vh; /* Spacer to allow last lines to center */
-}
-.lyrics-line {
-    opacity: 0.4;
-    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    margin: 12px 0;
-    cursor: default;
-    font-size: 1.2rem;
-    transform: scale(0.95);
-}
-.lyrics-line.active {
-    opacity: 1;
-    transform: scale(1.05);
-    color: var(--primary-bright);
-    font-weight: 700;
-    text-shadow: 0 0 15px rgba(245, 0, 87, 0.5);
-}
-
 /* --- MOBILE BOTTOM NAV & SHEETS --- */
 .mobile-bottom-nav { display: none; }
 .mobile-sheet-header { display: none; }
@@ -499,6 +479,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     font-size: 1.3rem; line-height: 1.8; font-family: 'Inter', sans-serif; font-weight: 500;
     white-space: pre-wrap;
     -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth; /* Ensure container scrolls smoothly */
 }
 .google-lyrics-btn {
     display: inline-flex; align-items: center; gap: 10px; margin-top: 20px;
@@ -510,22 +491,32 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 
 /* --- SYNCED LYRICS STYLES --- */
 .synced-lyrics-wrapper {
-    padding-bottom: 50vh; /* Spacer to allow last lines to center */
+    padding: 50vh 0; /* ample padding for centering */
+    display: flex;
+    flex-direction: column;
+    gap: 24px; /* "a little gaps" */
 }
 .lyrics-line {
-    opacity: 0.4;
-    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    margin: 12px 0;
+    opacity: 0.3;
+    /* Very smooth and fluid transition */
+    transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), 
+                opacity 0.6s ease, 
+                filter 0.6s ease,
+                color 0.6s ease;
+    margin: 0;
     cursor: default;
-    font-size: 1.2rem;
+    font-size: 1.5rem;
     transform: scale(0.95);
+    filter: blur(2px); /* Inactive lines are slightly blurred */
+    color: rgba(255,255,255,0.6);
 }
 .lyrics-line.active {
     opacity: 1;
-    transform: scale(1.05);
-    color: var(--primary-bright);
-    font-weight: 700;
-    text-shadow: 0 0 15px rgba(245, 0, 87, 0.5);
+    transform: scale(1.15); /* Slightly larger scale for emphasis */
+    filter: blur(0);
+    color: #ffffff; /* White instead of pink */
+    font-weight: 800;
+    text-shadow: 0 0 40px rgba(255, 255, 255, 0.4); /* Soft white glow */
 }
 
 /* --- TOAST NOTIFICATIONS --- */
