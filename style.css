@@ -460,6 +460,17 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     color: white; margin: 0; text-transform: uppercase; letter-spacing: 1px;
 }
 
+/* Manual Lyrics Search Styles */
+.lyrics-search-bar {
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.lyrics-search-bar.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
 .lyrics-content {
     flex: 1; overflow-y: auto; padding: 40px 20px;
     text-align: center; color: rgba(255,255,255,0.85);
