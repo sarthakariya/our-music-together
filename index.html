@@ -22,7 +22,7 @@
 
     <div class="app-container">
         
-        <!-- Top Bar: Just the Logo/Title now -->
+        <!-- Top Bar -->
         <div class="top-bar glass-panel">
             <div class="logo">
                 <h1>Sarthak's ❤️ Reechita's Heart's Rhythm</h1>
@@ -34,7 +34,7 @@
             <!-- Left Side: Player -->
             <div class="player-card glass-panel">
                 
-                <!-- Player Glow "Ambilight" Container -->
+                <!-- Player Glow -->
                 <div class="player-glow-container anim-delay-1">
                     <div class="player-glow"></div>
                     <div class="video-wrapper">
@@ -61,7 +61,7 @@
                     </div>
                 </div>
 
-                <!-- Controls: Lyrics | Prev | Play | Next | Info -->
+                <!-- Controls -->
                 <div class="controls anim-delay-3">
                     <button class="ctrl-btn small btn-3d" id="lyrics-btn" title="Lyrics"><i class="fa-solid fa-scroll"></i></button>
                     <button class="ctrl-btn small btn-3d" id="prev-btn" title="Previous"><i class="fa-solid fa-backward-step"></i></button>
@@ -71,7 +71,7 @@
                 </div>
             </div>
 
-            <!-- Right Side: Unified Sidebar (Desktop) / Full Screen Sheet (Mobile) -->
+            <!-- Right Side: Sidebar / Mobile Sheet -->
             <div class="sidebar glass-panel" id="mobileSheet">
                 
                 <!-- Mobile Only: Sheet Header -->
@@ -80,7 +80,7 @@
                     <button class="mobile-close-btn" id="mobileSheetClose"><i class="fa-solid fa-chevron-down"></i></button>
                 </div>
 
-                <!-- Pinned Search Bar (Always Visible in Search View) -->
+                <!-- Pinned Search Bar -->
                 <div class="pinned-search" id="searchBarContainer">
                     <div class="search-box-elegant">
                         <i class="fa-solid fa-magnifying-glass search-icon"></i>
@@ -89,7 +89,7 @@
                     </div>
                 </div>
 
-                <!-- Desktop Tabs (Hidden on Mobile) -->
+                <!-- Desktop Tabs -->
                 <div class="sidebar-tabs desktop-only">
                     <button class="nav-tab active" id="tab-btn-queue" onclick="switchTab('queue')">
                         <i class="fa-solid fa-list-ol"></i> Queue <span id="queue-badge" class="badge">0</span>
@@ -128,6 +128,7 @@
                     <div id="view-chat" class="tab-content chat-layout">
                         <div class="chat-messages" id="chat-messages"></div>
                         <div class="chat-input-area">
+                            <!-- Removed Emoji Button -->
                             <input type="text" class="chat-input" id="chatInput" placeholder="Write a message...">
                             <button class="send-btn btn-3d" id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
                         </div>
@@ -137,7 +138,7 @@
             </div>
         </div>
 
-        <!-- Mobile Bottom Navigation (Visible only on mobile) -->
+        <!-- Mobile Floating Pill Navigation -->
         <div class="mobile-bottom-nav">
             <button class="mobile-nav-item active" onclick="switchTab('queue')">
                 <i class="fa-solid fa-list-ol"></i>
@@ -175,14 +176,13 @@
         </div>
     </div>
 
-    <!-- Info Overlay (Updated Content) -->
+    <!-- Info Overlay -->
     <div class="overlay" id="infoOverlay">
         <div class="modal-card">
             <button class="modal-close" id="closeInfoBtn"><i class="fa-solid fa-xmark"></i></button>
             <h2 style="margin-bottom: 30px;">How to Use Our Universe</h2>
             
             <div class="guide-content">
-                
                 <div class="guide-item">
                     <i class="fa-solid fa-heart-pulse"></i>
                     <div>
@@ -190,31 +190,27 @@
                         <p>Our hearts (and this music) beat as one. If I play, you play. If I pause, you pause.</p>
                     </div>
                 </div>
-
                 <div class="guide-item" style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 12px; border: 1px solid rgba(245,0,87,0.3);">
                     <i class="fa-solid fa-sliders" style="color: #ffd700;"></i>
                     <div>
-                        <strong style="color: #ffd700;">Seeking & Skipping (Important!)</strong>
-                        <p>To skip to a specific part of a song, you <b>must PAUSE first</b>. Then, drag the slider to the timestamp you want, and hit <b>RESUME</b>. This keeps us perfectly perfectly in sync!</p>
+                        <strong style="color: #ffd700;">Seeking & Skipping</strong>
+                        <p>To skip, you <b>must PAUSE first</b>. Then drag the slider and hit <b>RESUME</b>.</p>
                     </div>
                 </div>
-
                 <div class="guide-item">
                     <i class="fa-solid fa-list-ol"></i>
                     <div>
                         <strong>The Queue</strong>
-                        <p>Add songs from Search. Drag them to reorder. Swipe or click trash to remove. It's our shared playlist.</p>
+                        <p>Add songs from Search. Drag to reorder. Swipe/Click trash to remove.</p>
                     </div>
                 </div>
-
                 <div class="guide-item">
                     <i class="fa-brands fa-youtube"></i>
                     <div>
                         <strong>Background Play</strong>
-                        <p>On phone, if the music stops when you leave, check your notification bar to press Play again!</p>
+                        <p>If music stops when you leave the browser, check your notification bar to Play again!</p>
                     </div>
                 </div>
-
                 <div class="guide-footer">Forever Yours, Sarthak</div>
             </div>
         </div>
