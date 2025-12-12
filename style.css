@@ -187,30 +187,36 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 }
 #player { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 
+/* RESTORED LAYOUT: Simple vertical stacking */
 .song-info-container {
-    margin-bottom: 10px; flex: 1; display: flex; flex-direction: column; justify-content: flex-start;
-    position: relative; gap: 10px;
+    margin-bottom: 10px; 
+    flex: 1; 
+    display: flex; 
+    flex-direction: column; 
+    justify-content: center;
+    align-items: center; /* CENTER EVERYTHING */
+    position: relative; 
+    gap: 12px;
+    text-align: center;
 }
 
-/* DESKTOP LAYOUT FOR SONG INFO - CENTERING STATUS */
-@media (min-width: 1101px) {
-    .song-info-container {
-        display: grid;
-        grid-template-areas: 
-            "title eq"
-            "status status";
-        grid-template-columns: 1fr auto;
-        align-items: center;
-        gap: 10px;
-    }
-    .song-title { grid-area: title; font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1.8rem; text-shadow: 0 0 20px rgba(245, 0, 87, 0.4); margin: 0; }
-    .equalizer { grid-area: eq; }
-    .status-row { grid-area: status; justify-content: center; margin-top: 5px; display: flex; }
+.song-title { 
+    font-family: 'Montserrat', sans-serif; 
+    font-weight: 800; 
+    font-size: 1.8rem; 
+    text-shadow: 0 0 20px rgba(245, 0, 87, 0.4); 
+    margin: 5px 0 0 0; 
+    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 20px;
 }
 
 .equalizer {
-    display: flex; justify-content: flex-end; align-items: flex-end; gap: 4px;
-    height: 30px; flex-shrink: 0; opacity: 0.5; transition: opacity 0.3s;
+    display: flex; justify-content: center; align-items: flex-end; gap: 4px;
+    height: 20px; flex-shrink: 0; opacity: 0.5; transition: opacity 0.3s;
+    margin-bottom: 5px;
 }
 .equalizer.active { opacity: 1; }
 .equalizer .bar {
@@ -228,6 +234,12 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .equalizer.active .bar:nth-child(3) { animation-delay: 0.4s; }
 .equalizer.active .bar:nth-child(4) { animation-delay: 0.1s; }
 .equalizer.active .bar:nth-child(5) { animation-delay: 0.3s; }
+
+.status-row { 
+    display: flex; 
+    justify-content: center; 
+    width: 100%;
+}
 
 .sync-status-3d {
     font-family: 'Montserrat', sans-serif; font-size: 0.8rem; font-weight: 700; 
