@@ -562,7 +562,7 @@ function addToQueue(videoId, title, uploader, thumbnail) {
             // SEND SYSTEM MESSAGE WITH THUMBNAIL
             chatRef.push({ 
                 user: "System", 
-                text: `Added <b>${title}</b> to the queue.`, 
+                text: `${myName} added <b>${title}</b> to the queue.`, 
                 image: thumbnail, // Add image property
                 timestamp: Date.now() 
             });
@@ -584,7 +584,7 @@ function addBatchToQueue(songs) {
         if(songs.length > 0) {
             chatRef.push({ 
                 user: "System", 
-                text: `Added <b>${songs.length}</b> songs from a playlist.`, 
+                text: `${myName} added <b>${songs.length}</b> songs from a playlist.`, 
                 image: songs[0].thumbnail,
                 timestamp: Date.now() 
             });
@@ -804,7 +804,8 @@ async function fetchLyrics() {
     }
     
     const cleanTitle = smartCleanTitle(rawTitle);
-    const searchWords = cleanTitle.split(/\s+/).slice(0, 8).join(" ");
+    // Use first 5 words for cleaner search
+    const searchWords = cleanTitle.split(/\s+/).slice(0, 5).join(" ");
 
     lyricsTitle.textContent = "Lyrics: " + cleanTitle;
     lyricsContentArea.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
