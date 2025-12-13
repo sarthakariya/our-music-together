@@ -380,9 +380,34 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     content-visibility: auto; /* Optimizes chat scrolling */
     contain-intrinsic-size: 60px;
 }
-.message { max-width: 85%; padding: 14px 20px; border-radius: 20px; font-size: 1rem; color: white; animation: slideUpFade 0.2s; }
+.message { 
+    max-width: 85%; padding: 12px 18px; border-radius: 20px; 
+    font-size: 1rem; color: white; animation: slideUpFade 0.2s;
+    position: relative;
+    word-wrap: break-word;
+}
 .message.me { align-self: flex-end; background: linear-gradient(135deg, #f50057, #c51162); border-bottom-right-radius: 4px; }
 .message.partner { align-self: flex-start; background: rgba(255,255,255,0.1); border-bottom-left-radius: 4px; }
+
+.msg-header { 
+    font-size: 0.7rem; margin-bottom: 4px; opacity: 0.8; 
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+
+.msg-text-content {
+    line-height: 1.4;
+}
+
+/* Ticks for read receipt */
+.tick-status {
+    font-size: 0.75rem;
+    margin-left: 5px;
+    color: rgba(255,255,255,0.6);
+}
+.tick-status.seen {
+    color: #4fc3f7; /* Light Blue for seen */
+    text-shadow: 0 0 5px rgba(79, 195, 247, 0.4);
+}
 
 /* Updated Chat Input Area: Transparent & Floating */
 .chat-input-area { 
@@ -713,8 +738,8 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
         padding: 15px 15px calc(var(--pill-height) + var(--pill-float) + 60px); 
         gap: 10px; 
     }
-    .message { font-size: 0.85rem; padding: 10px 15px; max-width: 90%; }
-    .msg-header { font-size: 0.7rem; margin-bottom: 2px; }
+    .message { font-size: 0.85rem; padding: 12px 18px; max-width: 90%; }
+    .msg-header { font-size: 0.7rem; margin-bottom: 4px; }
 
     /* Floating Input above Pill */
     .chat-input-area { 
