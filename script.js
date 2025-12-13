@@ -1217,22 +1217,22 @@ function displayChatMessage(key, user, text, timestamp, image = null, seen = fal
     const header = document.createElement('div');
     header.className = 'msg-header';
     
-    const infoSpan = document.createElement('span');
-    infoSpan.style.display = 'flex';
-    infoSpan.style.alignItems = 'center';
-    
+    // --- JS LAYOUT SIMPLIFIED (CSS HANDLES POSITION) ---
     const userSpan = document.createElement('strong');
-    userSpan.textContent = user + " ";
+    userSpan.textContent = user;
+    
     const timeSpan = document.createElement('span');
-    timeSpan.style.fontSize = "0.85em";
-    timeSpan.style.fontWeight = "400";
-    timeSpan.style.marginLeft = "5px";
     timeSpan.textContent = time;
     
-    infoSpan.appendChild(userSpan);
-    infoSpan.appendChild(timeSpan);
+    // Group User & Time slightly
+    const leftGroup = document.createElement('div');
+    leftGroup.style.display = 'flex';
+    leftGroup.style.alignItems = 'baseline';
+    leftGroup.style.gap = '8px';
+    leftGroup.appendChild(userSpan);
+    leftGroup.appendChild(timeSpan);
     
-    header.appendChild(infoSpan);
+    header.appendChild(leftGroup);
     
     if (isMe) {
         const tickSpan = document.createElement('span');
