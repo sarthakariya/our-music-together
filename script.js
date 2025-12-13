@@ -384,7 +384,12 @@ function loadInitialData() {
         
         // Show Toast if chat is NOT active
         if (msg.user !== myName && !isChatActive()) {
-            showToast(msg.user, msg.text);
+            // ONLY show notification if message is less than 30 seconds old
+            // This prevents the history spam loop on startup
+            const isRecent = (Date.now() - msg.timestamp) < 30000; 
+            if(isRecent) {
+                showToast(msg.user, msg.text);
+            }
         }
     });
     
