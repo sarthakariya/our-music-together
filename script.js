@@ -24,7 +24,7 @@ let activeTab = 'queue';
 let currentRemoteState = null; 
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
-let unreadChatCount = 0;
+// Removed local unreadChatCount variable, will use real-time calc
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -323,6 +323,22 @@ function initiateSongLoad(songObj) {
         action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
     });
 
+    // --- INFINITE LOAD FIX: Fallback timeout ---
+    // If play state doesn't change within 5 seconds, forced reset
+    setTimeout(() => {
+        if (isSwitchingSong) {
+            console.log("Forced loading fallback triggered");
+            isSwitchingSong = false;
+            if(player) {
+                player.playVideo();
+                // If it's the right video, ensure we broadcast play
+                if(player.getVideoData && player.getVideoData().video_id === songObj.videoId) {
+                    broadcastState('play', player.getCurrentTime(), songObj.videoId, true);
+                }
+            }
+        }
+    }, 5000);
+
     setTimeout(() => {
         loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
         updateMediaSessionMetadata(songObj.title, songObj.uploader, songObj.thumbnail);
@@ -350,35 +366,88 @@ function loadInitialData() {
         updateSyncStatus();
     });
 
+    // --- ADVANCED CHAT LISTENERS ---
+    
+    // 1. Listen for NEW messages
     chatRef.limitToLast(50).on('child_added', (snapshot) => {
         const msg = snapshot.val();
-        displayChatMessage(msg.user, msg.text, msg.timestamp, msg.image);
+        const key = snapshot.key;
+        
+        displayChatMessage(key, msg.user, msg.text, msg.timestamp, msg.image, msg.seen);
+        
+        // If I am active on chat, mark incoming as seen immediately
+        if (msg.user !== myName && activeTab === 'chat' && !msg.seen) {
+             chatRef.child(key).update({ seen: true });
+        }
+        
+        calculateUnreadCount();
+        
         if (msg.user !== myName && activeTab !== 'chat') {
             showToast(msg.user, msg.text);
-            unreadChatCount++;
-            updateChatBadges();
         }
+    });
+    
+    // 2. Listen for CHANGES (Read receipts update)
+    chatRef.limitToLast(50).on('child_changed', (snapshot) => {
+        const msg = snapshot.val();
+        const key = snapshot.key;
+        // Update tick UI
+        const tickEl = document.getElementById(`tick-${key}`);
+        if(tickEl) {
+             tickEl.innerHTML = msg.seen ? '<i class="fa-solid fa-check-double"></i>' : '<i class="fa-solid fa-check"></i>';
+             tickEl.className = msg.seen ? 'tick-status seen' : 'tick-status';
+        }
+        calculateUnreadCount(); // Recalculate badge
     });
 }
 loadInitialData();
 
-function updateChatBadges() {
+function calculateUnreadCount() {
+    chatRef.limitToLast(50).once('value', (snapshot) => {
+        let count = 0;
+        snapshot.forEach((child) => {
+            const msg = child.val();
+            // Count if NOT me and NOT seen
+            if (msg.user !== myName && !msg.seen) {
+                count++;
+            }
+        });
+        updateChatBadges(count);
+    });
+}
+
+function updateChatBadges(count) {
     const desktopBadge = document.getElementById('chat-badge');
     const mobileBadge = document.getElementById('mobile-chat-badge');
     
-    if (unreadChatCount > 0) {
+    if (count > 0) {
         if(desktopBadge) {
-            desktopBadge.textContent = unreadChatCount;
+            desktopBadge.textContent = count;
             desktopBadge.style.display = 'inline-block';
         }
         if(mobileBadge) {
-            mobileBadge.textContent = unreadChatCount;
+            mobileBadge.textContent = count;
             mobileBadge.style.display = 'block';
         }
     } else {
         if(desktopBadge) desktopBadge.style.display = 'none';
         if(mobileBadge) mobileBadge.style.display = 'none';
     }
+}
+
+function markMessagesAsSeen() {
+    chatRef.limitToLast(50).once('value', (snapshot) => {
+        const updates = {};
+        snapshot.forEach((child) => {
+            const msg = child.val();
+            if (msg.user !== myName && !msg.seen) {
+                updates[`${child.key}/seen`] = true;
+            }
+        });
+        if(Object.keys(updates).length > 0) {
+            chatRef.update(updates);
+        }
+    });
 }
 
 function broadcastState(action, time, videoId, force = false) {
@@ -416,6 +485,12 @@ function applyRemoteCommand(state) {
     document.getElementById('syncOverlay').classList.remove('active');
 
     if (state.action === 'switching_pause') {
+        // --- INFINITE LOAD FIX: Ignore stale switching events ---
+        if (Date.now() - (state.timestamp || 0) > 5000) {
+            console.log("Ignoring stale switching event");
+            return;
+        }
+
         player.pauseVideo();
         showToast("System", "Partner is changing track...");
         document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
@@ -484,6 +559,13 @@ function updateSyncStatus() {
     }
 
     if (currentRemoteState && currentRemoteState.action === 'switching_pause') {
+        // Hide this if stale
+        if (Date.now() - (currentRemoteState.timestamp || 0) > 5000) {
+            // Revert to paused state visual if stuck
+            msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> Ready`;
+            msgEl.className = 'sync-status-3d status-paused';
+            return;
+        }
         msgEl.innerHTML = `<i class="fa-solid fa-music"></i> ${currentRemoteState.lastUpdater} picking song...`;
         msgEl.className = 'sync-status-3d status-switching';
         if(eq) eq.classList.remove('active');
@@ -567,10 +649,9 @@ function switchTab(tabName, forceOpen = false) {
 
     activeTab = tabName;
     
-    // Reset Chat Badge if opening Chat
+    // IF opening chat, mark all unread messages as SEEN
     if (tabName === 'chat') {
-        unreadChatCount = 0;
-        updateChatBadges();
+        markMessagesAsSeen();
     }
     
     document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
@@ -1132,21 +1213,64 @@ async function fetchSpotifyData(link) {
     } catch(e) { console.error(e); }
 }
 
-function displayChatMessage(user, text, timestamp, image = null) {
+function displayChatMessage(key, user, text, timestamp, image = null, seen = false) {
     const box = document.getElementById('chat-messages');
+    
+    // Prevent duplicates (simple check if we already have this ID)
+    // Though child_added usually runs once per item, re-renders could cause duplicates without this if we wiped the list.
+    // However, since we append, we assume this function is called once per new message. 
+    // BUT we might need to find it if we want to update the ticks without re-rendering everything?
+    // Actually, child_added fires once. 
+    
     const isMe = user === myName;
     const div = document.createElement('div');
     div.className = `message ${isMe ? 'me' : 'partner'}`;
     const time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     
-    let content = `<div class="msg-header">${user} <span style="font-size:0.85em;">${time}</span></div>${text}`;
+    // Create Header (User + Time + Tick)
+    const header = document.createElement('div');
+    header.className = 'msg-header';
     
-    // --- IMAGE SUPPORT ---
-    if(image) {
-        content += `<img src="${image}" class="chat-message-thumb" alt="Song thumbnail">`;
+    const infoSpan = document.createElement('span');
+    infoSpan.style.display = 'flex';
+    infoSpan.style.alignItems = 'center';
+    
+    const userSpan = document.createElement('strong');
+    userSpan.textContent = user + " ";
+    const timeSpan = document.createElement('span');
+    timeSpan.style.fontSize = "0.85em";
+    timeSpan.style.fontWeight = "400";
+    timeSpan.style.marginLeft = "5px";
+    timeSpan.textContent = time;
+    
+    infoSpan.appendChild(userSpan);
+    infoSpan.appendChild(timeSpan);
+    
+    header.appendChild(infoSpan);
+    
+    if (isMe) {
+        const tickSpan = document.createElement('span');
+        tickSpan.id = `tick-${key}`;
+        tickSpan.className = seen ? 'tick-status seen' : 'tick-status';
+        tickSpan.innerHTML = seen ? '<i class="fa-solid fa-check-double"></i>' : '<i class="fa-solid fa-check"></i>';
+        header.appendChild(tickSpan);
     }
 
-    div.innerHTML = content;
+    // Create Body (Text Content to avoid &quot; issue)
+    const body = document.createElement('div');
+    body.className = 'msg-text-content';
+    body.textContent = text; // SAFE RENDERING
+    
+    div.appendChild(header);
+    div.appendChild(body);
+    
+    if(image) {
+        const img = document.createElement('img');
+        img.src = image;
+        img.className = 'chat-message-thumb';
+        div.appendChild(img);
+    }
+
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
@@ -1189,7 +1313,11 @@ document.getElementById('searchInput').addEventListener('keypress', (e) => { if(
 
 document.getElementById('chatSendBtn').addEventListener('click', () => {
     const val = document.getElementById('chatInput').value.trim();
-    if(val) { chatRef.push({ user: myName, text: val, timestamp: Date.now() }); document.getElementById('chatInput').value=''; }
+    if(val) { 
+        // Push message with SEEN = FALSE
+        chatRef.push({ user: myName, text: val, timestamp: Date.now(), seen: false }); 
+        document.getElementById('chatInput').value=''; 
+    }
 });
 document.getElementById('chatInput').addEventListener('keypress', (e) => {
     if(e.key === 'Enter') document.getElementById('chatSendBtn').click();
