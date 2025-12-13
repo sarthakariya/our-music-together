@@ -10,9 +10,9 @@
     --gold: #ffd700;                 
     --gold-dim: #c5a000;             
     
-    --glass-bg: rgba(22, 12, 35, 0.90); /* Increased opacity slightly for less GPU composite cost */
+    --glass-bg: rgba(22, 12, 35, 0.90); 
     --glass-border: rgba(255, 255, 255, 0.12);
-    --glass-blur: 10px; /* Reduced from 16px to 10px for massive battery saving */
+    --glass-blur: 10px; /* Low blur for battery saving */
     
     --text-main: #ffffff;           
     --text-dim: #e0e0e0;            
@@ -96,7 +96,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 
 .liquid-blob {
     position: absolute; border-radius: 50%;
-    filter: blur(45px); /* Reduced from 60px for efficiency */
+    filter: blur(45px); /* Moderate blur for efficiency */
     opacity: 0.5; 
     will-change: transform; 
     animation: floatLiquid 20s infinite alternate ease-in-out;
@@ -413,7 +413,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 
 /* Updated Chat Input Area: Transparent & Floating */
 .chat-input-area { 
-    padding: 12px 20px; /* Decreased padding slightly */
+    padding: 8px 15px; /* Decreased padding as requested */
     background: rgba(0,0,0,0.6); 
     display: flex; gap: 12px; align-items: center; 
     border-top: 1px solid rgba(255,255,255,0.1); 
@@ -744,7 +744,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 
     /* Floating Input above Pill */
     .chat-input-area { 
-        padding: 10px 15px;
+        padding: 8px 15px; /* Decreased padding as requested */
         background: rgba(15, 5, 24, 0.9); /* Solid BG for perf */
         /* backdrop-filter: blur(15px); REMOVED for perf */
         gap: 8px;
