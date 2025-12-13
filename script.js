@@ -1306,11 +1306,7 @@ function displayChatMessage(key, user, text, timestamp, image = null, seen = fal
 function showToast(user, text) {
     const container = document.getElementById('toast-container');
     
-    // LIMIT TOASTS TO 3
-    if (container.children.length >= 3) {
-        container.removeChild(container.firstChild);
-    }
-
+    // Create Toast Element
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.innerHTML = `
@@ -1321,7 +1317,14 @@ function showToast(user, text) {
         </div>
     `;
     toast.onclick = () => { switchTab('chat'); toast.remove(); };
-    container.appendChild(toast);
+    
+    // Add to TOP (Prepend) so newest is always visible first
+    container.prepend(toast);
+
+    // Limit to 3 (Remove the OLDEST/BOTTOM ones if > 3)
+    while (container.children.length > 3) {
+        container.removeChild(container.lastChild);
+    }
     
     setTimeout(() => { 
         toast.style.opacity='0'; 
