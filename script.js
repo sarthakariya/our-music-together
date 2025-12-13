@@ -24,7 +24,6 @@ let activeTab = 'queue';
 let currentRemoteState = null; 
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
-// Removed local unreadChatCount variable, will use real-time calc
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -35,16 +34,14 @@ let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
 
-// --- HAPTIC FEEDBACK HELPER (Updated for Stronger Feeling) ---
+// --- HAPTIC FEEDBACK HELPER ---
 function triggerHaptic() {
     if (navigator.vibrate) {
-        navigator.vibrate(60); // Significantly increased duration for distinct feedback
+        navigator.vibrate(60); 
     }
 }
 
-// Attach global click listener for haptics on buttons
 document.addEventListener('click', (e) => {
-    // Check if the click target is interactive
     if (e.target.closest('button') || 
         e.target.closest('.song-item') || 
         e.target.closest('.nav-tab') || 
@@ -61,10 +58,8 @@ if (!myName || myName === "null") {
     if(!myName) myName = "Guest";
     localStorage.setItem('deepSpaceUserName', myName);
 }
-// Normalize Name
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
 
-// --- PRESENCE SYSTEM ---
 const sessionKey = presenceRef.push().key;
 presenceRef.child(sessionKey).onDisconnect().remove();
 presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
@@ -85,7 +80,11 @@ function onYouTubeIframeAPIReady() {
             'controls': 1, 'disablekb': 0, 'rel': 0, 'modestbranding': 1, 'autoplay': 1, 'origin': window.location.origin,
             'playsinline': 1 
         },
-        events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
+        events: { 
+            'onReady': onPlayerReady, 
+            'onStateChange': onPlayerStateChange,
+            'onError': onPlayerError // CRITICAL FIX: Handle errors
+        }
     });
 }
 
@@ -100,6 +99,32 @@ function onPlayerReady(event) {
     setupMediaSession();
 }
 
+// --- ERROR HANDLER FOR YOUTUBE ---
+// This fixes the grey screen / stuck loop issue
+function onPlayerError(event) {
+    console.error("YouTube Player Error:", event.data);
+    isSwitchingSong = false; // Release lock immediately
+    
+    // Error Codes:
+    // 2: Invalid parameter
+    // 5: HTML5 Error
+    // 100: Not found / Private
+    // 101/150: Not embeddable (Copyright)
+    
+    let errorMsg = "Error playing video.";
+    if(event.data === 100 || event.data === 101 || event.data === 150) {
+        errorMsg = "Song blocked by owner. Skipping...";
+    }
+    
+    showToast("System", errorMsg);
+    updateSyncStatus(); // Remove "Switching..." text
+
+    // Auto-skip to next song after short delay
+    setTimeout(() => {
+        initiateNextSong();
+    }, 1500);
+}
+
 function detectAd() {
     if (!player) return false;
     try {
@@ -110,7 +135,6 @@ function detectAd() {
     return false;
 }
 
-// --- MEDIA SESSION API ---
 function setupMediaSession() {
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', function() {
@@ -135,7 +159,6 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
     }
 }
 
-// --- BACKGROUND PLAY HACK ---
 document.addEventListener('visibilitychange', function() {
     if (document.hidden && player && player.getPlayerState) {
         setTimeout(() => {
@@ -152,7 +175,6 @@ document.addEventListener('visibilitychange', function() {
 // --- CORE SYNC LOGIC ---
 
 function heartbeatSync() {
-    // Only update button from heartbeat if user hasn't interacted recently (to avoid flicker)
     if (player && player.getPlayerState && Date.now() - lastLocalInteractionTime > 1000) {
         updatePlayPauseButton(player.getPlayerState());
     }
@@ -192,7 +214,13 @@ function monitorSyncHealth() {
         return; 
     }
     
-    if (currentRemoteState.action === 'switching_pause') return;
+    if (currentRemoteState.action === 'switching_pause') {
+        if (Date.now() - (currentRemoteState.timestamp || 0) > 6000) {
+            console.log("Stuck in switching state detected. Forcing recovery.");
+            updateSyncStatus(); 
+        }
+        return;
+    }
 
     const myState = player.getPlayerState();
     
@@ -219,7 +247,6 @@ function updatePlayPauseButton(state) {
     const btn = document.getElementById('play-pause-btn');
     if (!btn) return;
     
-    // Don't overwrite spinning state
     if (isSwitchingSong) return;
 
     if (state === YT.PlayerState.PLAYING) {
@@ -234,7 +261,15 @@ function updatePlayPauseButton(state) {
 
 function onPlayerStateChange(event) {
     const state = event.data;
-    // Only update button if not recently interacted locally
+
+    // --- INFINITE LOADING FIX ---
+    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
+        if (isSwitchingSong) {
+            isSwitchingSong = false;
+            updateSyncStatus(); 
+        }
+    }
+
     if(Date.now() - lastLocalInteractionTime > 500) {
         updatePlayPauseButton(state);
     }
@@ -277,14 +312,12 @@ function togglePlayPause() {
     const state = player.getPlayerState();
     const btn = document.getElementById('play-pause-btn');
 
-    // --- OPTIMISTIC UI UPDATE ---
-    // Change icon immediately before player responds
     if (state === YT.PlayerState.PLAYING) {
-        btn.innerHTML = '<i class="fa-solid fa-play"></i>'; // Turn to Play icon immediately
+        btn.innerHTML = '<i class="fa-solid fa-play"></i>'; 
         player.pauseVideo();
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
-        btn.innerHTML = '<i class="fa-solid fa-pause"></i>'; // Turn to Pause icon immediately
+        btn.innerHTML = '<i class="fa-solid fa-pause"></i>'; 
         if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
         else if (currentVideoId) {
             player.setVolume(100);
@@ -297,6 +330,7 @@ function togglePlayPause() {
 function initiateNextSong() {
     if (isSwitchingSong) return;
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
+    // Loop back to start if at end
     const next = currentQueue[(idx + 1) % currentQueue.length];
     if (next) initiateSongLoad(next);
 }
@@ -316,26 +350,17 @@ function initiateSongLoad(songObj) {
     if (player && player.pauseVideo) player.pauseVideo();
     
     showToast("System", "Switching track...");
-    // Optimistic loading state
     document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
     syncRef.set({ 
         action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
     });
 
-    // --- INFINITE LOAD FIX: Fallback timeout ---
-    // If play state doesn't change within 5 seconds, forced reset
+    // Fallback if video takes too long to load
     setTimeout(() => {
         if (isSwitchingSong) {
-            console.log("Forced loading fallback triggered");
             isSwitchingSong = false;
-            if(player) {
-                player.playVideo();
-                // If it's the right video, ensure we broadcast play
-                if(player.getVideoData && player.getVideoData().video_id === songObj.videoId) {
-                    broadcastState('play', player.getCurrentTime(), songObj.videoId, true);
-                }
-            }
+            if(player) player.playVideo();
         }
     }, 5000);
 
@@ -366,26 +391,20 @@ function loadInitialData() {
         updateSyncStatus();
     });
 
-    // --- ADVANCED CHAT LISTENERS ---
-    
-    // 1. Listen for NEW messages
+    // --- CHAT LISTENERS ---
     chatRef.limitToLast(50).on('child_added', (snapshot) => {
         const msg = snapshot.val();
         const key = snapshot.key;
         
         displayChatMessage(key, msg.user, msg.text, msg.timestamp, msg.image, msg.seen);
         
-        // If I am active on chat, mark incoming as seen immediately
         if (msg.user !== myName && isChatActive() && !msg.seen) {
              chatRef.child(key).update({ seen: true });
         }
         
         calculateUnreadCount();
         
-        // Show Toast if chat is NOT active
         if (msg.user !== myName && !isChatActive()) {
-            // ONLY show notification if message is less than 30 seconds old
-            // This prevents the history spam loop on startup
             const isRecent = (Date.now() - msg.timestamp) < 30000; 
             if(isRecent) {
                 showToast(msg.user, msg.text);
@@ -393,17 +412,15 @@ function loadInitialData() {
         }
     });
     
-    // 2. Listen for CHANGES (Read receipts update)
     chatRef.limitToLast(50).on('child_changed', (snapshot) => {
         const msg = snapshot.val();
         const key = snapshot.key;
-        // Update tick UI
         const tickEl = document.getElementById(`tick-${key}`);
         if(tickEl) {
              tickEl.innerHTML = msg.seen ? '<i class="fa-solid fa-check-double"></i>' : '<i class="fa-solid fa-check"></i>';
              tickEl.className = msg.seen ? 'tick-status seen' : 'tick-status';
         }
-        calculateUnreadCount(); // Recalculate badge
+        calculateUnreadCount();
     });
 }
 loadInitialData();
@@ -413,10 +430,7 @@ function calculateUnreadCount() {
         let count = 0;
         snapshot.forEach((child) => {
             const msg = child.val();
-            // Count if NOT me and NOT seen
-            if (msg.user !== myName && !msg.seen) {
-                count++;
-            }
+            if (msg.user !== myName && !msg.seen) count++;
         });
         updateChatBadges(count);
     });
@@ -450,22 +464,27 @@ function markMessagesAsSeen() {
                 updates[`${child.key}/seen`] = true;
             }
         });
-        if(Object.keys(updates).length > 0) {
-            chatRef.update(updates);
-        }
+        if(Object.keys(updates).length > 0) chatRef.update(updates);
     });
 }
 
-// Helper to determine if chat is truly viewable
 function isChatActive() {
     const isMobile = window.innerWidth <= 1100;
     const sheet = document.getElementById('mobileSheet');
-    if (isMobile) {
-        // Active only if tab is chat AND sheet is physically open
-        return activeTab === 'chat' && sheet.classList.contains('active');
-    }
-    // Desktop: Active if tab is chat
+    if (isMobile) return activeTab === 'chat' && sheet.classList.contains('active');
     return activeTab === 'chat';
+}
+
+// --- HELPER TO FORCE CHAT SCROLL BOTTOM ---
+function forceChatScroll() {
+    const box = document.getElementById('chat-messages');
+    if(box) {
+        box.scrollTop = box.scrollHeight;
+        // Double tap for layout shifts
+        requestAnimationFrame(() => {
+            box.scrollTop = box.scrollHeight;
+        });
+    }
 }
 
 function broadcastState(action, time, videoId, force = false) {
@@ -480,9 +499,7 @@ function applyRemoteCommand(state) {
     if (state.action === 'ad_pause') {
         suppressBroadcast(2000);
         lastBroadcaster = state.lastUpdater;
-        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-            player.pauseVideo();
-        }
+        if (player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
         updateSyncStatus();
         return;
     }
@@ -503,12 +520,10 @@ function applyRemoteCommand(state) {
     document.getElementById('syncOverlay').classList.remove('active');
 
     if (state.action === 'switching_pause') {
-        // --- INFINITE LOAD FIX: Ignore stale switching events ---
-        if (Date.now() - (state.timestamp || 0) > 5000) {
-            console.log("Ignoring stale switching event");
+        if (Date.now() - (state.timestamp || 0) > 6000) {
+            // Ignore stale switching events to prevent UI lock
             return;
         }
-
         player.pauseVideo();
         showToast("System", "Partner is changing track...");
         document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
@@ -577,9 +592,8 @@ function updateSyncStatus() {
     }
 
     if (currentRemoteState && currentRemoteState.action === 'switching_pause') {
-        // Hide this if stale
-        if (Date.now() - (currentRemoteState.timestamp || 0) > 5000) {
-            // Revert to paused state visual if stuck
+        // --- TIMEOUT FIX: If stuck for > 6s, revert to default state ---
+        if (Date.now() - (currentRemoteState.timestamp || 0) > 6000) {
             msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> Ready`;
             msgEl.className = 'sync-status-3d status-paused';
             return;
@@ -629,7 +643,6 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
         }
 
         currentVideoId = videoId;
-        // Decode title to remove &quot; etc.
         const decodedTitle = decodeHTMLEntities(title);
         document.getElementById('current-song-title').textContent = decodedTitle;
         
@@ -640,20 +653,25 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         renderQueue(currentQueue, currentVideoId);
         
+        // Unset switching flag immediately so onPlayerStateChange can handle events
+        isSwitchingSong = false;
+        
         if (shouldBroadcast) {
             lastBroadcaster = myName;
-            broadcastState('restart', 0, videoId, true); 
+            // Delay slightly to ensure player is ready to accept events before we say "RESTART"
+            setTimeout(() => {
+                broadcastState('restart', 0, videoId, true); 
+            }, 100);
         }
     }
 }
 
-// --- MODIFIED TAB SWITCHING WITH TOGGLE LOGIC ---
+// --- MODIFIED TAB SWITCHING ---
 function switchTab(tabName, forceOpen = false) {
     if(window.innerWidth <= 1100) {
         const sheet = document.getElementById('mobileSheet');
         const sheetTitle = document.getElementById('mobile-sheet-title');
         
-        // Only toggle off if NOT forced open (i.e. nav button click vs search input)
         if (!forceOpen && activeTab === tabName && sheet.classList.contains('active')) {
              sheet.classList.remove('active');
              document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
@@ -669,9 +687,12 @@ function switchTab(tabName, forceOpen = false) {
 
     activeTab = tabName;
     
-    // IF opening chat, mark all unread messages as SEEN
     if (tabName === 'chat') {
         markMessagesAsSeen();
+        // --- IMPROVED CHAT SCROLLING ---
+        forceChatScroll();
+        // Scroll again after a short delay to account for layout shifts/keyboard
+        setTimeout(forceChatScroll, 300);
     }
     
     document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
@@ -687,7 +708,6 @@ function switchTab(tabName, forceOpen = false) {
     document.getElementById('view-' + tabName).classList.add('active');
 }
 
-// Ensure sheet is closed on init (Fixes mobile "automatically opens up" issue)
 if(window.innerWidth <= 1100) {
     document.getElementById('mobileSheet').classList.remove('active');
 }
@@ -697,18 +717,13 @@ document.getElementById('mobileSheetClose').addEventListener('click', () => {
     document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
 });
 
+// Queue helper functions
 function addToQueue(videoId, title, uploader, thumbnail) {
     const newKey = queueRef.push().key;
-    // Decode title just in case before saving, but cleaning usually handles it
     const cleanTitle = smartCleanTitle(title);
     queueRef.child(newKey).set({ videoId, title: cleanTitle, uploader, thumbnail, addedBy: myName, order: Date.now() })
         .then(() => {
-            // REMOVED switchTab('queue') here to prevent auto-open on mobile add
             showToast("System", `Added ${cleanTitle}`);
-            
-            // REMOVED CHAT PUSH: user asked to remove system msg from chat
-            // Only keeping Toast above.
-            
             if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title: cleanTitle, uploader});
         });
 }
@@ -721,9 +736,7 @@ function addBatchToQueue(songs) {
         const newKey = queueRef.push().key;
         updates[newKey] = { ...s, addedBy: myName, order: Date.now() + i * 100 };
     });
-    queueRef.update(updates).then(() => {
-        // REMOVED CHAT PUSH
-    });
+    queueRef.update(updates);
 }
 
 function removeFromQueue(key, event) {
@@ -741,9 +754,7 @@ function updateQueueOrder(newOrder) {
     queueRef.update(updates);
 }
 
-// HELPER: Auto scroll to playing song
 function scrollToCurrentSong() {
-    // CRITICAL FIX: Prevent auto-scrolling if the queue isn't actually visible on mobile
     if (window.innerWidth <= 1100) {
         const sheet = document.getElementById('mobileSheet');
         if (!sheet || !sheet.classList.contains('active')) return;
@@ -762,7 +773,6 @@ function renderQueue(queueArray, currentVideoId) {
     const badge = document.getElementById('queue-badge');
     const mobileBadge = document.getElementById('mobile-queue-badge');
     
-    // Perform cleanup and update counts
     badge.textContent = queueArray.length;
     if(mobileBadge) mobileBadge.textContent = queueArray.length;
 
@@ -771,7 +781,6 @@ function renderQueue(queueArray, currentVideoId) {
         return;
     }
     
-    // OPTIMIZATION: Use DocumentFragment to batch append
     const fragment = document.createDocumentFragment();
 
     queueArray.forEach((song, index) => {
@@ -817,7 +826,7 @@ function renderQueue(queueArray, currentVideoId) {
     list.appendChild(fragment);
 
     initDragAndDrop(list);
-    scrollToCurrentSong(); // Auto scroll on render
+    scrollToCurrentSong();
 }
 
 function initDragAndDrop(list) {
@@ -859,7 +868,6 @@ document.getElementById('closeLyricsBtn').addEventListener('click', () => {
     stopLyricsSync(); 
 });
 
-// Manual Search Logic
 document.getElementById('manualLyricsBtn').addEventListener('click', () => {
     const input = document.getElementById('manualLyricsInput');
     const query = input.value.trim();
@@ -869,7 +877,6 @@ document.getElementById('manualLyricsInput').addEventListener('keypress', (e) =>
     if(e.key === 'Enter') document.getElementById('manualLyricsBtn').click();
 });
 
-// --- HELPER: DECODE HTML ENTITIES ---
 function decodeHTMLEntities(text) {
     if (!text) return "";
     const txt = document.createElement("textarea");
@@ -877,11 +884,8 @@ function decodeHTMLEntities(text) {
     return txt.value;
 }
 
-// --- SMART TITLE CLEANER (AI-MIMIC) ---
 function smartCleanTitle(title) {
-    // Decode HTML entities first (e.g., &quot; -> ")
     let processed = decodeHTMLEntities(title);
-
     processed = processed.replace(/\s*[\(\[].*?[\)\]]/g, '');
     processed = processed.replace(/\s(ft\.|feat\.|featuring)\s.*/gi, '');
     const artifacts = [
@@ -899,13 +903,11 @@ function smartCleanTitle(title) {
     return processed;
 }
 
-// --- SYNCED LYRICS LOGIC ---
-
+// --- SYNCED LYRICS ---
 function parseSyncedLyrics(lrc) {
     const lines = lrc.split('\n');
     const result = [];
     const timeReg = /\[(\d{2}):(\d{2}(?:\.\d+)?)\]/;
-    
     lines.forEach(line => {
         const match = line.match(timeReg);
         if (match) {
@@ -948,7 +950,6 @@ function syncLyricsDisplay() {
     if(!player || !player.getCurrentTime || !currentLyrics) return;
     const time = player.getCurrentTime();
     
-    // Find active line based on current time
     let activeIndex = -1;
     for(let i = 0; i < currentLyrics.length; i++) {
         if(currentLyrics[i].time <= time) {
@@ -959,7 +960,6 @@ function syncLyricsDisplay() {
     }
     
     if(activeIndex !== -1) {
-        // Reset previous active lines
         const allLines = document.querySelectorAll('.lyrics-line');
         allLines.forEach(l => l.classList.remove('active'));
         
@@ -977,10 +977,8 @@ async function fetchLyrics(manualQuery = null) {
     const searchBar = document.getElementById('lyricsSearchBar');
     
     let searchWords = "";
-    
-    // Reset state: Hide Search Bar initially
     searchBar.classList.remove('visible');
-    searchBar.style.display = 'none'; // Ensure it's hidden from layout
+    searchBar.style.display = 'none'; 
     
     if(manualQuery) {
         searchWords = manualQuery;
@@ -1004,22 +1002,18 @@ async function fetchLyrics(manualQuery = null) {
         const data = await res.json();
         
         if (Array.isArray(data) && data.length > 0) {
-            // Prefer synced lyrics
             const song = data.find(s => s.syncedLyrics) || data[0];
             
             if (song.syncedLyrics) {
-                // FOUND SYNCED LYRICS!
                 currentLyrics = parseSyncedLyrics(song.syncedLyrics);
                 renderSyncedLyrics(currentLyrics);
                 startLyricsSync();
             } else {
-                // Fallback to plain text
                 currentLyrics = null;
                 stopLyricsSync();
                 const text = song.plainLyrics || "Instrumental";
                 lyricsContentArea.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${text.replace(/\n/g, "<br>")}</div>`;
             }
-            // Ensure bar remains hidden on success
             searchBar.classList.remove('visible');
             setTimeout(() => { if(!searchBar.classList.contains('visible')) searchBar.style.display = 'none'; }, 500);
 
@@ -1027,55 +1021,36 @@ async function fetchLyrics(manualQuery = null) {
             throw new Error("No lyrics found");
         }
     } catch (e) {
-        // --- BACKUP FALLBACK LOGIC ---
-        // If the primary search (lrclib) fails, we try lyrics.ovh as a simple text fallback
-        // This is useful for some international/Indian songs
         if(!manualQuery) {
             try {
-                // Attempt to guess Artist and Title from the string (often "Title - Artist" or "Artist - Title")
-                // We will try both combinations.
                 const titleText = document.getElementById('current-song-title').textContent;
-                // Simple split by dash
                 if(titleText.includes('-')) {
                    const parts = titleText.split('-');
                    const p1 = parts[0].trim();
                    const p2 = parts[1].trim();
-                   
-                   // Try Artist / Title
                    let fallbackUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(p1)}/${encodeURIComponent(p2)}`;
                    let fRes = await fetch(fallbackUrl);
                    let fData = await fRes.json();
-                   
                    if(fData.lyrics) {
                         currentLyrics = null;
                         stopLyricsSync();
                         lyricsContentArea.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${fData.lyrics.replace(/\n/g, "<br>")}</div>`;
-                        return; // Success fallback
+                        return; 
                    }
-                   
-                   // Try Title / Artist (swap)
                    fallbackUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(p2)}/${encodeURIComponent(p1)}`;
                    fRes = await fetch(fallbackUrl);
                    fData = await fRes.json();
-                   
                    if(fData.lyrics) {
                         currentLyrics = null;
                         stopLyricsSync();
                         lyricsContentArea.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${fData.lyrics.replace(/\n/g, "<br>")}</div>`;
-                        return; // Success fallback
+                        return;
                    }
                 }
-            } catch(err) {
-                // Silent fail on fallback
-                console.log("Fallback lyrics failed");
-            }
+            } catch(err) { console.log("Fallback lyrics failed"); }
         }
-        
         stopLyricsSync();
-        
-        // Show Manual Search Bar with Animation
         searchBar.style.display = 'block';
-        // Small timeout to allow display:block to apply before adding class for opacity transition
         setTimeout(() => searchBar.classList.add('visible'), 10);
         
         lyricsContentArea.innerHTML = `
@@ -1085,9 +1060,7 @@ async function fetchLyrics(manualQuery = null) {
     }
 }
 
-// FORCE OPEN ON SEARCH
 document.getElementById('searchInput').addEventListener('input', (e) => {
-    // Only open if the input is actually focused by the user (prevents browser autofill from opening sheet)
     if(document.activeElement === document.getElementById('searchInput')) {
         switchTab('results', true); 
     }
@@ -1115,9 +1088,6 @@ async function handleSearch() {
     const query = input.value.trim();
     if (!query) return;
 
-    // --- ENHANCED LINK DETECTION ---
-    
-    // 1. YouTube Playlist (Link or Param)
     const ytPlaylistMatch = query.match(/[?&]list=([^#\&\?]+)/);
     if (ytPlaylistMatch) {
         showToast("System", "Fetching YouTube Playlist..."); 
@@ -1125,15 +1095,13 @@ async function handleSearch() {
         input.value = ''; return;
     }
     
-    // 2. Spotify Links
     if (query.includes('spotify.com')) {
         showToast("System", "Fetching Spotify Data..."); 
         fetchSpotifyData(query);
         input.value = ''; return;
     }
     
-    // 3. YouTube Music Links (Convert to Search or ID)
-    switchTab('results', true); // Force Open
+    switchTab('results', true);
     document.getElementById('results-list').innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
     
     const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
@@ -1162,10 +1130,8 @@ async function handleSearch() {
         data.items.forEach(item => {
             const vid = item.id.videoId;
             const duration = durationMap[vid] || "";
-            
-            // --- CLEAN TITLE FOR DISPLAY & ADDING ---
             const rawTitle = item.snippet.title;
-            const shortTitle = smartCleanTitle(rawTitle); // Use the cleaner!
+            const shortTitle = smartCleanTitle(rawTitle);
 
             const div = document.createElement('div');
             div.className = 'song-item';
@@ -1180,7 +1146,6 @@ async function handleSearch() {
                 </div>
                 <button class="emoji-trigger" style="color:#fff; font-size:1.1rem; position:static; width:auto; height:auto; border:none; background:transparent;"><i class="fa-solid fa-plus"></i></button>
             `;
-            // Add SHORT title to queue
             div.onclick = () => addToQueue(vid, shortTitle, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
             list.appendChild(div);
         });
@@ -1194,10 +1159,7 @@ function parseDuration(pt) {
     let h = match[1] ? parseInt(match[1]) : 0;
     let m = match[2] ? parseInt(match[2]) : 0;
     let s = match[3] ? parseInt(match[3]) : 0;
-    
-    if (h > 0) {
-        return `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
-    }
+    if (h > 0) return `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
     return `${m}:${s.toString().padStart(2,'0')}`;
 }
 
@@ -1208,7 +1170,6 @@ async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
         const data = await res.json();
         const songs = data.items.filter(i=>i.snippet.resourceId.kind==='youtube#video').map(i => ({
             videoId: i.snippet.resourceId.videoId,
-            // Clean titles in playlists too
             title: smartCleanTitle(i.snippet.title), 
             uploader: i.snippet.channelTitle, 
             thumbnail: i.snippet.thumbnails.default.url
@@ -1226,7 +1187,6 @@ async function fetchSpotifyData(link) {
         const data = await res.json();
         if(data.tracks) {
             const songs = [];
-            // Limit to 20 to avoid rate limits on big playlists
             for (const t of data.tracks.slice(0, 20)) { 
                 const query = t.artist + ' ' + t.title;
                 const sRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`);
@@ -1235,7 +1195,7 @@ async function fetchSpotifyData(link) {
                     const i = sData.items[0];
                     songs.push({ 
                         videoId: i.id.videoId, 
-                        title: smartCleanTitle(i.snippet.title), // Clean title
+                        title: smartCleanTitle(i.snippet.title), 
                         uploader: i.snippet.channelTitle, 
                         thumbnail: i.snippet.thumbnails.default.url 
                     });
@@ -1249,18 +1209,11 @@ async function fetchSpotifyData(link) {
 function displayChatMessage(key, user, text, timestamp, image = null, seen = false) {
     const box = document.getElementById('chat-messages');
     
-    // Prevent duplicates (simple check if we already have this ID)
-    // Though child_added usually runs once per item, re-renders could cause duplicates without this if we wiped the list.
-    // However, since we append, we assume this function is called once per new message. 
-    // BUT we might need to find it if we want to update the ticks without re-rendering everything?
-    // Actually, child_added fires once. 
-    
     const isMe = user === myName;
     const div = document.createElement('div');
     div.className = `message ${isMe ? 'me' : 'partner'}`;
     const time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     
-    // Create Header (User + Time + Tick)
     const header = document.createElement('div');
     header.className = 'msg-header';
     
@@ -1289,10 +1242,9 @@ function displayChatMessage(key, user, text, timestamp, image = null, seen = fal
         header.appendChild(tickSpan);
     }
 
-    // Create Body (Text Content to avoid &quot; issue)
     const body = document.createElement('div');
     body.className = 'msg-text-content';
-    body.textContent = text; // SAFE RENDERING
+    body.textContent = text; 
     
     div.appendChild(header);
     div.appendChild(body);
@@ -1305,13 +1257,15 @@ function displayChatMessage(key, user, text, timestamp, image = null, seen = fal
     }
 
     box.appendChild(div);
-    box.scrollTop = box.scrollHeight;
+    // --- FORCE SCROLL ON NEW MESSAGE ---
+    if(isChatActive()) {
+        forceChatScroll();
+    }
 }
 
 function showToast(user, text) {
     const container = document.getElementById('toast-container');
     
-    // Create Toast Element
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.innerHTML = `
@@ -1323,10 +1277,8 @@ function showToast(user, text) {
     `;
     toast.onclick = () => { switchTab('chat'); toast.remove(); };
     
-    // Add to TOP (Prepend) so newest is always visible first
     container.prepend(toast);
 
-    // Limit to 3 (Remove the OLDEST/BOTTOM ones if > 3)
     while (container.children.length > 3) {
         container.removeChild(container.lastChild);
     }
@@ -1350,7 +1302,6 @@ document.getElementById('searchInput').addEventListener('keypress', (e) => { if(
 document.getElementById('chatSendBtn').addEventListener('click', () => {
     const val = document.getElementById('chatInput').value.trim();
     if(val) { 
-        // Push message with SEEN = FALSE
         chatRef.push({ user: myName, text: val, timestamp: Date.now(), seen: false }); 
         document.getElementById('chatInput').value=''; 
     }
