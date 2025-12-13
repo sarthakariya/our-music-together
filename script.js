@@ -35,10 +35,10 @@ let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
 
-// --- HAPTIC FEEDBACK HELPER (Updated for Medium Strength) ---
+// --- HAPTIC FEEDBACK HELPER (Updated for Stronger Feeling) ---
 function triggerHaptic() {
     if (navigator.vibrate) {
-        navigator.vibrate(20); // Medium vibration (increased from 5)
+        navigator.vibrate(60); // Significantly increased duration for distinct feedback
     }
 }
 
@@ -640,6 +640,12 @@ function updateQueueOrder(newOrder) {
 
 // HELPER: Auto scroll to playing song
 function scrollToCurrentSong() {
+    // CRITICAL FIX: Prevent auto-scrolling if the queue isn't actually visible on mobile
+    if (window.innerWidth <= 1100) {
+        const sheet = document.getElementById('mobileSheet');
+        if (!sheet || !sheet.classList.contains('active')) return;
+    }
+
     setTimeout(() => {
         const activeItem = document.querySelector('.song-item.playing');
         if (activeItem) {
