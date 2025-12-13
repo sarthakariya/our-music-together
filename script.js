@@ -35,16 +35,22 @@ let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
 
-// --- HAPTIC FEEDBACK HELPER ---
+// --- HAPTIC FEEDBACK HELPER (Updated for Medium Strength) ---
 function triggerHaptic() {
     if (navigator.vibrate) {
-        navigator.vibrate(5); // Tiny vibration for "click" feel
+        navigator.vibrate(20); // Medium vibration (increased from 5)
     }
 }
 
 // Attach global click listener for haptics on buttons
 document.addEventListener('click', (e) => {
-    if (e.target.closest('button') || e.target.closest('.song-item') || e.target.closest('.nav-tab') || e.target.closest('.mobile-nav-item')) {
+    // Check if the click target is interactive
+    if (e.target.closest('button') || 
+        e.target.closest('.song-item') || 
+        e.target.closest('.nav-tab') || 
+        e.target.closest('.mobile-nav-item') ||
+        e.target.closest('input') ||
+        e.target.closest('.search-submit')) {
         triggerHaptic();
     }
 });
@@ -580,6 +586,11 @@ function switchTab(tabName, forceOpen = false) {
     document.getElementById('view-' + tabName).classList.add('active');
 }
 
+// Ensure sheet is closed on init (Fixes mobile "automatically opens up" issue)
+if(window.innerWidth <= 1100) {
+    document.getElementById('mobileSheet').classList.remove('active');
+}
+
 document.getElementById('mobileSheetClose').addEventListener('click', () => {
     document.getElementById('mobileSheet').classList.remove('active');
     document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
@@ -956,7 +967,10 @@ async function fetchLyrics(manualQuery = null) {
 
 // FORCE OPEN ON SEARCH
 document.getElementById('searchInput').addEventListener('input', (e) => {
-    switchTab('results', true); 
+    // Only open if the input is actually focused by the user (prevents browser autofill from opening sheet)
+    if(document.activeElement === document.getElementById('searchInput')) {
+        switchTab('results', true); 
+    }
 });
 document.getElementById('searchInput').addEventListener('focus', (e) => {
     switchTab('results', true);
