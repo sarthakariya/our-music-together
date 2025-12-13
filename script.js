@@ -376,13 +376,14 @@ function loadInitialData() {
         displayChatMessage(key, msg.user, msg.text, msg.timestamp, msg.image, msg.seen);
         
         // If I am active on chat, mark incoming as seen immediately
-        if (msg.user !== myName && activeTab === 'chat' && !msg.seen) {
+        if (msg.user !== myName && isChatActive() && !msg.seen) {
              chatRef.child(key).update({ seen: true });
         }
         
         calculateUnreadCount();
         
-        if (msg.user !== myName && activeTab !== 'chat') {
+        // Show Toast if chat is NOT active
+        if (msg.user !== myName && !isChatActive()) {
             showToast(msg.user, msg.text);
         }
     });
@@ -448,6 +449,18 @@ function markMessagesAsSeen() {
             chatRef.update(updates);
         }
     });
+}
+
+// Helper to determine if chat is truly viewable
+function isChatActive() {
+    const isMobile = window.innerWidth <= 1100;
+    const sheet = document.getElementById('mobileSheet');
+    if (isMobile) {
+        // Active only if tab is chat AND sheet is physically open
+        return activeTab === 'chat' && sheet.classList.contains('active');
+    }
+    // Desktop: Active if tab is chat
+    return activeTab === 'chat';
 }
 
 function broadcastState(action, time, videoId, force = false) {
@@ -611,12 +624,14 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
         }
 
         currentVideoId = videoId;
-        document.getElementById('current-song-title').textContent = title;
+        // Decode title to remove &quot; etc.
+        const decodedTitle = decodeHTMLEntities(title);
+        document.getElementById('current-song-title').textContent = decodedTitle;
         
         let artwork = 'https://via.placeholder.com/512';
         const currentSong = currentQueue.find(s => s.videoId === videoId);
         if(currentSong && currentSong.thumbnail) artwork = currentSong.thumbnail;
-        updateMediaSessionMetadata(title, uploader, artwork);
+        updateMediaSessionMetadata(decodedTitle, uploader, artwork);
 
         renderQueue(currentQueue, currentVideoId);
         
@@ -679,15 +694,17 @@ document.getElementById('mobileSheetClose').addEventListener('click', () => {
 
 function addToQueue(videoId, title, uploader, thumbnail) {
     const newKey = queueRef.push().key;
-    queueRef.child(newKey).set({ videoId, title, uploader, thumbnail, addedBy: myName, order: Date.now() })
+    // Decode title just in case before saving, but cleaning usually handles it
+    const cleanTitle = smartCleanTitle(title);
+    queueRef.child(newKey).set({ videoId, title: cleanTitle, uploader, thumbnail, addedBy: myName, order: Date.now() })
         .then(() => {
             // REMOVED switchTab('queue') here to prevent auto-open on mobile add
-            showToast("System", `Added ${title}`);
+            showToast("System", `Added ${cleanTitle}`);
             
             // REMOVED CHAT PUSH: user asked to remove system msg from chat
             // Only keeping Toast above.
             
-            if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title, uploader});
+            if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title: cleanTitle, uploader});
         });
 }
 
@@ -847,9 +864,20 @@ document.getElementById('manualLyricsInput').addEventListener('keypress', (e) =>
     if(e.key === 'Enter') document.getElementById('manualLyricsBtn').click();
 });
 
+// --- HELPER: DECODE HTML ENTITIES ---
+function decodeHTMLEntities(text) {
+    if (!text) return "";
+    const txt = document.createElement("textarea");
+    txt.innerHTML = text;
+    return txt.value;
+}
+
 // --- SMART TITLE CLEANER (AI-MIMIC) ---
 function smartCleanTitle(title) {
-    let processed = title.replace(/\s*[\(\[].*?[\)\]]/g, '');
+    // Decode HTML entities first (e.g., &quot; -> ")
+    let processed = decodeHTMLEntities(title);
+
+    processed = processed.replace(/\s*[\(\[].*?[\)\]]/g, '');
     processed = processed.replace(/\s(ft\.|feat\.|featuring)\s.*/gi, '');
     const artifacts = [
         "official video", "official audio", "official music video", 
