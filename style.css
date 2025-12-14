@@ -505,21 +505,39 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .lyrics-card {
     padding: 0; max-width: 800px; height: 85vh; display: flex; flex-direction: column;
     background: #0d0d12; border: 1px solid rgba(255,255,255,0.1);
+    position: relative; /* ensure absolute children position correctly */
 }
 .modal-close-floating {
-    position: absolute; top: 20px; right: 20px; z-index: 10;
-    width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.1);
-    color: white; border: none; font-size: 1.2rem; cursor: pointer;
-    display: grid; place-items: center; transition: 0.2s;
+    position: absolute; 
+    top: 15px; 
+    right: 15px; 
+    z-index: 30; /* High Z-Index */
+    width: 44px; height: 44px; 
+    border-radius: 50%; 
+    background: rgba(0,0,0,0.7); /* Dark semi-transparent BG */
+    backdrop-filter: blur(5px);
+    color: white; 
+    border: 1px solid rgba(255,255,255,0.15);
+    font-size: 1.3rem; 
+    cursor: pointer;
+    display: grid; place-items: center; 
+    transition: 0.2s;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
 }
-.modal-close-floating:hover { background: var(--primary); transform: scale(1.1); }
+.modal-close-floating:hover { background: var(--primary); transform: scale(1.1); border-color: var(--primary); }
 
 .lyrics-header-area {
-    padding: 30px 0 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.05);
+    padding: 30px 0 20px; 
+    text-align: center; 
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    position: relative;
 }
 #lyrics-title { 
     font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 1.5rem; 
     color: white; margin: 0; text-transform: uppercase; letter-spacing: 1px;
+    padding-right: 50px; /* Prevent overlap with close button */
+    padding-left: 20px;
+    word-break: break-word;
 }
 
 /* Manual Lyrics Search Styles */
