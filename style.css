@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------------------------------------ */
-/* ---------------------------------- CORE THEME & VIBRANT GLASS ---------------------------------------- */
+/* ---------------------------------- CORE THEME & LIGHTWEIGHT PERFORMANCE ------------------------------ */
 /* ------------------------------------------------------------------------------------------------------ */
 
 :root {
@@ -10,16 +10,18 @@
     --gold: #ffd700;                 
     --gold-dim: #c5a000;             
     
-    --glass-bg: rgba(22, 12, 35, 0.90); 
+    /* Optimized Glass: No blur, just opacity */
+    --glass-bg: rgba(22, 12, 35, 0.96); 
     --glass-border: rgba(255, 255, 255, 0.12);
-    --glass-blur: 10px; /* Low blur for battery saving */
     
     --text-main: #ffffff;           
     --text-dim: #e0e0e0;            
     
     --curve-xl: 32px;                
     --curve-m: 24px;                
-    --shadow-3d: 0 15px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.1); 
+    
+    /* Lighter Shadows */
+    --shadow-3d: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.1); 
     
     --pill-height: 70px;
     --pill-float: 25px;
@@ -52,6 +54,7 @@ html, body {
     background-color: var(--bg-dark); 
     text-rendering: optimizeSpeed; 
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden; /* Prevent horizontal scroll globally */
 }
 
 body {
@@ -61,55 +64,27 @@ body {
     height: 100dvh; 
     overflow: hidden; 
     width: 100vw;
-    overflow-x: hidden;
     display: flex; justify-content: center; align-items: center; 
     position: relative;
-    perspective: 1000px;
+    /* Static Gradient Background instead of heavy blobs */
+    background-image: 
+        radial-gradient(circle at 15% 15%, rgba(98, 0, 234, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(197, 17, 98, 0.15) 0%, transparent 40%);
+    background-attachment: fixed;
 }
 
 /* ---------------------------------- INTERACTIVE RESPONSIVENESS ---------------------------------------- */
-/* BUTTER SMOOTH ANIMATIONS */
 button, .song-item, .nav-tab, .mobile-nav-item, .emoji-trigger, a, input, .search-box-elegant {
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
-    transition: transform 0.2s ease, opacity 0.2s ease, background 0.2s ease; 
-    will-change: transform; /* Hint for browser */
+    transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease; 
 }
 
 /* The "Press" Effect */
 button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active {
     transform: scale(0.96) !important; 
     opacity: 0.9;
-}
-
-/* ---------------------------------- BACKGROUND -------------------------------------------------------- */
-
-.liquid-container {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    overflow: hidden; z-index: -1; background: #080010;
-    /* Hardware acceleration hack - Pushes to GPU layer */
-    transform: translate3d(0,0,0);
-    pointer-events: none; 
-    contain: strict; /* Performance: tells browser this won't affect outside layout */
-}
-
-.liquid-blob {
-    position: absolute; border-radius: 50%;
-    filter: blur(45px); /* Moderate blur for efficiency */
-    opacity: 0.5; 
-    will-change: transform; 
-    animation: floatLiquid 20s infinite alternate ease-in-out;
-    transform: translateZ(0); /* Force GPU */
-}
-
-.blob-1 { top: -15%; left: -15%; width: 80vw; height: 80vw; background: #6200ea; } 
-.blob-2 { bottom: -20%; right: -10%; width: 70vw; height: 70vw; background: #c51162; animation-duration: 25s; }
-.blob-3 { top: 30%; left: 30%; width: 60vw; height: 60vw; background: #00bcd4; opacity: 0.3; animation-duration: 22s; }
-
-@keyframes floatLiquid {
-    0% { transform: translate3d(0, 0, 0) scale(1); }
-    100% { transform: translate3d(30px, -30px, 0) scale(1.02); }
 }
 
 /* ---------------------------------- LAYOUT ------------------------------------------------------------ */
@@ -119,7 +94,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     height: 95dvh;
     display: flex; flex-direction: column; gap: 15px;
     z-index: 10;
-    animation: fadeIn 0.6s ease-out; 
+    animation: fadeIn 0.4s ease-out; 
     contain: layout; /* Performance optimization */
 }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -131,11 +106,9 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .glass-panel {
     background: var(--glass-bg);
     box-shadow: var(--shadow-3d);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
+    /* Removed backdrop-filter for battery saving */
     border: 1px solid var(--glass-border);
     border-radius: var(--curve-xl); 
-    transition: transform 0.2s ease; 
     contain: paint; /* Optimizes painting */
 }
 
@@ -146,7 +119,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .logo h1 { 
     font-family: 'Montserrat', sans-serif; 
     font-weight: 800; font-size: 2rem; color: white; 
-    text-shadow: 0 0 10px rgba(245, 0, 87, 0.5); 
+    text-shadow: 0 0 10px rgba(245, 0, 87, 0.3); /* Lighter shadow */
     margin: 0; letter-spacing: -0.5px;
 }
 
@@ -165,21 +138,16 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .player-glow {
     position: absolute; top: 10px; left: 5%; width: 90%; height: 90%;
     background: linear-gradient(135deg, #f50057, #7c4dff);
-    filter: blur(35px); /* Reduced blur for performance */
-    opacity: 0.4; z-index: 0; 
-    animation: pulseGlow 5s infinite alternate ease-in-out;
+    filter: blur(25px); /* Reduced blur */
+    opacity: 0.3; z-index: 0; 
     pointer-events: none;
-    transform: translateZ(0); /* GPU */
-}
-@keyframes pulseGlow {
-    0% { opacity: 0.3; transform: scale(0.98); }
-    100% { opacity: 0.5; transform: scale(1.02); }
+    /* Removed animation for battery */
 }
 
 .video-wrapper {
     position: relative; width: 100%; padding-bottom: 56.25%; 
     background: #000; border-radius: var(--curve-m); overflow: hidden;
-    box-shadow: 0 15px 30px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);
     z-index: 1; transform: translateZ(0); 
 }
 #player { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
@@ -200,7 +168,6 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     font-family: 'Montserrat', sans-serif; 
     font-weight: 800; 
     font-size: 1.8rem; 
-    text-shadow: 0 0 15px rgba(245, 0, 87, 0.4); 
     margin: 5px 0 0 0; 
     width: 100%;
     white-space: nowrap;
@@ -213,14 +180,13 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     display: flex; justify-content: center; align-items: flex-end; gap: 4px;
     height: 20px; flex-shrink: 0; opacity: 0.5; transition: opacity 0.3s;
     margin-bottom: 5px;
-    will-change: opacity;
 }
 .equalizer.active { opacity: 1; }
 .equalizer .bar {
     width: 6px; background: linear-gradient(to top, var(--primary), #ffd700); 
-    border-radius: 4px; height: 10%; box-shadow: 0 0 5px var(--primary);
+    border-radius: 4px; height: 10%; 
+    /* Removed box-shadow for performance */
     transition: height 0.1s linear; 
-    will-change: height;
 }
 .equalizer.active .bar { animation: equalizeSmooth 1.2s infinite ease-in-out; }
 @keyframes equalizeSmooth {
@@ -242,10 +208,9 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .sync-status-3d {
     font-family: 'Montserrat', sans-serif; font-size: 0.8rem; font-weight: 700; 
     padding: 8px 20px; border-radius: 50px; 
-    box-shadow: 0 4px 0 rgba(0,0,0,0.3), 0 5px 10px rgba(0,0,0,0.4); 
+    box-shadow: 0 4px 0 rgba(0,0,0,0.3); 
     transform: translateY(-4px); transition: transform 0.3s, background 0.3s;
     display: inline-flex; align-items: center; gap: 10px;
-    will-change: transform;
 }
 .sync-status-3d.pop-anim { animation: pop-badge 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 
@@ -262,17 +227,15 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     position: relative;
 }
 .btn-3d { border: none; position: relative; }
-/* Override generic active with specific 3D active */
 .btn-3d:active { transform: scale(0.92) translateY(4px) !important; border-bottom: 0 solid transparent !important; box-shadow: none !important; }
 
 .ctrl-btn {
     background: rgba(255,255,255,0.1); color: white; border-radius: 50%;
     display: grid; place-items: center; border-bottom: 4px solid rgba(0,0,0,0.6);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3); 
+    box-shadow: 0 5px 10px rgba(0,0,0,0.2); 
 }
 .ctrl-btn:hover {
     background: rgba(255,255,255,0.2);
-    box-shadow: 0 0 15px rgba(255, 255, 255, 0.3), 0 5px 15px rgba(0,0,0,0.3);
     transform: translateY(-2px);
     border-color: rgba(255,255,255,0.3);
 }
@@ -284,7 +247,6 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 }
 .ctrl-btn.play:hover {
     background: var(--primary-bright);
-    box-shadow: 0 0 20px var(--primary);
 }
 
 /* ---------------------------------- SIDEBAR & NAV ----------------------------------------------------- */
@@ -301,13 +263,11 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     border: 1px solid rgba(255,255,255,0.15); 
     border-radius: 50px; 
     padding: 8px 8px 8px 20px; 
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
 }
 .search-box-elegant:focus-within {
     background: rgba(255,255,255,0.15);
     border-color: var(--primary);
-    box-shadow: 0 0 15px rgba(245, 0, 87, 0.25);
-    transform: scale(1.01);
 }
 .search-icon { color: rgba(255,255,255,0.5); margin-right: 10px; }
 #searchInput { flex: 1; background: transparent; border: none; color: white; font-size: 1rem; height: 40px; }
@@ -316,7 +276,6 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     border-radius: 50%; 
     cursor: pointer; display: grid; place-items: center;
 }
-.search-submit:hover { background: var(--primary-bright); transform: scale(1.1) rotate(-10deg); }
 
 .sidebar-tabs { display: flex; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.1); flex-shrink: 0; }
 .nav-tab {
@@ -349,7 +308,6 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     background: rgba(255,255,255,0.05); border-radius: 18px; margin-bottom: 12px; 
     cursor: pointer; border: 1px solid rgba(255,255,255,0.05);
     transform: translateZ(0); 
-    will-change: transform;
 }
 .song-item:hover { background: rgba(255,255,255,0.15); transform: translateY(-3px) translateZ(0); border-color: rgba(255,255,255,0.25); box-shadow: 0 5px 10px rgba(0,0,0,0.2); }
 .song-item.playing { background: linear-gradient(90deg, rgba(245, 0, 87, 0.2), rgba(245, 0, 87, 0.05)); border-color: var(--primary); }
@@ -408,23 +366,21 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 }
 .tick-status.seen {
     color: #4fc3f7; /* Light Blue for seen */
-    text-shadow: 0 0 5px rgba(79, 195, 247, 0.4);
 }
 
 /* Updated Chat Input Area: Transparent & Floating */
 .chat-input-area { 
-    padding: 8px 15px; /* Decreased padding as requested */
+    padding: 8px 15px; 
     background: rgba(0,0,0,0.6); 
     display: flex; gap: 12px; align-items: center; 
     border-top: 1px solid rgba(255,255,255,0.1); 
-    backdrop-filter: blur(8px); 
 }
 .chat-input { 
     flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); 
     padding: 14px 20px; border-radius: 25px; color: white; font-size: 16px; 
     transition: all 0.2s;
 }
-.chat-input:focus { background: rgba(255,255,255,0.15); border-color: var(--primary); transform: translateY(-1px); }
+.chat-input:focus { background: rgba(255,255,255,0.15); border-color: var(--primary); }
 .send-btn { width: 50px; height: 50px; border-radius: 50%; background: white; color: black; display: grid; place-items: center; }
 
 .chat-message-thumb {
@@ -445,7 +401,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 }
 .overlay.active { display: flex; opacity: 1; }
 .modal-card {
-    background: linear-gradient(145deg, #16101a, #0a050f);
+    background: #16101a;
     border: 1px solid rgba(255,255,255,0.15); 
     padding: 30px; 
     border-radius: 30px; max-width: 500px; width: 90%; text-align: left;
@@ -541,8 +497,6 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .modern-search-input:focus {
     background: rgba(0, 0, 0, 0.3);
     border-color: var(--primary);
-    box-shadow: 0 0 15px rgba(245, 0, 87, 0.3);
-    transform: scale(1.02);
 }
 
 .modern-search-icon-btn {
@@ -565,20 +519,17 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 }
 
 .lyrics-content {
-    flex: 1; overflow-y: auto; padding: 40px 20px;
+    flex: 1; 
+    overflow-y: auto; 
+    overflow-x: hidden; /* Force hide horizontal scroll */
+    padding: 40px 20px;
     text-align: center; color: rgba(255,255,255,0.85);
     font-size: 1.3rem; line-height: 1.8; font-family: 'Inter', sans-serif; font-weight: 500;
-    white-space: pre-wrap;
+    white-space: pre-wrap; /* Ensure text wraps */
+    word-wrap: break-word; /* Force break if necessary */
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth; 
 }
-.google-lyrics-btn {
-    display: inline-flex; align-items: center; gap: 10px; margin-top: 20px;
-    padding: 12px 25px; background: #4285F4; color: white; text-decoration: none;
-    border-radius: 25px; font-weight: 600;
-    transition: transform 0.2s;
-}
-.google-lyrics-btn:active { transform: scale(0.95); }
 
 /* --- SYNCED LYRICS STYLES (Sharp & Smooth) --- */
 .synced-lyrics-wrapper {
@@ -586,6 +537,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     display: flex;
     flex-direction: column;
     gap: 24px; 
+    width: 100%;
 }
 .lyrics-line {
     opacity: 0.3;
@@ -596,14 +548,13 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     transform: scale(0.95);
     filter: none; /* NO BLUR */
     color: rgba(255,255,255,0.8);
-    will-change: transform, opacity;
+    word-break: break-word; /* Prevent overflow */
 }
 .lyrics-line.active {
     opacity: 1;
     transform: scale(1.15); 
     color: #ffffff; 
     font-weight: 800;
-    text-shadow: 0 0 30px rgba(255, 255, 255, 0.5); 
 }
 
 /* --- TOAST NOTIFICATIONS --- */
@@ -612,11 +563,10 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
 }
 .toast {
-    background: rgba(20, 10, 30, 0.95); border-left: 4px solid var(--primary);
+    background: #140a1e; border-left: 4px solid var(--primary);
     padding: 15px 25px; border-radius: 12px; display: flex; align-items: center; gap: 15px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.5); color: white; pointer-events: auto;
     width: 320px; 
-    /* backdrop-filter: blur(10px); REMOVED for perf */
     animation: toastBounce 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 @keyframes toastBounce {
@@ -637,7 +587,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     .desktop-only { display: none !important; }
     .top-bar { 
         display: flex !important; padding: 15px 20px; justify-content: center;
-        background: transparent; box-shadow: none; border: none; backdrop-filter: none;
+        background: transparent; box-shadow: none; border: none;
         margin-bottom: 10px; 
     }
     .logo h1 { font-size: 1.1rem; text-shadow: 0 0 15px rgba(245, 0, 87, 0.5); }
@@ -655,9 +605,9 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
         position: relative; z-index: 10;
     }
     
-    .anim-delay-1 { animation: slideUpSmooth 0.5s ease-out forwards; opacity: 0; transform: translateY(10px); }
-    .anim-delay-2 { animation: slideUpSmooth 0.5s ease-out 0.1s forwards; opacity: 0; transform: translateY(10px); }
-    .anim-delay-3 { animation: slideUpSmooth 0.5s ease-out 0.2s forwards; opacity: 0; transform: translateY(10px); }
+    .anim-delay-1 { animation: slideUpSmooth 0.4s ease-out forwards; opacity: 0; transform: translateY(10px); }
+    .anim-delay-2 { animation: slideUpSmooth 0.4s ease-out 0.1s forwards; opacity: 0; transform: translateY(10px); }
+    .anim-delay-3 { animation: slideUpSmooth 0.4s ease-out 0.2s forwards; opacity: 0; transform: translateY(10px); }
     
     @keyframes slideUpSmooth {
         from { opacity: 0; transform: translateY(20px); }
@@ -669,7 +619,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
         margin-bottom: 5px; flex-shrink: 0; order: 1;
     }
     .player-glow-container { margin-bottom: 0; flex-shrink: 0; order: 1; }
-    .player-glow { display: block; opacity: 0.2; filter: blur(20px); } /* Reduced blur significantly */
+    .player-glow { display: block; opacity: 0.15; filter: blur(15px); }
     
     .song-info-container { 
         flex: 0 0 auto; gap: 8px; order: 2; 
@@ -687,13 +637,6 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     .ctrl-btn.play { width: 70px; height: 70px; font-size: 1.8rem; border-width: 4px; }
     
     /* --- MOBILE SHEET (Sidebar) --- */
-    /* 
-       CRITICAL FIX: 
-       Added 'visibility' transition. 
-       When closed, visibility becomes hidden after the transform finishes (0.3s delay).
-       When active, visibility becomes visible immediately (0s delay).
-       This ensures hidden elements are completely removed from the browser's interactable layout.
-    */
     .sidebar {
         position: fixed; top: 0; left: 0; width: 100%; height: 100dvh; z-index: 1500;
         border-radius: 0; border: none; background: #0f0518;
@@ -744,9 +687,8 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 
     /* Floating Input above Pill */
     .chat-input-area { 
-        padding: 8px 15px; /* Decreased padding as requested */
-        background: rgba(15, 5, 24, 0.9); /* Solid BG for perf */
-        /* backdrop-filter: blur(15px); REMOVED for perf */
+        padding: 8px 15px; 
+        background: rgba(15, 5, 24, 0.95); /* Solid BG for perf */
         gap: 8px;
         position: absolute; bottom: calc(var(--pill-float) + var(--pill-height) + 10px); 
         left: 2.5%; width: 95%; border-radius: 40px;
@@ -766,8 +708,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
         width: 90%; max-width: 380px;
         height: var(--pill-height);
         border-radius: 35px;
-        background: rgba(22, 12, 35, 0.95); /* Nearly solid */
-        /* backdrop-filter: blur(20px); REMOVED for perf */
+        background: rgba(22, 12, 35, 0.98); /* Solid */
         border: 1px solid rgba(255,255,255,0.15);
         box-shadow: 0 10px 30px rgba(0,0,0,0.6);
         z-index: 1600;
