@@ -25,6 +25,9 @@ let currentRemoteState = null;
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
 
+// --- BACKGROUND PLAYBACK FLAGS ---
+let userIntentionallyPaused = false; // Tracks if the USER paused, or the BROWSER paused
+
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
 let lyricsInterval = null;
@@ -138,10 +141,18 @@ function detectAd() {
 function setupMediaSession() {
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', function() {
-            if(player && player.playVideo) { player.playVideo(); togglePlayPause(); }
+            if(player && player.playVideo) { 
+                userIntentionallyPaused = false;
+                player.playVideo(); 
+                togglePlayPause(); 
+            }
         });
         navigator.mediaSession.setActionHandler('pause', function() {
-            if(player && player.pauseVideo) { player.pauseVideo(); togglePlayPause(); }
+            if(player && player.pauseVideo) { 
+                userIntentionallyPaused = true;
+                player.pauseVideo(); 
+                togglePlayPause(); 
+            }
         });
         navigator.mediaSession.setActionHandler('previoustrack', function() { initiatePrevSong(); });
         navigator.mediaSession.setActionHandler('nexttrack', function() { initiateNextSong(); });
@@ -159,16 +170,29 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
     }
 }
 
+// --- BACKGROUND PLAYBACK HACK (Resurrection) ---
 document.addEventListener('visibilitychange', function() {
-    if (document.hidden && player && player.getPlayerState) {
-        setTimeout(() => {
+    if (document.hidden) {
+        // If we are minimizing...
+        if (player && player.getPlayerState) {
             const state = player.getPlayerState();
-            if (state === YT.PlayerState.PAUSED && currentVideoId && !isSwitchingSong) {
-                if (currentRemoteState && (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart')) {
-                     player.playVideo();
-                }
+            
+            // If it was playing, and we didn't pause it, ensure it keeps playing
+            if (state === YT.PlayerState.PLAYING) {
+                // Do nothing, hope it stays playing
+            } else if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
+                // Browser force-paused it. RESUME!
+                console.log("Browser paused due to background. Resuming...");
+                player.playVideo();
             }
-        }, 500);
+        }
+    } else {
+        // Coming back to foreground
+        // Refresh metadata to ensure notification stays valid
+        if(currentVideoId) {
+             const song = currentQueue.find(s => s.videoId === currentVideoId);
+             if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
+        }
     }
 });
 
@@ -196,7 +220,10 @@ function heartbeatSync() {
             else broadcastState('play', current, currentVideoId);
         }
         else if (state === YT.PlayerState.PAUSED) {
-            broadcastState('pause', player.getCurrentTime(), currentVideoId);
+            // Only broadcast pause if USER intended it (prevents background loop)
+            if(userIntentionallyPaused) {
+                broadcastState('pause', player.getCurrentTime(), currentVideoId);
+            }
         }
     }
 }
@@ -228,7 +255,11 @@ function monitorSyncHealth() {
         let needsFix = false;
         if (myState !== YT.PlayerState.PLAYING && myState !== YT.PlayerState.BUFFERING) {
             if (detectAd()) return; 
-            player.playVideo(); needsFix = true;
+            
+            // Auto Resume Logic here too
+            userIntentionallyPaused = false;
+            player.playVideo(); 
+            needsFix = true;
         }
         if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3.0) {
             if (!detectAd()) { player.seekTo(currentRemoteState.time, true); needsFix = true; }
@@ -237,6 +268,7 @@ function monitorSyncHealth() {
     }
     else if (currentRemoteState.action === 'pause') {
          if (myState === YT.PlayerState.PLAYING) {
+             userIntentionallyPaused = true;
              player.pauseVideo();
              suppressBroadcast(1000);
          }
@@ -262,6 +294,16 @@ function updatePlayPauseButton(state) {
 function onPlayerStateChange(event) {
     const state = event.data;
 
+    // --- BACKGROUND RESUME HACK ---
+    // If browser pauses us because we are hidden, AND we didn't ask for it -> FORCE PLAY
+    if (state === YT.PlayerState.PAUSED && document.hidden && !userIntentionallyPaused) {
+        console.log("Preventing background pause...");
+        setTimeout(() => {
+            if(player && player.playVideo) player.playVideo();
+        }, 100);
+        return; // Don't broadcast this pause to DB
+    }
+
     // --- INFINITE LOADING FIX ---
     if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
         if (isSwitchingSong) {
@@ -284,6 +326,7 @@ function onPlayerStateChange(event) {
     }
 
     if (state === YT.PlayerState.PLAYING) {
+        userIntentionallyPaused = false; // Ensure flag is reset
         if(player && player.setVolume) player.setVolume(100);
         if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
@@ -292,8 +335,11 @@ function onPlayerStateChange(event) {
     }
     else if (state === YT.PlayerState.PAUSED) {
         if (Date.now() - lastLocalInteractionTime > 500) {
-             lastBroadcaster = myName; 
-             broadcastState('pause', player.getCurrentTime(), currentVideoId);
+            // Only broadcast if it's visible or intentionally paused
+            if (!document.hidden || userIntentionallyPaused) {
+                lastBroadcaster = myName; 
+                broadcastState('pause', player.getCurrentTime(), currentVideoId);
+            }
         }
     }
     else if (state === YT.PlayerState.ENDED) initiateNextSong();
@@ -314,10 +360,12 @@ function togglePlayPause() {
 
     if (state === YT.PlayerState.PLAYING) {
         btn.innerHTML = '<i class="fa-solid fa-play"></i>'; 
+        userIntentionallyPaused = true; // Mark as intentional
         player.pauseVideo();
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>'; 
+        userIntentionallyPaused = false; // Mark as playing
         if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
         else if (currentVideoId) {
             player.setVolume(100);
@@ -345,6 +393,7 @@ function initiateSongLoad(songObj) {
     if (!songObj) return;
 
     isSwitchingSong = true;
+    userIntentionallyPaused = false; // Reset on song change
     lastBroadcaster = myName;
 
     if (player && player.pauseVideo) player.pauseVideo();
@@ -537,6 +586,7 @@ function applyRemoteCommand(state) {
         const uploader = songInQueue ? songInQueue.uploader : "";
         loadAndPlayVideo(state.videoId, title, uploader, state.time, false); 
         if(state.action === 'play' || state.action === 'restart') {
+            userIntentionallyPaused = false;
             player.setVolume(100);
             player.playVideo();
         }
@@ -545,18 +595,23 @@ function applyRemoteCommand(state) {
         const playerState = player.getPlayerState();
         if (state.action === 'restart') {
             player.seekTo(0, true); 
+            userIntentionallyPaused = false;
             player.setVolume(100);
             player.playVideo();
         }
         else if (state.action === 'play') {
             if (Math.abs(player.getCurrentTime() - state.time) > 3.0) player.seekTo(state.time, true);
             if (playerState !== YT.PlayerState.PLAYING) {
+                userIntentionallyPaused = false;
                 player.setVolume(100);
                 player.playVideo();
             }
         }
         else if (state.action === 'pause') {
-            if (playerState !== YT.PlayerState.PAUSED) player.pauseVideo();
+            if (playerState !== YT.PlayerState.PAUSED) {
+                userIntentionallyPaused = true; // Remote force pause
+                player.pauseVideo();
+            }
         } 
     }
     updateSyncStatus();
