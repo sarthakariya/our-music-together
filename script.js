@@ -25,8 +25,9 @@ let currentRemoteState = null;
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
 
-// --- BACKGROUND PLAYBACK FLAGS ---
+// --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
+let bufferingTimeout = null; // New: Timer to tolerate short buffering
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -36,6 +37,7 @@ let lyricsInterval = null;
 let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
+let syncHealthInterval = null;
 
 // --- HAPTIC FEEDBACK HELPER ---
 function triggerHaptic() {
@@ -75,6 +77,22 @@ function suppressBroadcast(duration = 1000) {
     }, duration);
 }
 
+// --- NETWORK RECOVERY LISTENERS ---
+window.addEventListener('online', () => {
+    showToast("System", "Back online! Resyncing...");
+    if (currentVideoId && player) {
+        // Force a check against DB
+        syncRef.once('value').then(snapshot => {
+            const state = snapshot.val();
+            if(state) applyRemoteCommand(state);
+        });
+    }
+});
+
+window.addEventListener('offline', () => {
+    showToast("System", "Connection lost. Trying to keep playing...");
+});
+
 // --- YOUTUBE PLAYER ---
 function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
@@ -94,7 +112,11 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     setInterval(heartbeatSync, 1000);
-    setInterval(monitorSyncHealth, 2000);
+    
+    // Check sync health frequently
+    if(syncHealthInterval) clearInterval(syncHealthInterval);
+    syncHealthInterval = setInterval(monitorSyncHealth, 2000);
+    
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
         if(state) applyRemoteCommand(state);
@@ -107,6 +129,7 @@ function onPlayerError(event) {
     isSwitchingSong = false; 
     
     let errorMsg = "Error playing video.";
+    // 150 = restricted embed, 100 = deleted
     if(event.data === 100 || event.data === 101 || event.data === 150) {
         errorMsg = "Song blocked by owner. Skipping...";
     }
@@ -114,15 +137,17 @@ function onPlayerError(event) {
     showToast("System", errorMsg);
     updateSyncStatus(); 
 
+    // Fast fail - skip immediately
     setTimeout(() => {
         initiateNextSong();
-    }, 1500);
+    }, 1000);
 }
 
 function detectAd() {
     if (!player) return false;
     try {
         const playerState = player.getPlayerState();
+        // If the API allows checking video data, ad usually has different ID or no ID
         const data = player.getVideoData();
         if (currentVideoId && data && data.video_id && data.video_id !== currentVideoId) return true;
     } catch(e) {}
@@ -162,12 +187,11 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
 }
 
 // --- AGGRESSIVE BACKGROUND KEEP-ALIVE ---
-// 1. Event Listener for Tab switching
 document.addEventListener('visibilitychange', function() {
     if (document.hidden) {
-        // If we are minimizing and state is playing, ensure we know it wasn't a user pause
         if (player && player.getPlayerState) {
             const state = player.getPlayerState();
+            // If playing or buffering, we assume user wants to continue
             if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
                 userIntentionallyPaused = false; 
             }
@@ -179,7 +203,7 @@ document.addEventListener('visibilitychange', function() {
             }
         }
     } else {
-        // Coming back to foreground
+        // Foreground refresh
         if(currentVideoId) {
              const song = currentQueue.find(s => s.videoId === currentVideoId);
              if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
@@ -187,11 +211,10 @@ document.addEventListener('visibilitychange', function() {
     }
 });
 
-// 2. Interval Check (The Safety Net)
+// Safety Interval
 setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
-        // If stopped, hidden, and user didn't explicitly click pause... RESUME.
         if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
             console.log("Background Keep-Alive: Resuming video.");
             player.playVideo();
@@ -217,11 +240,11 @@ function heartbeatSync() {
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
         const state = player.getPlayerState();
         if (state === YT.PlayerState.PLAYING) {
-            // SAFETY: If playing, user definitely doesn't want to be paused.
             userIntentionallyPaused = false; 
             
             const duration = player.getDuration();
             const current = player.getCurrentTime();
+            // Auto-next if near end
             if (duration > 0 && duration - current < 1) initiateNextSong(); 
             else broadcastState('play', current, currentVideoId);
         }
@@ -231,6 +254,8 @@ function heartbeatSync() {
                 broadcastState('pause', player.getCurrentTime(), currentVideoId);
             }
         }
+        // NOTE: We do NOT broadcast BUFFERING state here. 
+        // We let the local client buffer without disturbing the partner.
     }
 }
 
@@ -240,6 +265,7 @@ function monitorSyncHealth() {
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     if (Date.now() - lastLocalInteractionTime < 2000) return;
 
+    // Fix for "Ad Stuck"
     if (currentRemoteState.action === 'ad_pause') {
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
             player.pauseVideo();
@@ -247,8 +273,10 @@ function monitorSyncHealth() {
         return; 
     }
     
+    // Fix for "Switching Stuck"
     if (currentRemoteState.action === 'switching_pause') {
-        if (Date.now() - (currentRemoteState.timestamp || 0) > 6000) {
+        // Reduced timeout to 4s to prevent long spinners
+        if (Date.now() - (currentRemoteState.timestamp || 0) > 4000) {
             updateSyncStatus(); 
         }
         return;
@@ -257,6 +285,7 @@ function monitorSyncHealth() {
     const myState = player.getPlayerState();
     
     if (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart') {
+        // If I am paused but should be playing...
         let needsFix = false;
         if (myState !== YT.PlayerState.PLAYING && myState !== YT.PlayerState.BUFFERING) {
             if (detectAd()) return; 
@@ -265,8 +294,17 @@ function monitorSyncHealth() {
             player.playVideo(); 
             needsFix = true;
         }
-        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3.0) {
-            if (!detectAd()) { player.seekTo(currentRemoteState.time, true); needsFix = true; }
+        
+        // --- SMART TOLERANCE ---
+        // If I am buffering, don't force seek, just wait.
+        if (myState === YT.PlayerState.BUFFERING) return;
+
+        // Increased tolerance to 4.0 seconds to prevent "Buffer Loops"
+        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 4.0) {
+            if (!detectAd()) { 
+                player.seekTo(currentRemoteState.time, true); 
+                needsFix = true; 
+            }
         }
         if (needsFix) suppressBroadcast(3000); 
     }
@@ -285,7 +323,7 @@ function updatePlayPauseButton(state) {
     
     if (isSwitchingSong) return;
 
-    if (state === YT.PlayerState.PLAYING) {
+    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
         if(navigator.mediaSession) navigator.mediaSession.playbackState = "playing";
     }
@@ -298,23 +336,27 @@ function updatePlayPauseButton(state) {
 function onPlayerStateChange(event) {
     const state = event.data;
 
-    if (state === YT.PlayerState.PLAYING) {
-         userIntentionallyPaused = false;
-    }
-
-    // --- BACKGROUND RESUME HACK (Immediate) ---
-    if (state === YT.PlayerState.PAUSED && document.hidden && !userIntentionallyPaused) {
-        console.log("Preventing background pause (event trigger)...");
-        player.playVideo();
+    // --- BUFFERING GRACE PERIOD ---
+    // If buffering, we don't immediately broadcast "Pause" or stop logic.
+    // We start a timer. If still buffering after 5s, THEN we might worry.
+    if (state === YT.PlayerState.BUFFERING) {
+        updateSyncStatus();
         return; 
     }
 
-    // --- INFINITE LOADING FIX ---
-    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
-        if (isSwitchingSong) {
-            isSwitchingSong = false;
-            updateSyncStatus(); 
-        }
+    if (state === YT.PlayerState.PLAYING) {
+         userIntentionallyPaused = false;
+         // Clear switching flag if we start playing
+         if (isSwitchingSong) {
+             isSwitchingSong = false;
+             updateSyncStatus();
+         }
+    }
+
+    // --- BACKGROUND RESUME HACK ---
+    if (state === YT.PlayerState.PAUSED && document.hidden && !userIntentionallyPaused) {
+        player.playVideo();
+        return; 
     }
 
     if(Date.now() - lastLocalInteractionTime > 500) {
@@ -339,6 +381,8 @@ function onPlayerStateChange(event) {
     }
     else if (state === YT.PlayerState.PAUSED) {
         if (Date.now() - lastLocalInteractionTime > 500) {
+            // ONLY broadcast pause if visible or user clicked it. 
+            // Never broadcast pause from background unless intentional.
             if (!document.hidden || userIntentionallyPaused) {
                 lastBroadcaster = myName; 
                 broadcastState('pause', player.getCurrentTime(), currentVideoId);
@@ -361,7 +405,7 @@ function togglePlayPause() {
     const state = player.getPlayerState();
     const btn = document.getElementById('play-pause-btn');
 
-    if (state === YT.PlayerState.PLAYING) {
+    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
         btn.innerHTML = '<i class="fa-solid fa-play"></i>'; 
         userIntentionallyPaused = true; 
         player.pauseVideo();
@@ -398,7 +442,7 @@ function initiateSongLoad(songObj) {
     userIntentionallyPaused = false; 
     lastBroadcaster = myName;
 
-    if (player && player.pauseVideo) player.pauseVideo();
+    // Don't force pause here, just load the next one to minimize silence
     
     showToast("System", "Switching track...");
     document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
@@ -407,18 +451,19 @@ function initiateSongLoad(songObj) {
         action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
     });
 
+    // Safety timeout reduced to 3s for faster feeling
     setTimeout(() => {
         if (isSwitchingSong) {
             isSwitchingSong = false;
             if(player) player.playVideo();
         }
-    }, 5000);
+    }, 3000);
 
-    setTimeout(() => {
-        loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
-        updateMediaSessionMetadata(songObj.title, songObj.uploader, songObj.thumbnail);
-        isSwitchingSong = false;
-    }, 500); 
+    // Load instantly
+    loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
+    updateMediaSessionMetadata(songObj.title, songObj.uploader, songObj.thumbnail);
+    // Release switch lock immediately after load call
+    setTimeout(() => { isSwitchingSong = false; }, 100); 
 }
 
 function loadInitialData() {
@@ -445,20 +490,14 @@ function loadInitialData() {
     chatRef.limitToLast(50).on('child_added', (snapshot) => {
         const msg = snapshot.val();
         const key = snapshot.key;
-        
         displayChatMessage(key, msg.user, msg.text, msg.timestamp, msg.image, msg.seen);
-        
         if (msg.user !== myName && isChatActive() && !msg.seen) {
              chatRef.child(key).update({ seen: true });
         }
-        
         calculateUnreadCount();
-        
         if (msg.user !== myName && !isChatActive()) {
             const isRecent = (Date.now() - msg.timestamp) < 30000; 
-            if(isRecent) {
-                showToast(msg.user, msg.text);
-            }
+            if(isRecent) showToast(msg.user, msg.text);
         }
     });
     
@@ -568,10 +607,11 @@ function applyRemoteCommand(state) {
     document.getElementById('syncOverlay').classList.remove('active');
 
     if (state.action === 'switching_pause') {
-        if (Date.now() - (state.timestamp || 0) > 6000) {
+        // If > 4s old, ignore it
+        if (Date.now() - (state.timestamp || 0) > 4000) {
             return;
         }
-        player.pauseVideo();
+        // player.pauseVideo(); // OPTIMIZATION: Don't pause on switching, reduces choppy feel
         showToast("System", "Partner is changing track...");
         document.getElementById('play-pause-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
         updateSyncStatus();
@@ -598,8 +638,8 @@ function applyRemoteCommand(state) {
             player.playVideo();
         }
         else if (state.action === 'play') {
-            if (Math.abs(player.getCurrentTime() - state.time) > 3.0) player.seekTo(state.time, true);
-            if (playerState !== YT.PlayerState.PLAYING) {
+            if (Math.abs(player.getCurrentTime() - state.time) > 4.0) player.seekTo(state.time, true);
+            if (playerState !== YT.PlayerState.PLAYING && playerState !== YT.PlayerState.BUFFERING) {
                 userIntentionallyPaused = false;
                 player.setVolume(100);
                 player.playVideo();
@@ -645,7 +685,7 @@ function updateSyncStatus() {
     }
 
     if (currentRemoteState && currentRemoteState.action === 'switching_pause') {
-        if (Date.now() - (currentRemoteState.timestamp || 0) > 6000) {
+        if (Date.now() - (currentRemoteState.timestamp || 0) > 4000) {
             msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> Ready`;
             msgEl.className = 'sync-status-3d status-paused';
             return;
@@ -658,7 +698,8 @@ function updateSyncStatus() {
 
     const playerState = player ? player.getPlayerState() : -1;
 
-    if (playerState === YT.PlayerState.PLAYING) {
+    // Treat BUFFERING as Playing for UI purposes to avoid flickering
+    if (playerState === YT.PlayerState.PLAYING || playerState === YT.PlayerState.BUFFERING) {
         msgEl.innerHTML = `<i class="fa-solid fa-heart-pulse"></i> Vibing Together`;
         msgEl.className = 'sync-status-3d status-playing';
         if(eq) eq.classList.add('active');
@@ -683,7 +724,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
             player.setVolume(100); 
         } else {
-             if(Math.abs(player.getCurrentTime() - startTime) > 3.0) player.seekTo(startTime, true);
+             if(Math.abs(player.getCurrentTime() - startTime) > 4.0) player.seekTo(startTime, true);
              if(shouldPlay) {
                  player.setVolume(100);
                  player.playVideo();
@@ -706,7 +747,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
         renderQueue(currentQueue, currentVideoId);
         
         isSwitchingSong = false;
-        userIntentionallyPaused = false; // RESET PAUSE FLAG ON NEW SONG
+        userIntentionallyPaused = false; 
 
         if (shouldBroadcast) {
             lastBroadcaster = myName;
