@@ -563,7 +563,7 @@ function loadInitialData() {
         const tickEl = document.getElementById(`tick-${key}`);
         if(tickEl) {
              tickEl.innerHTML = msg.seen ? '<i class="fa-solid fa-check-double"></i>' : '<i class="fa-solid fa-check"></i>';
-             tickEl.className = msg.seen ? 'tick-status seen' : 'tick-status';
+             tickEl.className = msg.seen ? 'msg-tick seen' : 'msg-tick';
         }
         calculateUnreadCount();
     });
@@ -1241,14 +1241,6 @@ async function handleSearch() {
         input.value = ''; return;
     }
     
-    // SPOTIFY LINKS
-    // More robust check: catches spotify.com/track, spotify.com/playlist, spotify.link, etc.
-    if (query.match(/spotify\.(com|link)/)) {
-        showToast("System", "Fetching Spotify Data..."); 
-        fetchSpotifyData(query);
-        input.value = ''; return;
-    }
-    
     // REGULAR SEARCH
     switchTab('results', true);
     UI.resultsList.innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
@@ -1332,168 +1324,53 @@ async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
     } catch(e) { console.error(e); }
 }
 
-async function fetchSpotifyData(link) {
-    // 1. Clean the link and extract ID
-    const cleanLink = link.split('?')[0];
-    // Regex to extract ID (works for playlist, track, etc.)
-    const idMatch = cleanLink.match(/(playlist|track|album)\/([a-zA-Z0-9]+)/);
-    const type = idMatch ? idMatch[1] : null;
-    const id = idMatch ? idMatch[2] : null;
-
-    showToast("System", "Connecting to Spotify...");
-
-    let rawTracks = [];
-
-    // STRATEGY A: If it is a playlist, try the robust SpotifyDown API first
-    if (type === 'playlist' && id) {
-        try {
-            const res = await fetch(`https://api.spotifydown.com/metadata/playlist/${id}`);
-            const data = await res.json();
-            if (data.success && data.trackList) {
-                rawTracks = data.trackList.map(t => ({ title: t.title, artists: t.artists }));
-            }
-        } catch(e) { console.warn("SpotifyDown Playlist failed, trying proxies..."); }
-    }
-
-    // STRATEGY B: Generic Proxy Fallback (for tracks/albums or if Strategy A fails)
-    if (rawTracks.length === 0) {
-        const proxies = [
-            `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(cleanLink)}`,
-             // Fallback to oEmbed for title if needed, but here we need tracks.
-        ];
-
-        for (const url of proxies) {
-            try {
-                const res = await fetch(url);
-                if (res.ok) {
-                    const json = await res.json();
-                    if (json.tracks) {
-                        if (Array.isArray(json.tracks)) rawTracks = json.tracks;
-                        else if (json.tracks.items) rawTracks = json.tracks.items.map(i => i.track || i);
-                        break;
-                    } else if (json.type === 'track') {
-                        rawTracks = [json];
-                        break;
-                    }
-                }
-            } catch (e) { console.warn("Proxy failed"); }
-        }
-    }
-
-    // 3. Validation
-    // Normalize data structure from different sources
-    rawTracks = rawTracks.filter(t => t && (t.title || t.name));
-
-    if (rawTracks.length === 0) {
-        showToast("System", "Spotify Error: Link invalid or proxy unreachable.");
-        return;
-    }
-
-    showToast("System", `Found ${rawTracks.length} songs. Syncing...`);
-
-    // 4. Batch Match on YouTube
-    const BATCH_SIZE = 5; 
-    const matchedSongs = [];
-
-    for (let i = 0; i < rawTracks.length; i += BATCH_SIZE) {
-        const batch = rawTracks.slice(i, i + BATCH_SIZE);
-        const promises = batch.map(async (track) => {
-            const trackName = track.title || track.name;
-            // Handle artists from different structures (string or array of objects)
-            let artists = "";
-            if (typeof track.artists === 'string') artists = track.artists;
-            else if (Array.isArray(track.artists)) artists = track.artists.map(a => a.name || a).join(' ');
-            else artists = track.artist || "";
-            
-            if (!trackName) return null;
-
-            const query = `${trackName} ${artists} audio`; 
-            
-            try {
-                const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`;
-                const searchRes = await fetch(searchUrl);
-                const searchData = await searchRes.json();
-                
-                if (searchData.items && searchData.items.length > 0) {
-                    const item = searchData.items[0];
-                    return {
-                        videoId: item.id.videoId,
-                        title: smartCleanTitle(item.snippet.title),
-                        uploader: item.snippet.channelTitle,
-                        thumbnail: item.snippet.thumbnails.default.url
-                    };
-                }
-            } catch (e) {
-                console.warn("Failed to find track:", trackName);
-            }
-            return null;
-        });
-
-        const results = await Promise.all(promises);
-        results.forEach(r => { if (r) matchedSongs.push(r); });
-        
-        await new Promise(resolve => setTimeout(resolve, 300));
-    }
-
-    if (matchedSongs.length > 0) {
-        addBatchToQueue(matchedSongs);
-        showToast("System", `Successfully extracted ${matchedSongs.length} songs!`);
-    } else {
-        showToast("System", "Could not match songs on YouTube.");
-    }
-}
-
 function displayChatMessage(key, user, text, timestamp, image = null, seen = false) {
     const box = UI.chatMessages;
-    
     const isMe = user === myName;
+    
+    // Create Main Message Container
     const div = document.createElement('div');
     div.className = `message ${isMe ? 'me' : 'partner'}`;
-    const time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     
-    const header = document.createElement('div');
-    header.className = 'msg-header';
-    
-    const infoSpan = document.createElement('span');
-    infoSpan.style.display = 'flex';
-    infoSpan.style.alignItems = 'center';
-    
-    const userSpan = document.createElement('strong');
-    userSpan.textContent = user + " ";
-    const timeSpan = document.createElement('span');
-    timeSpan.style.fontSize = "0.85em";
-    timeSpan.style.fontWeight = "400";
-    timeSpan.style.marginLeft = "5px";
-    timeSpan.textContent = time;
-    
-    infoSpan.appendChild(userSpan);
-    infoSpan.appendChild(timeSpan);
-    
-    header.appendChild(infoSpan);
-    
-    if (isMe) {
-        const tickSpan = document.createElement('span');
-        tickSpan.id = `tick-${key}`;
-        tickSpan.className = seen ? 'tick-status seen' : 'tick-status';
-        tickSpan.innerHTML = seen ? '<i class="fa-solid fa-check-double"></i>' : '<i class="fa-solid fa-check"></i>';
-        header.appendChild(tickSpan);
-    }
+    // 1. Sender Name (Top)
+    const sender = document.createElement('div');
+    sender.className = 'msg-sender';
+    sender.textContent = user;
+    div.appendChild(sender);
 
+    // 2. Content (Middle)
     const body = document.createElement('div');
     body.className = 'msg-text-content';
-    body.textContent = text; 
-    
-    div.appendChild(header);
-    div.appendChild(body);
-    
+    body.textContent = text;
     if(image) {
         const img = document.createElement('img');
         img.src = image;
         img.className = 'chat-message-thumb';
-        div.appendChild(img);
+        body.appendChild(img);
     }
+    div.appendChild(body);
 
+    // 3. Metadata Row (Bottom Right)
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
+    
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'msg-time';
+    timeSpan.textContent = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    meta.appendChild(timeSpan);
+
+    // Read Ticks (Only for current user)
+    if (isMe) {
+        const tickSpan = document.createElement('span');
+        tickSpan.id = `tick-${key}`;
+        tickSpan.className = `msg-tick ${seen ? 'seen' : ''}`;
+        tickSpan.innerHTML = seen ? '<i class="fa-solid fa-check-double"></i>' : '<i class="fa-solid fa-check"></i>';
+        meta.appendChild(tickSpan);
+    }
+    
+    div.appendChild(meta);
     box.appendChild(div);
+
     if(isChatActive()) {
         forceChatScroll();
     }
