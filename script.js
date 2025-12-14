@@ -214,23 +214,13 @@ function monitorAdStatus() {
             lastBroadcaster = myName; 
             broadcastState('ad_pause', 0, currentVideoId, true); 
             updateSyncStatus();
-
-            // AUTOMATED AD HANDLING: Mute and Try Speed Up
-            if(player && player.mute) player.mute();
-            if(player && player.setPlaybackRate) {
-                try { player.setPlaybackRate(2); } catch(e){}
-            }
+            // REMOVED AUTO SKIP LOGIC HERE
         }
     } else {
         if (wasInAd) {
             wasInAd = false;
+            // REMOVED RESTORE LOGIC HERE
             
-            // Restore Audio and Speed
-            if(player && player.unMute) player.unMute();
-            if(player && player.setPlaybackRate) {
-                try { player.setPlaybackRate(1); } catch(e){}
-            }
-
             if(player.getPlayerState() !== YT.PlayerState.PLAYING) {
                 player.playVideo();
             }
