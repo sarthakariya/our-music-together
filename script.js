@@ -1233,6 +1233,7 @@ async function handleSearch() {
     const query = input.value.trim();
     if (!query) return;
 
+    // YOUTUBE PLAYLIST
     const ytPlaylistMatch = query.match(/[?&]list=([^#\&\?]+)/);
     if (ytPlaylistMatch) {
         showToast("System", "Fetching YouTube Playlist..."); 
@@ -1240,12 +1241,14 @@ async function handleSearch() {
         input.value = ''; return;
     }
     
-    if (query.includes('spotify.com')) {
+    // SPOTIFY LINKS
+    if (query.includes('spotify.com') || query.includes('spotify.link')) {
         showToast("System", "Fetching Spotify Data..."); 
         fetchSpotifyData(query);
         input.value = ''; return;
     }
     
+    // REGULAR SEARCH
     switchTab('results', true);
     UI.resultsList.innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
     
@@ -1329,29 +1332,82 @@ async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
 }
 
 async function fetchSpotifyData(link) {
-    const proxy = `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`;
+    // Attempting to use the user's provided proxy structure but improving robustness.
+    const proxyUrl = `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`;
+
     try {
-        const res = await fetch(proxy);
+        const res = await fetch(proxyUrl);
         const data = await res.json();
-        if(data.tracks) {
-            const songs = [];
-            for (const t of data.tracks.slice(0, 20)) { 
-                const query = t.artist + ' ' + t.title;
-                const sRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`);
-                const sData = await sRes.json();
-                if(sData.items.length) {
-                    const i = sData.items[0];
-                    songs.push({ 
-                        videoId: i.id.videoId, 
-                        title: smartCleanTitle(i.snippet.title), 
-                        uploader: i.snippet.channelTitle, 
-                        thumbnail: i.snippet.thumbnails.default.url 
-                    });
-                }
-            }
-            addBatchToQueue(songs);
+        
+        let rawTracks = [];
+        
+        // Robust Parsing for various proxy response formats
+        if (data.tracks) {
+            if (Array.isArray(data.tracks)) rawTracks = data.tracks;
+            else if (data.tracks.items) rawTracks = data.tracks.items.map(i => i.track || i);
+        } else if (data.type === 'track') {
+            rawTracks = [data];
+        } else if (Array.isArray(data)) {
+            rawTracks = data;
         }
-    } catch(e) { console.error(e); }
+
+        if (!rawTracks.length) throw new Error("No tracks found in data");
+
+        showToast("System", `Found ${rawTracks.length} Spotify tracks. Matching on YouTube...`);
+
+        // Batch processing to respect YouTube API limits while being faster
+        const BATCH_SIZE = 5;
+        const matchedSongs = [];
+
+        for (let i = 0; i < rawTracks.length; i += BATCH_SIZE) {
+            const batch = rawTracks.slice(i, i + BATCH_SIZE);
+            const promises = batch.map(async (track) => {
+                // Extract useful metadata
+                const trackName = track.name || track.title;
+                const artists = track.artists ? (Array.isArray(track.artists) ? track.artists.map(a => a.name || a).join(' ') : track.artists) : (track.artist || '');
+                
+                if (!trackName) return null;
+
+                const query = `${trackName} ${artists} audio`; // "audio" keyword helps get the song, not the music video (often has intros)
+                
+                try {
+                    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`;
+                    const searchRes = await fetch(searchUrl);
+                    const searchData = await searchRes.json();
+                    
+                    if (searchData.items && searchData.items.length > 0) {
+                        const item = searchData.items[0];
+                        return {
+                            videoId: item.id.videoId,
+                            title: smartCleanTitle(item.snippet.title),
+                            uploader: item.snippet.channelTitle,
+                            thumbnail: item.snippet.thumbnails.default.url
+                        };
+                    }
+                } catch (e) {
+                    console.warn("Failed to find track:", trackName);
+                }
+                return null;
+            });
+
+            const results = await Promise.all(promises);
+            results.forEach(r => { if (r) matchedSongs.push(r); });
+            
+            // Tiny delay to cool down API usage
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+
+        if (matchedSongs.length > 0) {
+            addBatchToQueue(matchedSongs);
+            showToast("System", `Successfully extracted ${matchedSongs.length} songs!`);
+        } else {
+            showToast("System", "Could not match songs on YouTube.");
+        }
+
+    } catch (e) {
+        console.error("Spotify Extraction Error:", e);
+        showToast("System", "Could not extract Spotify data. Link might be private or proxy unavailable.");
+    }
 }
 
 function displayChatMessage(key, user, text, timestamp, image = null, seen = false) {
