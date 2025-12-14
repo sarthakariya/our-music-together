@@ -1333,90 +1333,80 @@ async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
 }
 
 async function fetchSpotifyData(link) {
-    // 1. Clean the link: Remove query parameters like ?si=... which often break proxies
+    // 1. Clean the link and extract ID
     const cleanLink = link.split('?')[0];
-    
+    // Regex to extract ID (works for playlist, track, etc.)
+    const idMatch = cleanLink.match(/(playlist|track|album)\/([a-zA-Z0-9]+)/);
+    const type = idMatch ? idMatch[1] : null;
+    const id = idMatch ? idMatch[2] : null;
+
     showToast("System", "Connecting to Spotify...");
 
-    // 2. Define proxy candidates (Original + Clean fallback)
-    const proxies = [
-        `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`,
-        `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(cleanLink)}`
-    ];
-
-    let data = null;
-    let success = false;
-
-    // 3. Try to fetch from proxies sequentially
-    for (const url of proxies) {
-        try {
-            const res = await fetch(url);
-            if (res.ok) {
-                const json = await res.json();
-                // Check if valid data structure returned
-                if (json && (json.tracks || json.type === 'track')) {
-                    data = json;
-                    success = true;
-                    break;
-                }
-            }
-        } catch (e) {
-            console.warn("Proxy attempt failed:", e);
-        }
-    }
-
-    if (!success || !data) {
-        showToast("System", "Spotify Error: Link invalid or proxy unreachable.");
-        return;
-    }
-
-    // 4. Robust Parsing: Handle different response structures
     let rawTracks = [];
 
-    // Case A: Playlist or Album
-    if (data.tracks) {
-        if (Array.isArray(data.tracks)) {
-            // Some proxies return tracks array directly
-            rawTracks = data.tracks;
-        } else if (data.tracks.items) {
-            // Official API structure usually has tracks.items
-            rawTracks = data.tracks.items.map(item => item.track || item);
-        }
-    } 
-    // Case B: Single Track
-    else if (data.type === 'track') {
-        rawTracks = [data];
+    // STRATEGY A: If it is a playlist, try the robust SpotifyDown API first
+    if (type === 'playlist' && id) {
+        try {
+            const res = await fetch(`https://api.spotifydown.com/metadata/playlist/${id}`);
+            const data = await res.json();
+            if (data.success && data.trackList) {
+                rawTracks = data.trackList.map(t => ({ title: t.title, artists: t.artists }));
+            }
+        } catch(e) { console.warn("SpotifyDown Playlist failed, trying proxies..."); }
     }
 
-    // Filter out nulls
-    rawTracks = rawTracks.filter(t => t && (t.name || t.title));
+    // STRATEGY B: Generic Proxy Fallback (for tracks/albums or if Strategy A fails)
+    if (rawTracks.length === 0) {
+        const proxies = [
+            `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(cleanLink)}`,
+             // Fallback to oEmbed for title if needed, but here we need tracks.
+        ];
+
+        for (const url of proxies) {
+            try {
+                const res = await fetch(url);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.tracks) {
+                        if (Array.isArray(json.tracks)) rawTracks = json.tracks;
+                        else if (json.tracks.items) rawTracks = json.tracks.items.map(i => i.track || i);
+                        break;
+                    } else if (json.type === 'track') {
+                        rawTracks = [json];
+                        break;
+                    }
+                }
+            } catch (e) { console.warn("Proxy failed"); }
+        }
+    }
+
+    // 3. Validation
+    // Normalize data structure from different sources
+    rawTracks = rawTracks.filter(t => t && (t.title || t.name));
 
     if (rawTracks.length === 0) {
-        showToast("System", "No songs found in this link.");
+        showToast("System", "Spotify Error: Link invalid or proxy unreachable.");
         return;
     }
 
     showToast("System", `Found ${rawTracks.length} songs. Syncing...`);
 
-    // 5. Batch Process for YouTube Matching
+    // 4. Batch Match on YouTube
     const BATCH_SIZE = 5; 
     const matchedSongs = [];
 
     for (let i = 0; i < rawTracks.length; i += BATCH_SIZE) {
         const batch = rawTracks.slice(i, i + BATCH_SIZE);
         const promises = batch.map(async (track) => {
-            const trackName = track.name || track.title;
-            // Handle artist array or single string
+            const trackName = track.title || track.name;
+            // Handle artists from different structures (string or array of objects)
             let artists = "";
-            if (Array.isArray(track.artists)) {
-                artists = track.artists.map(a => a.name || a).join(' ');
-            } else {
-                artists = track.artist || "";
-            }
+            if (typeof track.artists === 'string') artists = track.artists;
+            else if (Array.isArray(track.artists)) artists = track.artists.map(a => a.name || a).join(' ');
+            else artists = track.artist || "";
             
             if (!trackName) return null;
 
-            // Adding "audio" helps find the song, not the music video
             const query = `${trackName} ${artists} audio`; 
             
             try {
@@ -1442,7 +1432,6 @@ async function fetchSpotifyData(link) {
         const results = await Promise.all(promises);
         results.forEach(r => { if (r) matchedSongs.push(r); });
         
-        // Small delay to respect YouTube quota
         await new Promise(resolve => setTimeout(resolve, 300));
     }
 
