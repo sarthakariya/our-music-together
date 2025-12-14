@@ -157,10 +157,15 @@
     <!-- Lyrics Overlay -->
     <div class="overlay" id="lyricsOverlay">
         <div class="modal-card lyrics-card">
-            <button class="modal-close-floating" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
-            <div class="lyrics-header-area">
+            
+            <!-- Flex Header: Guarantees No Overlap -->
+            <div class="lyrics-header-flex">
                 <h2 id="lyrics-title">Lyrics</h2>
-                <!-- Manual Lyrics Search Bar (Modernized) -->
+                <button class="lyrics-close-btn-visible" id="closeLyricsBtn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Manual Lyrics Search Bar -->
+            <div class="lyrics-search-wrapper">
                 <div class="lyrics-search-bar" id="lyricsSearchBar">
                      <div class="modern-search-input-container">
                         <input type="text" id="manualLyricsInput" class="modern-search-input" placeholder="Wrong song? Type manually...">
@@ -168,6 +173,7 @@
                      </div>
                 </div>
             </div>
+
             <div class="lyrics-content" id="lyrics-content-area">
                 <p>Find the words to this melody.</p>
             </div>
