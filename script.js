@@ -28,7 +28,7 @@ let hasUserInteracted = false;
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
 let bufferingTimeout = null; 
-let wasInAd = false; // Track ad state transition
+let wasInAd = false; 
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -117,8 +117,8 @@ function onPlayerReady(event) {
     if(syncHealthInterval) clearInterval(syncHealthInterval);
     syncHealthInterval = setInterval(monitorSyncHealth, 2000);
     
-    // High-Frequency Ad Check
-    setInterval(monitorAdStatus, 500);
+    // Ad Check Throttled to 1000ms for Battery Saving
+    setInterval(monitorAdStatus, 1000);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -186,8 +186,6 @@ function monitorAdStatus() {
             broadcastState('ad_pause', 0, currentVideoId, true); // Force broadcast
             updateSyncStatus();
         }
-        // While in ad, we rely on the initial ad_pause. 
-        // We don't spam broadcasts, but heartbeatSync will see detectAd() returning true and skip normal updates.
     } else {
         if (wasInAd) {
             console.log("Ad Ended! Resuming sync...");
@@ -245,15 +243,19 @@ document.addEventListener('visibilitychange', function() {
     if (document.hidden) {
         if (player && player.getPlayerState) {
             const state = player.getPlayerState();
+            // If playing or buffering, we assume user wants to continue
             if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
                 userIntentionallyPaused = false; 
             }
+            
+            // Immediate check: If paused and NOT intentional, Resume.
             if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
                 console.log("Visibility changed to hidden. Resuming...");
                 player.playVideo();
             }
         }
     } else {
+        // Foreground refresh
         if(currentVideoId) {
              const song = currentQueue.find(s => s.videoId === currentVideoId);
              if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
@@ -261,6 +263,7 @@ document.addEventListener('visibilitychange', function() {
     }
 });
 
+// Safety Interval
 setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
@@ -283,9 +286,6 @@ function heartbeatSync() {
     // Redundant check handled by monitorAdStatus, but good for suppressing normal heartbeats
     if (detectAd()) {
         if (lastBroadcaster === myName) {
-            // If I am the broadcaster, and I have an ad, I ensure DB knows.
-            // But monitorAdStatus handles the edge trigger.
-            // Here we just ensure status text is correct locally.
              updateSyncStatus();
         }
         return;
@@ -295,12 +295,15 @@ function heartbeatSync() {
         const state = player.getPlayerState();
         if (state === YT.PlayerState.PLAYING) {
             userIntentionallyPaused = false; 
+            
             const duration = player.getDuration();
             const current = player.getCurrentTime();
+            // Auto-next if near end
             if (duration > 0 && duration - current < 1) initiateNextSong(); 
             else broadcastState('play', current, currentVideoId);
         }
         else if (state === YT.PlayerState.PAUSED) {
+            // Only broadcast pause if USER intended it
             if(userIntentionallyPaused) {
                 broadcastState('pause', player.getCurrentTime(), currentVideoId);
             }
@@ -381,9 +384,7 @@ function updatePlayPauseButton(state) {
 function onPlayerStateChange(event) {
     const state = event.data;
 
-    // Ad Check on state change
     if (detectAd()) {
-        // Handled by monitorAdStatus mostly, but good to catch early
         updateSyncStatus();
         return;
     }
