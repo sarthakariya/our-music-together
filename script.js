@@ -34,6 +34,7 @@ const UI = {
     songTitle: document.getElementById('current-song-title'),
     lyricsContent: document.getElementById('lyrics-content-area'),
     lyricsOverlay: document.getElementById('lyricsOverlay'),
+    infoOverlay: document.getElementById('infoOverlay'), // Fixed: Added missing reference
     syncOverlay: document.getElementById('syncOverlay'),
     welcomeOverlay: document.getElementById('welcomeOverlay'),
     mobileSheet: document.getElementById('mobileSheet'),
@@ -1008,6 +1009,36 @@ document.getElementById('manualLyricsInput').addEventListener('keypress', (e) =>
     if(e.key === 'Enter') document.getElementById('manualLyricsBtn').click();
 });
 
+// --- NEW: DEDICATE BUTTON LOGIC ---
+// Ensure this exists if added in previous steps, checking user's full file would confirm.
+// Assuming users current HTML has dedicateBtn (it was in the provided index.html snippet)
+const dedicateBtn = document.getElementById('dedicateBtn');
+if (dedicateBtn) {
+    dedicateBtn.addEventListener('click', () => {
+        const title = UI.songTitle.textContent;
+        if(title && title !== "Heart's Rhythm") {
+            const msg = `🎵 Dedicated to you: ${title} ❤️`;
+            chatRef.push({ user: myName, text: msg, timestamp: Date.now(), seen: false });
+            showToast("System", "Dedication sent!");
+            switchTab('chat');
+        } else {
+            showToast("System", "Play a song to dedicate it!");
+        }
+    });
+}
+
+// --- NEW: QUICK VIBE LOGIC ---
+function sendVibe(emoji) {
+    const msgs = [
+        `Vibing with ${emoji}`,
+        `Sending ${emoji}`,
+        `${emoji} ${emoji} ${emoji}`
+    ];
+    const text = msgs[Math.floor(Math.random() * msgs.length)];
+    chatRef.push({ user: myName, text: text, timestamp: Date.now(), seen: false });
+    triggerHaptic();
+}
+
 function decodeHTMLEntities(text) {
     if (!text) return "";
     const txt = document.createElement("textarea");
@@ -1428,5 +1459,14 @@ document.getElementById('forceSyncBtn').addEventListener('click', () => {
     UI.syncOverlay.classList.remove('active');
     player.playVideo(); broadcastState('play', player.getCurrentTime(), currentVideoId);
 });
-document.getElementById('infoBtn').addEventListener('click', () => UI.infoOverlay.classList.add('active'));
-document.getElementById('closeInfoBtn').addEventListener('click', () => UI.infoOverlay.classList.remove('active'));
+
+// Fixed Info/About Button Logic
+const infoBtn = document.getElementById('infoBtn');
+const closeInfoBtn = document.getElementById('closeInfoBtn');
+
+if(infoBtn && UI.infoOverlay) {
+    infoBtn.addEventListener('click', () => UI.infoOverlay.classList.add('active'));
+}
+if(closeInfoBtn && UI.infoOverlay) {
+    closeInfoBtn.addEventListener('click', () => UI.infoOverlay.classList.remove('active'));
+}
