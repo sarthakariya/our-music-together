@@ -26,7 +26,7 @@ let isSwitchingSong = false;
 let hasUserInteracted = false; 
 
 // --- BACKGROUND PLAYBACK FLAGS ---
-let userIntentionallyPaused = false; // Tracks if the USER paused, or the BROWSER paused
+let userIntentionallyPaused = false; 
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -86,7 +86,7 @@ function onYouTubeIframeAPIReady() {
         events: { 
             'onReady': onPlayerReady, 
             'onStateChange': onPlayerStateChange,
-            'onError': onPlayerError // CRITICAL FIX: Handle errors
+            'onError': onPlayerError 
         }
     });
 }
@@ -102,17 +102,9 @@ function onPlayerReady(event) {
     setupMediaSession();
 }
 
-// --- ERROR HANDLER FOR YOUTUBE ---
-// This fixes the grey screen / stuck loop issue
 function onPlayerError(event) {
     console.error("YouTube Player Error:", event.data);
-    isSwitchingSong = false; // Release lock immediately
-    
-    // Error Codes:
-    // 2: Invalid parameter
-    // 5: HTML5 Error
-    // 100: Not found / Private
-    // 101/150: Not embeddable (Copyright)
+    isSwitchingSong = false; 
     
     let errorMsg = "Error playing video.";
     if(event.data === 100 || event.data === 101 || event.data === 150) {
@@ -120,9 +112,8 @@ function onPlayerError(event) {
     }
     
     showToast("System", errorMsg);
-    updateSyncStatus(); // Remove "Switching..." text
+    updateSyncStatus(); 
 
-    // Auto-skip to next song after short delay
     setTimeout(() => {
         initiateNextSong();
     }, 1500);
@@ -170,31 +161,43 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
     }
 }
 
-// --- BACKGROUND PLAYBACK HACK (Resurrection) ---
+// --- AGGRESSIVE BACKGROUND KEEP-ALIVE ---
+// 1. Event Listener for Tab switching
 document.addEventListener('visibilitychange', function() {
     if (document.hidden) {
-        // If we are minimizing...
+        // If we are minimizing and state is playing, ensure we know it wasn't a user pause
         if (player && player.getPlayerState) {
             const state = player.getPlayerState();
+            if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
+                userIntentionallyPaused = false; 
+            }
             
-            // If it was playing, and we didn't pause it, ensure it keeps playing
-            if (state === YT.PlayerState.PLAYING) {
-                // Do nothing, hope it stays playing
-            } else if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
-                // Browser force-paused it. RESUME!
-                console.log("Browser paused due to background. Resuming...");
+            // Immediate check: If paused and NOT intentional, Resume.
+            if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
+                console.log("Visibility changed to hidden. Resuming...");
                 player.playVideo();
             }
         }
     } else {
         // Coming back to foreground
-        // Refresh metadata to ensure notification stays valid
         if(currentVideoId) {
              const song = currentQueue.find(s => s.videoId === currentVideoId);
              if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
         }
     }
 });
+
+// 2. Interval Check (The Safety Net)
+setInterval(() => {
+    if (document.hidden && player && player.getPlayerState) {
+        const state = player.getPlayerState();
+        // If stopped, hidden, and user didn't explicitly click pause... RESUME.
+        if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
+            console.log("Background Keep-Alive: Resuming video.");
+            player.playVideo();
+        }
+    }
+}, 2000);
 
 // --- CORE SYNC LOGIC ---
 
@@ -214,13 +217,16 @@ function heartbeatSync() {
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
         const state = player.getPlayerState();
         if (state === YT.PlayerState.PLAYING) {
+            // SAFETY: If playing, user definitely doesn't want to be paused.
+            userIntentionallyPaused = false; 
+            
             const duration = player.getDuration();
             const current = player.getCurrentTime();
             if (duration > 0 && duration - current < 1) initiateNextSong(); 
             else broadcastState('play', current, currentVideoId);
         }
         else if (state === YT.PlayerState.PAUSED) {
-            // Only broadcast pause if USER intended it (prevents background loop)
+            // Only broadcast pause if USER intended it
             if(userIntentionallyPaused) {
                 broadcastState('pause', player.getCurrentTime(), currentVideoId);
             }
@@ -243,7 +249,6 @@ function monitorSyncHealth() {
     
     if (currentRemoteState.action === 'switching_pause') {
         if (Date.now() - (currentRemoteState.timestamp || 0) > 6000) {
-            console.log("Stuck in switching state detected. Forcing recovery.");
             updateSyncStatus(); 
         }
         return;
@@ -256,7 +261,6 @@ function monitorSyncHealth() {
         if (myState !== YT.PlayerState.PLAYING && myState !== YT.PlayerState.BUFFERING) {
             if (detectAd()) return; 
             
-            // Auto Resume Logic here too
             userIntentionallyPaused = false;
             player.playVideo(); 
             needsFix = true;
@@ -294,14 +298,15 @@ function updatePlayPauseButton(state) {
 function onPlayerStateChange(event) {
     const state = event.data;
 
-    // --- BACKGROUND RESUME HACK ---
-    // If browser pauses us because we are hidden, AND we didn't ask for it -> FORCE PLAY
+    if (state === YT.PlayerState.PLAYING) {
+         userIntentionallyPaused = false;
+    }
+
+    // --- BACKGROUND RESUME HACK (Immediate) ---
     if (state === YT.PlayerState.PAUSED && document.hidden && !userIntentionallyPaused) {
-        console.log("Preventing background pause...");
-        setTimeout(() => {
-            if(player && player.playVideo) player.playVideo();
-        }, 100);
-        return; // Don't broadcast this pause to DB
+        console.log("Preventing background pause (event trigger)...");
+        player.playVideo();
+        return; 
     }
 
     // --- INFINITE LOADING FIX ---
@@ -326,7 +331,6 @@ function onPlayerStateChange(event) {
     }
 
     if (state === YT.PlayerState.PLAYING) {
-        userIntentionallyPaused = false; // Ensure flag is reset
         if(player && player.setVolume) player.setVolume(100);
         if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
@@ -335,7 +339,6 @@ function onPlayerStateChange(event) {
     }
     else if (state === YT.PlayerState.PAUSED) {
         if (Date.now() - lastLocalInteractionTime > 500) {
-            // Only broadcast if it's visible or intentionally paused
             if (!document.hidden || userIntentionallyPaused) {
                 lastBroadcaster = myName; 
                 broadcastState('pause', player.getCurrentTime(), currentVideoId);
@@ -360,12 +363,12 @@ function togglePlayPause() {
 
     if (state === YT.PlayerState.PLAYING) {
         btn.innerHTML = '<i class="fa-solid fa-play"></i>'; 
-        userIntentionallyPaused = true; // Mark as intentional
+        userIntentionallyPaused = true; 
         player.pauseVideo();
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
         btn.innerHTML = '<i class="fa-solid fa-pause"></i>'; 
-        userIntentionallyPaused = false; // Mark as playing
+        userIntentionallyPaused = false; 
         if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
         else if (currentVideoId) {
             player.setVolume(100);
@@ -378,7 +381,6 @@ function togglePlayPause() {
 function initiateNextSong() {
     if (isSwitchingSong) return;
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
-    // Loop back to start if at end
     const next = currentQueue[(idx + 1) % currentQueue.length];
     if (next) initiateSongLoad(next);
 }
@@ -393,7 +395,7 @@ function initiateSongLoad(songObj) {
     if (!songObj) return;
 
     isSwitchingSong = true;
-    userIntentionallyPaused = false; // Reset on song change
+    userIntentionallyPaused = false; 
     lastBroadcaster = myName;
 
     if (player && player.pauseVideo) player.pauseVideo();
@@ -405,7 +407,6 @@ function initiateSongLoad(songObj) {
         action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
     });
 
-    // Fallback if video takes too long to load
     setTimeout(() => {
         if (isSwitchingSong) {
             isSwitchingSong = false;
@@ -524,12 +525,10 @@ function isChatActive() {
     return activeTab === 'chat';
 }
 
-// --- HELPER TO FORCE CHAT SCROLL BOTTOM ---
 function forceChatScroll() {
     const box = document.getElementById('chat-messages');
     if(box) {
         box.scrollTop = box.scrollHeight;
-        // Double tap for layout shifts
         requestAnimationFrame(() => {
             box.scrollTop = box.scrollHeight;
         });
@@ -570,7 +569,6 @@ function applyRemoteCommand(state) {
 
     if (state.action === 'switching_pause') {
         if (Date.now() - (state.timestamp || 0) > 6000) {
-            // Ignore stale switching events to prevent UI lock
             return;
         }
         player.pauseVideo();
@@ -609,7 +607,7 @@ function applyRemoteCommand(state) {
         }
         else if (state.action === 'pause') {
             if (playerState !== YT.PlayerState.PAUSED) {
-                userIntentionallyPaused = true; // Remote force pause
+                userIntentionallyPaused = true; 
                 player.pauseVideo();
             }
         } 
@@ -647,7 +645,6 @@ function updateSyncStatus() {
     }
 
     if (currentRemoteState && currentRemoteState.action === 'switching_pause') {
-        // --- TIMEOUT FIX: If stuck for > 6s, revert to default state ---
         if (Date.now() - (currentRemoteState.timestamp || 0) > 6000) {
             msgEl.innerHTML = `<i class="fa-solid fa-pause"></i> Ready`;
             msgEl.className = 'sync-status-3d status-paused';
@@ -708,12 +705,11 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         renderQueue(currentQueue, currentVideoId);
         
-        // Unset switching flag immediately so onPlayerStateChange can handle events
         isSwitchingSong = false;
-        
+        userIntentionallyPaused = false; // RESET PAUSE FLAG ON NEW SONG
+
         if (shouldBroadcast) {
             lastBroadcaster = myName;
-            // Delay slightly to ensure player is ready to accept events before we say "RESTART"
             setTimeout(() => {
                 broadcastState('restart', 0, videoId, true); 
             }, 100);
@@ -744,9 +740,7 @@ function switchTab(tabName, forceOpen = false) {
     
     if (tabName === 'chat') {
         markMessagesAsSeen();
-        // --- IMPROVED CHAT SCROLLING ---
         forceChatScroll();
-        // Scroll again after a short delay to account for layout shifts/keyboard
         setTimeout(forceChatScroll, 300);
     }
     
@@ -1312,7 +1306,6 @@ function displayChatMessage(key, user, text, timestamp, image = null, seen = fal
     }
 
     box.appendChild(div);
-    // --- FORCE SCROLL ON NEW MESSAGE ---
     if(isChatActive()) {
         forceChatScroll();
     }
