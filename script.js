@@ -1242,7 +1242,8 @@ async function handleSearch() {
     }
     
     // SPOTIFY LINKS
-    if (query.includes('spotify.com') || query.includes('spotify.link')) {
+    // More robust check: catches spotify.com/track, spotify.com/playlist, spotify.link, etc.
+    if (query.match(/spotify\.(com|link)/)) {
         showToast("System", "Fetching Spotify Data..."); 
         fetchSpotifyData(query);
         input.value = ''; return;
@@ -1332,81 +1333,124 @@ async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
 }
 
 async function fetchSpotifyData(link) {
-    // Attempting to use the user's provided proxy structure but improving robustness.
-    const proxyUrl = `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`;
+    // 1. Clean the link: Remove query parameters like ?si=... which often break proxies
+    const cleanLink = link.split('?')[0];
+    
+    showToast("System", "Connecting to Spotify...");
 
-    try {
-        const res = await fetch(proxyUrl);
-        const data = await res.json();
-        
-        let rawTracks = [];
-        
-        // Robust Parsing for various proxy response formats
-        if (data.tracks) {
-            if (Array.isArray(data.tracks)) rawTracks = data.tracks;
-            else if (data.tracks.items) rawTracks = data.tracks.items.map(i => i.track || i);
-        } else if (data.type === 'track') {
-            rawTracks = [data];
-        } else if (Array.isArray(data)) {
-            rawTracks = data;
-        }
+    // 2. Define proxy candidates (Original + Clean fallback)
+    const proxies = [
+        `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(link)}`,
+        `https://spotify-proxy.vercel.app/api/data?url=${encodeURIComponent(cleanLink)}`
+    ];
 
-        if (!rawTracks.length) throw new Error("No tracks found in data");
+    let data = null;
+    let success = false;
 
-        showToast("System", `Found ${rawTracks.length} Spotify tracks. Matching on YouTube...`);
-
-        // Batch processing to respect YouTube API limits while being faster
-        const BATCH_SIZE = 5;
-        const matchedSongs = [];
-
-        for (let i = 0; i < rawTracks.length; i += BATCH_SIZE) {
-            const batch = rawTracks.slice(i, i + BATCH_SIZE);
-            const promises = batch.map(async (track) => {
-                // Extract useful metadata
-                const trackName = track.name || track.title;
-                const artists = track.artists ? (Array.isArray(track.artists) ? track.artists.map(a => a.name || a).join(' ') : track.artists) : (track.artist || '');
-                
-                if (!trackName) return null;
-
-                const query = `${trackName} ${artists} audio`; // "audio" keyword helps get the song, not the music video (often has intros)
-                
-                try {
-                    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`;
-                    const searchRes = await fetch(searchUrl);
-                    const searchData = await searchRes.json();
-                    
-                    if (searchData.items && searchData.items.length > 0) {
-                        const item = searchData.items[0];
-                        return {
-                            videoId: item.id.videoId,
-                            title: smartCleanTitle(item.snippet.title),
-                            uploader: item.snippet.channelTitle,
-                            thumbnail: item.snippet.thumbnails.default.url
-                        };
-                    }
-                } catch (e) {
-                    console.warn("Failed to find track:", trackName);
+    // 3. Try to fetch from proxies sequentially
+    for (const url of proxies) {
+        try {
+            const res = await fetch(url);
+            if (res.ok) {
+                const json = await res.json();
+                // Check if valid data structure returned
+                if (json && (json.tracks || json.type === 'track')) {
+                    data = json;
+                    success = true;
+                    break;
                 }
-                return null;
-            });
+            }
+        } catch (e) {
+            console.warn("Proxy attempt failed:", e);
+        }
+    }
 
-            const results = await Promise.all(promises);
-            results.forEach(r => { if (r) matchedSongs.push(r); });
+    if (!success || !data) {
+        showToast("System", "Spotify Error: Link invalid or proxy unreachable.");
+        return;
+    }
+
+    // 4. Robust Parsing: Handle different response structures
+    let rawTracks = [];
+
+    // Case A: Playlist or Album
+    if (data.tracks) {
+        if (Array.isArray(data.tracks)) {
+            // Some proxies return tracks array directly
+            rawTracks = data.tracks;
+        } else if (data.tracks.items) {
+            // Official API structure usually has tracks.items
+            rawTracks = data.tracks.items.map(item => item.track || item);
+        }
+    } 
+    // Case B: Single Track
+    else if (data.type === 'track') {
+        rawTracks = [data];
+    }
+
+    // Filter out nulls
+    rawTracks = rawTracks.filter(t => t && (t.name || t.title));
+
+    if (rawTracks.length === 0) {
+        showToast("System", "No songs found in this link.");
+        return;
+    }
+
+    showToast("System", `Found ${rawTracks.length} songs. Syncing...`);
+
+    // 5. Batch Process for YouTube Matching
+    const BATCH_SIZE = 5; 
+    const matchedSongs = [];
+
+    for (let i = 0; i < rawTracks.length; i += BATCH_SIZE) {
+        const batch = rawTracks.slice(i, i + BATCH_SIZE);
+        const promises = batch.map(async (track) => {
+            const trackName = track.name || track.title;
+            // Handle artist array or single string
+            let artists = "";
+            if (Array.isArray(track.artists)) {
+                artists = track.artists.map(a => a.name || a).join(' ');
+            } else {
+                artists = track.artist || "";
+            }
             
-            // Tiny delay to cool down API usage
-            await new Promise(resolve => setTimeout(resolve, 300));
-        }
+            if (!trackName) return null;
 
-        if (matchedSongs.length > 0) {
-            addBatchToQueue(matchedSongs);
-            showToast("System", `Successfully extracted ${matchedSongs.length} songs!`);
-        } else {
-            showToast("System", "Could not match songs on YouTube.");
-        }
+            // Adding "audio" helps find the song, not the music video
+            const query = `${trackName} ${artists} audio`; 
+            
+            try {
+                const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`;
+                const searchRes = await fetch(searchUrl);
+                const searchData = await searchRes.json();
+                
+                if (searchData.items && searchData.items.length > 0) {
+                    const item = searchData.items[0];
+                    return {
+                        videoId: item.id.videoId,
+                        title: smartCleanTitle(item.snippet.title),
+                        uploader: item.snippet.channelTitle,
+                        thumbnail: item.snippet.thumbnails.default.url
+                    };
+                }
+            } catch (e) {
+                console.warn("Failed to find track:", trackName);
+            }
+            return null;
+        });
 
-    } catch (e) {
-        console.error("Spotify Extraction Error:", e);
-        showToast("System", "Could not extract Spotify data. Link might be private or proxy unavailable.");
+        const results = await Promise.all(promises);
+        results.forEach(r => { if (r) matchedSongs.push(r); });
+        
+        // Small delay to respect YouTube quota
+        await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    if (matchedSongs.length > 0) {
+        addBatchToQueue(matchedSongs);
+        showToast("System", `Successfully extracted ${matchedSongs.length} songs!`);
+    } else {
+        showToast("System", "Could not match songs on YouTube.");
     }
 }
 
