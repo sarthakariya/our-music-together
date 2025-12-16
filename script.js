@@ -34,7 +34,7 @@ const UI = {
     songTitle: document.getElementById('current-song-title'),
     lyricsContent: document.getElementById('lyrics-content-area'),
     lyricsOverlay: document.getElementById('lyricsOverlay'),
-    infoOverlay: document.getElementById('infoOverlay'), // Fixed: Added missing reference
+    infoOverlay: document.getElementById('infoOverlay'), 
     syncOverlay: document.getElementById('syncOverlay'),
     welcomeOverlay: document.getElementById('welcomeOverlay'),
     mobileSheet: document.getElementById('mobileSheet'),
@@ -55,7 +55,7 @@ let activeTab = 'queue';
 let currentRemoteState = null; 
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
-let lastQueueSignature = ""; // For diffing
+let lastQueueSignature = ""; 
 
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
@@ -73,6 +73,61 @@ let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
 let syncHealthInterval = null;
 
+// --- BATTERY SAVER / VISIBILITY LOGIC ---
+let smartIntervals = [];
+
+function setSmartInterval(callback, normalMs, hiddenMs) {
+    let intervalId = null;
+    let currentMs = document.hidden ? hiddenMs : normalMs;
+    
+    const run = () => {
+        if(document.hidden && hiddenMs === Infinity) {
+            // Do not run at all if hidden and Ms is Infinity
+        } else {
+             callback();
+        }
+    };
+
+    intervalId = setInterval(run, currentMs);
+
+    const handler = {
+        id: intervalId,
+        normalMs,
+        hiddenMs,
+        callback,
+        restart: function() {
+            clearInterval(this.id);
+            const ms = document.hidden ? this.hiddenMs : this.normalMs;
+            if (ms !== Infinity) {
+                 this.id = setInterval(this.callback, ms);
+            }
+        }
+    };
+    smartIntervals.push(handler);
+    return handler;
+}
+
+document.addEventListener('visibilitychange', () => {
+    // 1. Re-adjust all smart timers
+    smartIntervals.forEach(h => h.restart());
+    
+    // 2. Pause/Resume Visuals
+    if (document.hidden) {
+        // Paused visual updates save GPU
+        UI.equalizer.classList.add('paused'); 
+        stopLyricsSync(); 
+    } else {
+        // Resume visual updates
+        UI.equalizer.classList.remove('paused');
+        if (currentVideoId) {
+             const song = currentQueue.find(s => s.videoId === currentVideoId);
+             if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
+        }
+        if(currentLyrics) startLyricsSync();
+        updateSyncStatus();
+    }
+});
+
 // --- HAPTIC FEEDBACK HELPER ---
 function triggerHaptic() {
     if (navigator.vibrate) {
@@ -81,7 +136,6 @@ function triggerHaptic() {
 }
 
 document.addEventListener('click', (e) => {
-    // Event delegation check is lighter than attaching to every element
     const t = e.target;
     if (t.tagName === 'BUTTON' || t.closest('button') || 
         t.closest('.song-item') || t.closest('.nav-tab')) {
@@ -142,14 +196,15 @@ function onYouTubeIframeAPIReady() {
 
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
-    setInterval(heartbeatSync, 1000);
     
-    // Check sync health frequently
-    if(syncHealthInterval) clearInterval(syncHealthInterval);
-    syncHealthInterval = setInterval(monitorSyncHealth, 2000);
+    // SMART TIMER: Heartbeat sync (1s active, 5s hidden)
+    setSmartInterval(heartbeatSync, 1000, 5000);
     
-    // Ad Check Throttled to 1000ms for Battery Saving
-    setInterval(monitorAdStatus, 1000);
+    // SMART TIMER: Monitor Sync Health (2s active, 5s hidden)
+    setSmartInterval(monitorSyncHealth, 2000, 5000);
+    
+    // SMART TIMER: Ad Check (1s active, 3s hidden)
+    setSmartInterval(monitorAdStatus, 1000, 3000);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -179,23 +234,14 @@ function onPlayerError(event) {
 function detectAd() {
     if (!player) return false;
     try {
-        // Optimization: Quick check first
         if (player.getPlayerState() !== YT.PlayerState.PLAYING) return false;
 
         const data = player.getVideoData();
         if (!data) return false;
 
-        if (currentVideoId && data.video_id && data.video_id !== currentVideoId) {
-            return true;
-        }
-
-        if (data.author === "") {
-            return true;
-        }
-        
-        if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) {
-            return true;
-        }
+        if (currentVideoId && data.video_id && data.video_id !== currentVideoId) return true;
+        if (data.author === "") return true;
+        if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
 
     } catch(e) {}
     return false;
@@ -203,7 +249,7 @@ function detectAd() {
 
 // --- AD MONITOR LOOP ---
 function monitorAdStatus() {
-    // optimization: don't check ads if tab is hidden to save CPU, unless audio is playing
+    // If we are hidden and paused intentionally, don't waste CPU checking ads
     if (document.hidden && userIntentionallyPaused) return;
     if (!player || !currentVideoId) return;
 
@@ -215,12 +261,10 @@ function monitorAdStatus() {
             lastBroadcaster = myName; 
             broadcastState('ad_pause', 0, currentVideoId, true); 
             updateSyncStatus();
-            // REMOVED AUTO SKIP LOGIC HERE
         }
     } else {
         if (wasInAd) {
             wasInAd = false;
-            // REMOVED RESTORE LOGIC HERE
             
             if(player.getPlayerState() !== YT.PlayerState.PLAYING) {
                 player.playVideo();
@@ -267,39 +311,16 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
 }
 
 // --- AGGRESSIVE BACKGROUND KEEP-ALIVE ---
-document.addEventListener('visibilitychange', function() {
-    if (document.hidden) {
-        if (player && player.getPlayerState) {
-            const state = player.getPlayerState();
-            if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
-                userIntentionallyPaused = false; 
-            }
-            if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
-                player.playVideo();
-            }
-        }
-        // Save resources when hidden
-        stopLyricsSync();
-    } else {
-        // Foreground refresh
-        if(currentVideoId) {
-             const song = currentQueue.find(s => s.videoId === currentVideoId);
-             if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
-        }
-        // Restart visual syncs
-        if(currentLyrics) startLyricsSync();
-        updateSyncStatus();
-    }
-});
-
+// We use a slow interval to kick the player if it drifts while hidden
 setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
+        // If we are supposed to be playing but are paused (browser throttling), force play
         if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
             player.playVideo();
         }
     }
-}, 2000);
+}, 4000); // 4 seconds is enough for keep-alive
 
 // --- CORE SYNC LOGIC ---
 
@@ -327,7 +348,7 @@ function heartbeatSync() {
             }
         }
         
-        // Optimally update UI only if visible
+        // Only update DOM if visible to save battery
         if(!document.hidden && Date.now() - lastLocalInteractionTime > 1000) {
             updatePlayPauseButton(state);
         }
@@ -391,12 +412,10 @@ function updatePlayPauseButton(state) {
     
     if (isSwitchingSong) return;
 
-    // Smart DOM Update: Only change innerHTML if needed
     const isPlaying = (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING);
     const iconClass = isPlaying ? 'fa-pause' : 'fa-play';
-    const currentHTML = UI.playPauseBtn.innerHTML;
-    
-    if (!currentHTML.includes(iconClass)) {
+    // Optimization: Check includes before writing innerHTML
+    if (!UI.playPauseBtn.innerHTML.includes(iconClass)) {
         UI.playPauseBtn.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
     }
     
@@ -711,7 +730,7 @@ function applyRemoteCommand(state) {
 }
 
 function updateSyncStatus() {
-    // If hidden, skip DOM updates to save battery
+    // If hidden, skip DOM updates completely to save battery
     if (document.hidden) return;
 
     const msgEl = UI.syncStatusMsg;
@@ -750,7 +769,7 @@ function updateSyncStatus() {
         }
     }
 
-    // Smart DOM Update: Only write if changed
+    // Smart DOM Update: Only write if changed to reduce reflows
     const newHTML = `<i class="fa-solid ${icon}"></i> ${text}`;
     if (msgEl.innerHTML !== newHTML) msgEl.innerHTML = newHTML;
     if (msgEl.className !== className) {
@@ -1013,8 +1032,6 @@ document.getElementById('manualLyricsInput').addEventListener('keypress', (e) =>
 });
 
 // --- NEW: DEDICATE BUTTON LOGIC ---
-// Ensure this exists if added in previous steps, checking user's full file would confirm.
-// Assuming users current HTML has dedicateBtn (it was in the provided index.html snippet)
 const dedicateBtn = document.getElementById('dedicateBtn');
 if (dedicateBtn) {
     dedicateBtn.addEventListener('click', () => {
@@ -1114,7 +1131,7 @@ function stopLyricsSync() {
 }
 
 function syncLyricsDisplay() {
-    // Optimization: Do nothing if hidden
+    // Optimization: Do nothing if hidden to save battery
     if (document.hidden) return;
     if (!player || !player.getCurrentTime || !currentLyrics) return;
     
@@ -1254,10 +1271,9 @@ document.getElementById('unsyncLyricsBtn').addEventListener('click', () => {
     if(currentPlainLyrics) {
          UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom:50px;">${currentPlainLyrics.replace(/\n/g, "<br>")}</div>`;
     } else {
-         // Fallback if plain lyrics missing (rare)
          const lines = document.querySelectorAll('.lyrics-line');
          let text = "";
-         lines.forEach(l => text += l.textContent + "\n"); // Use newline for plain text conversion
+         lines.forEach(l => text += l.textContent + "\n");
          UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom:50px;">${text.replace(/\n/g, "<br>")}</div>`;
     }
     showToast("System", "Lyrics sync disabled.");
