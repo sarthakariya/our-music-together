@@ -63,6 +63,7 @@ let wasInAd = false;
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
+let currentPlainLyrics = "";
 let lyricsInterval = null;
 let lastLyricsIndex = -1;
 
@@ -1152,11 +1153,14 @@ function syncLyricsDisplay() {
 async function fetchLyrics(manualQuery = null) {
     const searchBar = document.getElementById('lyricsSearchBar');
     const lyricsTitle = document.getElementById('lyrics-title');
+    const unsyncBtn = document.getElementById('unsyncLyricsBtn');
     
     let searchWords = "";
     searchBar.classList.remove('visible');
     searchBar.style.display = 'none'; 
+    unsyncBtn.style.display = 'none';
     lastLyricsIndex = -1; // Reset index
+    currentPlainLyrics = ""; // Reset plain text
     
     if(manualQuery) {
         searchWords = manualQuery;
@@ -1183,9 +1187,11 @@ async function fetchLyrics(manualQuery = null) {
             const song = data.find(s => s.syncedLyrics) || data[0];
             
             if (song.syncedLyrics) {
+                currentPlainLyrics = song.plainLyrics || song.syncedLyrics.replace(/\[.*?\]/g, '');
                 currentLyrics = parseSyncedLyrics(song.syncedLyrics);
                 renderSyncedLyrics(currentLyrics);
                 startLyricsSync();
+                unsyncBtn.style.display = 'grid';
             } else {
                 currentLyrics = null;
                 stopLyricsSync();
@@ -1237,6 +1243,25 @@ async function fetchLyrics(manualQuery = null) {
         `;
     }
 }
+
+// Disable Sync Button Logic
+document.getElementById('unsyncLyricsBtn').addEventListener('click', () => {
+    stopLyricsSync();
+    currentLyrics = null;
+    document.getElementById('unsyncLyricsBtn').style.display = 'none';
+    
+    // Render plain text
+    if(currentPlainLyrics) {
+         UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom:50px;">${currentPlainLyrics.replace(/\n/g, "<br>")}</div>`;
+    } else {
+         // Fallback if plain lyrics missing (rare)
+         const lines = document.querySelectorAll('.lyrics-line');
+         let text = "";
+         lines.forEach(l => text += l.textContent + "\n"); // Use newline for plain text conversion
+         UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom:50px;">${text.replace(/\n/g, "<br>")}</div>`;
+    }
+    showToast("System", "Lyrics sync disabled.");
+});
 
 UI.searchInput.addEventListener('input', (e) => {
     if(document.activeElement === UI.searchInput) {
