@@ -519,6 +519,15 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     flex-shrink: 0;
 }
 
+/* Header Buttons Wrapper */
+.lyrics-header-buttons {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: 10px;
+}
+
 #lyrics-title { 
     font-family: 'Montserrat', sans-serif; 
     font-weight: 800; 
@@ -531,8 +540,27 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     text-overflow: ellipsis;
     white-space: nowrap;
     flex: 1; /* Takes available space */
-    padding-right: 15px; /* Spacing from button */
+    padding-right: 5px; /* Spacing from button */
     text-align: left;
+}
+
+.lyrics-control-btn {
+    width: 45px; 
+    height: 45px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1); 
+    color: rgba(255,255,255,0.7);
+    border: 1px solid rgba(255,255,255,0.2);
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: all 0.2s;
+}
+.lyrics-control-btn:hover {
+    background: rgba(255,255,255,0.2);
+    color: white;
+    transform: scale(1.1);
 }
 
 .lyrics-close-btn-visible {
