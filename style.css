@@ -10,7 +10,7 @@
     --gold: #ffd700;                 
     --gold-dim: #c5a000;             
     
-    /* Optimized Glass: No blur, just opacity */
+    /* Optimized Glass: No blur, just opacity - High Performance */
     --glass-bg: rgba(22, 12, 35, 0.96); 
     --glass-border: rgba(255, 255, 255, 0.12);
     
@@ -20,8 +20,8 @@
     --curve-xl: 32px;                
     --curve-m: 24px;                
     
-    /* Lighter Shadows */
-    --shadow-3d: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.1); 
+    /* Lighter Shadows: Reduced blur radius for GPU efficiency */
+    --shadow-3d: 0 4px 15px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.1); 
     
     --pill-height: 70px;
     --pill-float: 25px;
@@ -74,9 +74,8 @@ body::before {
     content: "";
     position: fixed;
     top: 0; left: 0; width: 100%; height: 100%;
-    background-image: 
-        radial-gradient(circle at 15% 15%, rgba(98, 0, 234, 0.15) 0%, transparent 40%),
-        radial-gradient(circle at 85% 85%, rgba(197, 17, 98, 0.15) 0%, transparent 40%);
+    /* Simplified Gradient for Performance */
+    background: radial-gradient(circle at 15% 15%, #2a0e45 0%, #0f0518 50%);
     z-index: -1;
     pointer-events: none;
     transform: translateZ(0); /* Hardware accelerate */
@@ -104,7 +103,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     display: flex; flex-direction: column; gap: 15px;
     z-index: 10;
     animation: fadeIn 0.4s ease-out; 
-    contain: layout; /* Performance optimization */
+    contain: layout; /* Performance optimization: Isolates layout calculations */
 }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -123,11 +122,12 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .top-bar { 
     display: flex; justify-content: space-between; align-items: center; padding: 20px 45px;
     flex-shrink: 0;
+    contain: content;
 }
 .logo h1 { 
     font-family: 'Montserrat', sans-serif; 
     font-weight: 800; font-size: 2rem; color: white; 
-    text-shadow: 0 0 10px rgba(245, 0, 87, 0.3); /* Lighter shadow */
+    text-shadow: 0 0 5px rgba(245, 0, 87, 0.3); /* Lighter shadow */
     margin: 0; letter-spacing: -0.5px;
 }
 
@@ -140,21 +140,24 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .player-card { 
     flex: 1.6; min-width: 480px; padding: 30px; 
     display: flex; flex-direction: column; overflow-y: auto; gap: 15px;
+    contain: content; /* Isolates internal layout changes */
 }
 
 .player-glow-container { position: relative; width: 100%; margin-bottom: 25px; flex-shrink: 0; }
 .player-glow {
     position: absolute; top: 10px; left: 5%; width: 90%; height: 90%;
+    background: #f50057; /* Solid color fallback */
     background: linear-gradient(135deg, #f50057, #7c4dff);
-    filter: blur(25px); /* Reduced blur */
-    opacity: 0.3; z-index: 0; 
+    filter: blur(20px); /* Reduced blur for performance */
+    opacity: 0.2; z-index: 0; 
     pointer-events: none;
+    transform: translateZ(0);
 }
 
 .video-wrapper {
     position: relative; width: 100%; padding-bottom: 56.25%; 
     background: #000; border-radius: var(--curve-m); overflow: hidden;
-    box-shadow: 0 15px 30px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
     z-index: 1; transform: translateZ(0); 
 }
 #player { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
@@ -169,6 +172,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     position: relative; 
     gap: 12px;
     text-align: center;
+    contain: content;
 }
 
 .song-title { 
@@ -198,6 +202,9 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     transition: transform 0.1s linear; 
     will-change: transform; /* OPTIMIZATION: Uses GPU instead of layout recalc */
 }
+/* Pause animation when not needed to save GPU */
+.equalizer.paused .bar { animation-play-state: paused; }
+
 .equalizer.active .bar { animation: equalizeSmooth 1.2s infinite ease-in-out; }
 @keyframes equalizeSmooth {
     0%, 100% { transform: scaleY(0.15); }
@@ -264,6 +271,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .sidebar { 
     flex: 1.3; min-width: 420px; max-width: 500px; 
     display: flex; flex-direction: column; overflow: hidden; padding: 0; 
+    contain: content;
 }
 
 .pinned-search { padding: 20px 25px 10px; flex-shrink: 0; z-index: 20; }
@@ -305,7 +313,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     flex: 1; overflow-y: auto; padding: 15px 20px; 
     -webkit-overflow-scrolling: touch; 
     contain: content; /* PERFORMANCE: Contain layout reflows */
-    content-visibility: auto; 
+    content-visibility: auto; /* Skip rendering off-screen content */
     contain-intrinsic-size: 80px; 
 }
 .action-row { padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
@@ -472,6 +480,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     box-shadow: 0 30px 80px rgba(0,0,0,0.8); position: relative;
     max-height: 90vh; overflow-y: auto; 
     animation: elasticPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    contain: layout;
 }
 @keyframes elasticPop {
     0% { transform: scale(0.9); opacity: 0; }
@@ -733,6 +742,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
         border-radius: 0; background: transparent; box-shadow: none; border: none;
         min-width: 0; width: 100%;
         position: relative; z-index: 10;
+        contain: content;
     }
     
     .anim-delay-1 { animation: slideUpSmooth 0.4s ease-out forwards; opacity: 0; transform: translateY(10px); }
