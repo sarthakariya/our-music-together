@@ -319,6 +319,8 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 .action-row { padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
 .view-title { font-family: 'Montserrat'; font-weight: 800; font-size: 1.1rem; color: #fff; }
 .clear-btn { background: #d32f2f; color: white; font-weight: 700; padding: 8px 18px; border-radius: 12px; border-bottom: 3px solid #9a0007; }
+.shuffle-btn { background: #7c4dff; color: white; font-weight: 700; padding: 8px 18px; border-radius: 12px; border-bottom: 3px solid #512da8; margin-right: 5px; }
+.shuffle-btn:hover { background: #651fff; }
 
 /* Songs Item Styles */
 .song-item {
