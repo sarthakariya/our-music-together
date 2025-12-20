@@ -1498,6 +1498,41 @@ document.getElementById('chatInput').addEventListener('keypress', (e) => {
 });
 
 document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
+
+// --- SHUFFLE BUTTON LISTENER ---
+document.getElementById('shuffleQueueBtn').addEventListener('click', () => {
+    if (currentQueue.length < 2) {
+        showToast("System", "Not enough songs to shuffle.");
+        return;
+    }
+
+    // Identify current song to keep it playing/at top
+    let playingSong = null;
+    let songsToShuffle = [];
+
+    if (currentVideoId) {
+        playingSong = currentQueue.find(s => s.videoId === currentVideoId);
+        songsToShuffle = currentQueue.filter(s => s.videoId !== currentVideoId);
+    } else {
+        songsToShuffle = [...currentQueue];
+    }
+
+    if (songsToShuffle.length === 0) return;
+
+    // Fisher-Yates Shuffle
+    for (let i = songsToShuffle.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [songsToShuffle[i], songsToShuffle[j]] = [songsToShuffle[j], songsToShuffle[i]];
+    }
+
+    // Reconstruct list: Current Song -> Shuffled Songs
+    const newOrderList = playingSong ? [playingSong, ...songsToShuffle] : songsToShuffle;
+
+    updateQueueOrder(newOrderList);
+    showToast("System", "Queue shuffled!");
+    triggerHaptic();
+});
+
 document.getElementById('forceSyncBtn').addEventListener('click', () => {
     UI.syncOverlay.classList.remove('active');
     player.playVideo(); broadcastState('play', player.getCurrentTime(), currentVideoId);
