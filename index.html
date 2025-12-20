@@ -103,7 +103,10 @@
                     <div id="view-queue" class="tab-content active">
                         <div class="action-row">
                              <h3 class="view-title desktop-only">Up Next</h3>
-                             <button class="clear-btn btn-3d" id="clearQueueBtn">Clear All</button>
+                             <div style="display:flex; gap:10px;">
+                                <button class="shuffle-btn btn-3d" id="shuffleQueueBtn" title="Shuffle Queue"><i class="fa-solid fa-shuffle"></i></button>
+                                <button class="clear-btn btn-3d" id="clearQueueBtn" title="Clear Queue"><i class="fa-solid fa-trash"></i></button>
+                             </div>
                         </div>
                         <div class="list-content" id="queue-list"></div>
                     </div>
