@@ -11,12 +11,19 @@ const firebaseConfig = {
 };
 const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
 
-if (typeof firebase !== 'undefined' && !firebase.apps.length) firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-const syncRef = db.ref('sync');
-const queueRef = db.ref('queue');
-const chatRef = db.ref('chat'); 
-const presenceRef = db.ref('presence');
+// Ensure Firebase is loaded
+if (typeof firebase !== 'undefined' && !firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+} else if (typeof firebase === 'undefined') {
+    console.error("Firebase SDK not loaded.");
+}
+
+const db = (typeof firebase !== 'undefined') ? firebase.database() : null;
+// Safety check if db failed to load
+const syncRef = db ? db.ref('sync') : null;
+const queueRef = db ? db.ref('queue') : null;
+const chatRef = db ? db.ref('chat') : null; 
+const presenceRef = db ? db.ref('presence') : null;
 
 // --- DOM CACHE (Performance Optimization) ---
 const UI = {
@@ -99,7 +106,7 @@ function setSmartInterval(callback, normalMs, hiddenMs) {
             clearInterval(this.id);
             const ms = document.hidden ? this.hiddenMs : this.normalMs;
             if (ms !== Infinity) {
-                 this.id = setInterval(this.callback, ms);
+                 this.id = setInterval(this.callback, ms); // Fixed: callback is in 'this'
             }
         }
     };
@@ -113,12 +120,10 @@ document.addEventListener('visibilitychange', () => {
     
     // 2. Pause/Resume Visuals
     if (document.hidden) {
-        // Paused visual updates save GPU
-        UI.equalizer.classList.add('paused'); 
+        if(UI.equalizer) UI.equalizer.classList.add('paused'); 
         stopLyricsSync(); 
     } else {
-        // Resume visual updates
-        UI.equalizer.classList.remove('paused');
+        if(UI.equalizer) UI.equalizer.classList.remove('paused');
         if (currentVideoId) {
              const song = currentQueue.find(s => s.videoId === currentVideoId);
              if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
@@ -143,6 +148,7 @@ document.addEventListener('click', (e) => {
     }
 });
 
+// Setup User
 let myName = localStorage.getItem('deepSpaceUserName');
 if (!myName || myName === "null") {
     myName = prompt("Enter your name (Sarthak or Reechita):");
@@ -151,9 +157,12 @@ if (!myName || myName === "null") {
 }
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
 
-const sessionKey = presenceRef.push().key;
-presenceRef.child(sessionKey).onDisconnect().remove();
-presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
+// Presence System
+if (presenceRef) {
+    const sessionKey = presenceRef.push().key;
+    presenceRef.child(sessionKey).onDisconnect().remove();
+    presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
+}
 
 function suppressBroadcast(duration = 1000) {
     ignoreSystemEvents = true;
@@ -166,7 +175,7 @@ function suppressBroadcast(duration = 1000) {
 // --- NETWORK RECOVERY LISTENERS ---
 window.addEventListener('online', () => {
     showToast("System", "Back online! Resyncing...");
-    if (currentVideoId && player) {
+    if (currentVideoId && player && syncRef) {
         syncRef.once('value').then(snapshot => {
             const state = snapshot.val();
             if(state) applyRemoteCommand(state);
@@ -179,7 +188,8 @@ window.addEventListener('offline', () => {
 });
 
 // --- YOUTUBE PLAYER ---
-function onYouTubeIframeAPIReady() {
+// FIX: Expose this to window so the API can find it
+window.onYouTubeIframeAPIReady = function() {
     player = new YT.Player('player', {
         height: '100%', width: '100%', videoId: '',
         playerVars: { 
@@ -192,7 +202,7 @@ function onYouTubeIframeAPIReady() {
             'onError': onPlayerError 
         }
     });
-}
+};
 
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
@@ -206,10 +216,12 @@ function onPlayerReady(event) {
     // SMART TIMER: Ad Check (1s active, 3s hidden)
     setSmartInterval(monitorAdStatus, 1000, 3000);
 
-    syncRef.once('value').then(snapshot => {
-        const state = snapshot.val();
-        if(state) applyRemoteCommand(state);
-    });
+    if (syncRef) {
+        syncRef.once('value').then(snapshot => {
+            const state = snapshot.val();
+            if(state) applyRemoteCommand(state);
+        });
+    }
     setupMediaSession();
 }
 
@@ -234,6 +246,7 @@ function onPlayerError(event) {
 function detectAd() {
     if (!player) return false;
     try {
+        if (typeof player.getPlayerState !== 'function') return false;
         if (player.getPlayerState() !== YT.PlayerState.PLAYING) return false;
 
         const data = player.getVideoData();
@@ -243,13 +256,14 @@ function detectAd() {
         if (data.author === "") return true;
         if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
 
-    } catch(e) {}
+    } catch(e) {
+        // console.warn("Ad detection error", e);
+    }
     return false;
 }
 
 // --- AD MONITOR LOOP ---
 function monitorAdStatus() {
-    // If we are hidden and paused intentionally, don't waste CPU checking ads
     if (document.hidden && userIntentionallyPaused) return;
     if (!player || !currentVideoId) return;
 
@@ -266,7 +280,7 @@ function monitorAdStatus() {
         if (wasInAd) {
             wasInAd = false;
             
-            if(player.getPlayerState() !== YT.PlayerState.PLAYING) {
+            if(player.getPlayerState && player.getPlayerState() !== YT.PlayerState.PLAYING) {
                 player.playVideo();
             }
 
@@ -301,26 +315,26 @@ function setupMediaSession() {
 
 function updateMediaSessionMetadata(title, artist, artworkUrl) {
     if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: title || "Heart's Rhythm",
-            artist: artist || "Sarthak & Reechita",
-            album: "Our Sync",
-            artwork: [ { src: artworkUrl || 'https://via.placeholder.com/512', sizes: '512x512', type: 'image/png' } ]
-        });
+        try {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: title || "Heart's Rhythm",
+                artist: artist || "Sarthak & Reechita",
+                album: "Our Sync",
+                artwork: [ { src: artworkUrl || 'https://via.placeholder.com/512', sizes: '512x512', type: 'image/png' } ]
+            });
+        } catch(e) { console.error("Media Session Error", e); }
     }
 }
 
 // --- AGGRESSIVE BACKGROUND KEEP-ALIVE ---
-// We use a slow interval to kick the player if it drifts while hidden
 setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
-        // If we are supposed to be playing but are paused (browser throttling), force play
         if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
             player.playVideo();
         }
     }
-}, 4000); // 4 seconds is enough for keep-alive
+}, 4000); 
 
 // --- CORE SYNC LOGIC ---
 
@@ -482,15 +496,18 @@ function togglePlayPause() {
     clearTimeout(ignoreTimer);
     lastBroadcaster = myName; 
 
+    // Safety check if player is ready
+    if (typeof player.getPlayerState !== 'function') return;
+
     const state = player.getPlayerState();
 
     if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
-        UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>'; 
+        if(UI.playPauseBtn) UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>'; 
         userIntentionallyPaused = true; 
         player.pauseVideo();
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
-        UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>'; 
+        if(UI.playPauseBtn) UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>'; 
         userIntentionallyPaused = false; 
         if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
         else if (currentVideoId) {
@@ -516,22 +533,23 @@ function initiatePrevSong() {
 
 function initiateSongLoad(songObj) {
     if (!songObj) return;
+    if (!syncRef) return;
 
     isSwitchingSong = true;
     userIntentionallyPaused = false; 
     lastBroadcaster = myName;
     
     showToast("System", "Switching track...");
-    UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    if(UI.playPauseBtn) UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
     syncRef.set({ 
-        action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
+        action: 'switching_pause', time: 0, videoId: currentVideoId || '', lastUpdater: myName, timestamp: Date.now() 
     });
 
     setTimeout(() => {
         if (isSwitchingSong) {
             isSwitchingSong = false;
-            if(player) player.playVideo();
+            if(player && player.playVideo) player.playVideo();
         }
     }, 3000);
 
@@ -541,6 +559,8 @@ function initiateSongLoad(songObj) {
 }
 
 function loadInitialData() {
+    if (!queueRef || !syncRef || !chatRef) return;
+
     queueRef.orderByChild('order').on('value', (snapshot) => {
         const data = snapshot.val();
         let list = [];
@@ -594,6 +614,7 @@ function loadInitialData() {
 loadInitialData();
 
 function calculateUnreadCount() {
+    if (!chatRef) return;
     chatRef.limitToLast(50).once('value', (snapshot) => {
         let count = 0;
         snapshot.forEach((child) => {
@@ -621,6 +642,7 @@ function updateChatBadges(count) {
 }
 
 function markMessagesAsSeen() {
+    if (!chatRef) return;
     chatRef.limitToLast(50).once('value', (snapshot) => {
         const updates = {};
         snapshot.forEach((child) => {
@@ -635,7 +657,9 @@ function markMessagesAsSeen() {
 
 function isChatActive() {
     const isMobile = window.innerWidth <= 1100;
-    if (isMobile) return activeTab === 'chat' && UI.mobileSheet.classList.contains('active');
+    if (isMobile) {
+        return activeTab === 'chat' && UI.mobileSheet && UI.mobileSheet.classList.contains('active');
+    }
     return activeTab === 'chat';
 }
 
@@ -650,6 +674,7 @@ function forceChatScroll() {
 
 function broadcastState(action, time, videoId, force = false) {
     if (ignoreSystemEvents && !force) return; 
+    if (!syncRef) return;
     syncRef.set({ action, time, videoId, lastUpdater: myName, timestamp: Date.now() });
 }
 
@@ -660,7 +685,7 @@ function applyRemoteCommand(state) {
     if (state.action === 'ad_pause') {
         suppressBroadcast(2000);
         lastBroadcaster = state.lastUpdater;
-        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+        if (player.getPlayerState && player.getPlayerState() !== YT.PlayerState.PAUSED) {
             player.pauseVideo();
         }
         updateSyncStatus();
@@ -680,14 +705,14 @@ function applyRemoteCommand(state) {
     suppressBroadcast(1000); 
     lastBroadcaster = state.lastUpdater;
     
-    UI.syncOverlay.classList.remove('active');
+    if(UI.syncOverlay) UI.syncOverlay.classList.remove('active');
 
     if (state.action === 'switching_pause') {
         if (Date.now() - (state.timestamp || 0) > 4000) {
             return;
         }
         showToast("System", "Partner is changing track...");
-        UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        if(UI.playPauseBtn) UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
         updateSyncStatus();
         return;
     }
@@ -704,6 +729,8 @@ function applyRemoteCommand(state) {
         }
     } 
     else {
+        // Safety check
+        if (typeof player.getPlayerState !== 'function') return;
         const playerState = player.getPlayerState();
         if (state.action === 'restart') {
             player.seekTo(0, true); 
@@ -734,6 +761,8 @@ function updateSyncStatus() {
     if (document.hidden) return;
 
     const msgEl = UI.syncStatusMsg;
+    if (!msgEl) return;
+    
     const eq = UI.equalizer;
     
     let icon = '', text = '', className = '';
@@ -757,7 +786,7 @@ function updateSyncStatus() {
         }
     }
     else {
-        const playerState = player ? player.getPlayerState() : -1;
+        const playerState = (player && typeof player.getPlayerState === 'function') ? player.getPlayerState() : -1;
         if (playerState === YT.PlayerState.PLAYING || playerState === YT.PlayerState.BUFFERING) {
             icon = 'fa-heart-pulse'; text = 'Vibing Together'; className = 'sync-status-3d status-playing';
             eqActive = true;
@@ -780,8 +809,10 @@ function updateSyncStatus() {
     }
 
     // Toggle EQ class only if changed
-    if (eqActive && !eq.classList.contains('active')) eq.classList.add('active');
-    if (!eqActive && eq.classList.contains('active')) eq.classList.remove('active');
+    if (eq) {
+        if (eqActive && !eq.classList.contains('active')) eq.classList.add('active');
+        if (!eqActive && eq.classList.contains('active')) eq.classList.remove('active');
+    }
 }
 
 function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadcast = true, shouldPlay = true) {
@@ -805,7 +836,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         currentVideoId = videoId;
         const decodedTitle = decodeHTMLEntities(title);
-        UI.songTitle.textContent = decodedTitle;
+        if(UI.songTitle) UI.songTitle.textContent = decodedTitle;
         
         let artwork = 'https://via.placeholder.com/512';
         const currentSong = currentQueue.find(s => s.videoId === videoId);
@@ -828,7 +859,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
 // --- MODIFIED TAB SWITCHING ---
 function switchTab(tabName, forceOpen = false) {
-    if(window.innerWidth <= 1100) {
+    if(window.innerWidth <= 1100 && UI.mobileSheet) {
         
         if (!forceOpen && activeTab === tabName && UI.mobileSheet.classList.contains('active')) {
              UI.mobileSheet.classList.remove('active');
@@ -861,20 +892,25 @@ function switchTab(tabName, forceOpen = false) {
     if(mobileItems[mobileIndex]) mobileItems[mobileIndex].classList.add('active');
 
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-    document.getElementById('view-' + tabName).classList.add('active');
+    if(document.getElementById('view-' + tabName)) {
+        document.getElementById('view-' + tabName).classList.add('active');
+    }
 }
 
-if(window.innerWidth <= 1100) {
+if(window.innerWidth <= 1100 && UI.mobileSheet) {
     UI.mobileSheet.classList.remove('active');
 }
 
-document.getElementById('mobileSheetClose').addEventListener('click', () => {
-    UI.mobileSheet.classList.remove('active');
-    document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
-});
+if(document.getElementById('mobileSheetClose')) {
+    document.getElementById('mobileSheetClose').addEventListener('click', () => {
+        UI.mobileSheet.classList.remove('active');
+        document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
+    });
+}
 
 // Queue helper functions
 function addToQueue(videoId, title, uploader, thumbnail) {
+    if (!queueRef) return;
     const newKey = queueRef.push().key;
     const cleanTitle = smartCleanTitle(title);
     queueRef.child(newKey).set({ videoId, title: cleanTitle, uploader, thumbnail, addedBy: myName, order: Date.now() })
@@ -885,7 +921,7 @@ function addToQueue(videoId, title, uploader, thumbnail) {
 }
 
 function addBatchToQueue(songs) {
-    if (!songs.length) return;
+    if (!songs.length || !queueRef) return;
     showToast("System", `Adding ${songs.length} songs to queue...`); 
     const updates = {};
     songs.forEach((s, i) => {
@@ -897,6 +933,7 @@ function addBatchToQueue(songs) {
 
 function removeFromQueue(key, event) {
     if (event) event.stopPropagation();
+    if (!queueRef) return;
     const song = currentQueue.find(s => s.key === key);
     if (song) {
         queueRef.child(key).remove();
@@ -905,6 +942,7 @@ function removeFromQueue(key, event) {
 }
 
 function updateQueueOrder(newOrder) {
+    if (!queueRef) return;
     const updates = {};
     newOrder.forEach((song, index) => { updates[`${song.key}/order`] = index; });
     queueRef.update(updates);
@@ -916,7 +954,6 @@ function scrollToCurrentSong() {
     }
 
     setTimeout(() => {
-        // We can't cache dynamic elements easily, but querySelector is fast enough here (rare event)
         const activeItem = document.querySelector('.song-item.playing');
         if (activeItem) {
             activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -926,9 +963,10 @@ function scrollToCurrentSong() {
 
 function renderQueue(queueArray, currentVideoId) {
     const list = UI.queueList;
+    if (!list) return;
     
-    UI.queueBadge.textContent = queueArray.length;
-    if(UI.mobileQueueBadge) UI.mobileQueueBadge.textContent = queueArray.length;
+    if (UI.queueBadge) UI.queueBadge.textContent = queueArray.length;
+    if (UI.mobileQueueBadge) UI.mobileQueueBadge.textContent = queueArray.length;
 
     if (queueArray.length === 0) {
         list.innerHTML = '<div class="empty-state"><p>Queue is empty.</p></div>';
@@ -1013,23 +1051,31 @@ function getDragAfterElement(container, y) {
     }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
-document.getElementById('lyrics-btn').addEventListener('click', () => {
-    UI.lyricsOverlay.classList.add('active');
-    fetchLyrics();
-});
-document.getElementById('closeLyricsBtn').addEventListener('click', () => {
-    UI.lyricsOverlay.classList.remove('active');
-    stopLyricsSync(); 
-});
+if(document.getElementById('lyrics-btn')) {
+    document.getElementById('lyrics-btn').addEventListener('click', () => {
+        if(UI.lyricsOverlay) UI.lyricsOverlay.classList.add('active');
+        fetchLyrics();
+    });
+}
+if(document.getElementById('closeLyricsBtn')) {
+    document.getElementById('closeLyricsBtn').addEventListener('click', () => {
+        if(UI.lyricsOverlay) UI.lyricsOverlay.classList.remove('active');
+        stopLyricsSync(); 
+    });
+}
 
-document.getElementById('manualLyricsBtn').addEventListener('click', () => {
-    const input = document.getElementById('manualLyricsInput');
-    const query = input.value.trim();
-    if(query) fetchLyrics(query);
-});
-document.getElementById('manualLyricsInput').addEventListener('keypress', (e) => {
-    if(e.key === 'Enter') document.getElementById('manualLyricsBtn').click();
-});
+if(document.getElementById('manualLyricsBtn')) {
+    document.getElementById('manualLyricsBtn').addEventListener('click', () => {
+        const input = document.getElementById('manualLyricsInput');
+        const query = input.value.trim();
+        if(query) fetchLyrics(query);
+    });
+}
+if(document.getElementById('manualLyricsInput')) {
+    document.getElementById('manualLyricsInput').addEventListener('keydown', (e) => {
+        if(e.key === 'Enter') document.getElementById('manualLyricsBtn').click();
+    });
+}
 
 // --- NEW: DEDICATE BUTTON LOGIC ---
 const dedicateBtn = document.getElementById('dedicateBtn');
@@ -1038,7 +1084,7 @@ if (dedicateBtn) {
         const title = UI.songTitle.textContent;
         if(title && title !== "Heart's Rhythm") {
             const msg = `🎵 Dedicated to you: ${title} ❤️`;
-            chatRef.push({ user: myName, text: msg, timestamp: Date.now(), seen: false });
+            if(chatRef) chatRef.push({ user: myName, text: msg, timestamp: Date.now(), seen: false });
             showToast("System", "Dedication sent!");
             switchTab('chat');
         } else {
@@ -1055,9 +1101,11 @@ function sendVibe(emoji) {
         `${emoji} ${emoji} ${emoji}`
     ];
     const text = msgs[Math.floor(Math.random() * msgs.length)];
-    chatRef.push({ user: myName, text: text, timestamp: Date.now(), seen: false });
+    if(chatRef) chatRef.push({ user: myName, text: text, timestamp: Date.now(), seen: false });
     triggerHaptic();
 }
+// Attach to window if called via inline onclick handlers
+window.sendVibe = sendVibe;
 
 function decodeHTMLEntities(text) {
     if (!text) return "";
@@ -1104,6 +1152,7 @@ function parseSyncedLyrics(lrc) {
 }
 
 function renderSyncedLyrics(lyrics) {
+    if (!UI.lyricsContent) return;
     UI.lyricsContent.innerHTML = '';
     const wrapper = document.createElement('div');
     wrapper.className = 'synced-lyrics-wrapper';
@@ -1121,7 +1170,7 @@ function renderSyncedLyrics(lyrics) {
 function startLyricsSync() {
     if(lyricsInterval) clearInterval(lyricsInterval);
     // Optimization: Check if overlay is active before starting
-    if(UI.lyricsOverlay.classList.contains('active')) {
+    if(UI.lyricsOverlay && UI.lyricsOverlay.classList.contains('active')) {
         lyricsInterval = setInterval(syncLyricsDisplay, 1000); 
     }
 }
@@ -1133,7 +1182,7 @@ function stopLyricsSync() {
 function syncLyricsDisplay() {
     // Optimization: Do nothing if hidden to save battery
     if (document.hidden) return;
-    if (!player || !player.getCurrentTime || !currentLyrics) return;
+    if (!player || typeof player.getCurrentTime !== 'function' || !currentLyrics) return;
     
     const time = player.getCurrentTime();
     let activeIndex = -1;
@@ -1172,16 +1221,18 @@ async function fetchLyrics(manualQuery = null) {
     const lyricsTitle = document.getElementById('lyrics-title');
     const unsyncBtn = document.getElementById('unsyncLyricsBtn');
     
-    let searchWords = "";
-    searchBar.classList.remove('visible');
-    searchBar.style.display = 'none'; 
-    unsyncBtn.style.display = 'none';
+    if (searchBar) {
+        searchBar.classList.remove('visible');
+        searchBar.style.display = 'none'; 
+    }
+    if (unsyncBtn) unsyncBtn.style.display = 'none';
     lastLyricsIndex = -1; // Reset index
     currentPlainLyrics = ""; // Reset plain text
     
+    let searchWords = "";
     if(manualQuery) {
         searchWords = manualQuery;
-        lyricsTitle.textContent = "Search: " + manualQuery;
+        if(lyricsTitle) lyricsTitle.textContent = "Search: " + manualQuery;
     } else {
         const titleEl = UI.songTitle;
         let rawTitle = "Heart's Rhythm";
@@ -1190,10 +1241,10 @@ async function fetchLyrics(manualQuery = null) {
         }
         const cleanTitle = smartCleanTitle(rawTitle);
         searchWords = cleanTitle.split(/\s+/).slice(0, 5).join(" ");
-        lyricsTitle.textContent = "Lyrics: " + cleanTitle;
+        if(lyricsTitle) lyricsTitle.textContent = "Lyrics: " + cleanTitle;
     }
 
-    UI.lyricsContent.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
+    if(UI.lyricsContent) UI.lyricsContent.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
 
     try {
         const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchWords)}`;
@@ -1208,21 +1259,23 @@ async function fetchLyrics(manualQuery = null) {
                 currentLyrics = parseSyncedLyrics(song.syncedLyrics);
                 renderSyncedLyrics(currentLyrics);
                 startLyricsSync();
-                unsyncBtn.style.display = 'grid';
+                if(unsyncBtn) unsyncBtn.style.display = 'grid';
             } else {
                 currentLyrics = null;
                 stopLyricsSync();
                 const text = song.plainLyrics || "Instrumental";
-                UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${text.replace(/\n/g, "<br>")}</div>`;
+                if(UI.lyricsContent) UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${text.replace(/\n/g, "<br>")}</div>`;
             }
-            searchBar.classList.remove('visible');
-            setTimeout(() => { if(!searchBar.classList.contains('visible')) searchBar.style.display = 'none'; }, 500);
+            if(searchBar) {
+                searchBar.classList.remove('visible');
+                setTimeout(() => { if(!searchBar.classList.contains('visible')) searchBar.style.display = 'none'; }, 500);
+            }
 
         } else {
             throw new Error("No lyrics found");
         }
     } catch (e) {
-        if(!manualQuery) {
+        if(!manualQuery && UI.songTitle) {
             try {
                 const titleText = UI.songTitle.textContent;
                 if(titleText.includes('-')) {
@@ -1230,12 +1283,14 @@ async function fetchLyrics(manualQuery = null) {
                    const p1 = parts[0].trim();
                    const p2 = parts[1].trim();
                    let fallbackUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(p1)}/${encodeURIComponent(p2)}`;
+                   
+                   // FIX: 'let' cannot be redeclared in the same block. Use assignment.
                    let fRes = await fetch(fallbackUrl);
                    let fData = await fRes.json();
                    if(fData.lyrics) {
                         currentLyrics = null;
                         stopLyricsSync();
-                        UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${fData.lyrics.replace(/\n/g, "<br>")}</div>`;
+                        if(UI.lyricsContent) UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${fData.lyrics.replace(/\n/g, "<br>")}</div>`;
                         return; 
                    }
                    fallbackUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(p2)}/${encodeURIComponent(p1)}`;
@@ -1244,66 +1299,77 @@ async function fetchLyrics(manualQuery = null) {
                    if(fData.lyrics) {
                         currentLyrics = null;
                         stopLyricsSync();
-                        UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${fData.lyrics.replace(/\n/g, "<br>")}</div>`;
+                        if(UI.lyricsContent) UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${fData.lyrics.replace(/\n/g, "<br>")}</div>`;
                         return;
                    }
                 }
             } catch(err) { console.log("Fallback lyrics failed"); }
         }
         stopLyricsSync();
-        searchBar.style.display = 'block';
-        setTimeout(() => searchBar.classList.add('visible'), 10);
+        if (searchBar) {
+            searchBar.style.display = 'block';
+            setTimeout(() => searchBar.classList.add('visible'), 10);
+        }
         
-        UI.lyricsContent.innerHTML = `
-            <p style="opacity:0.7; margin-bottom: 5px;">Lyrics not found via API.</p>
-            <p style="font-size:0.9rem; color:#aaa; margin-bottom:20px;">Use the search bar above to try manually.</p>
-        `;
+        if (UI.lyricsContent) {
+            UI.lyricsContent.innerHTML = `
+                <p style="opacity:0.7; margin-bottom: 5px;">Lyrics not found via API.</p>
+                <p style="font-size:0.9rem; color:#aaa; margin-bottom:20px;">Use the search bar above to try manually.</p>
+            `;
+        }
     }
 }
 
 // Disable Sync Button Logic
-document.getElementById('unsyncLyricsBtn').addEventListener('click', () => {
-    stopLyricsSync();
-    currentLyrics = null;
-    document.getElementById('unsyncLyricsBtn').style.display = 'none';
-    
-    // Render plain text
-    if(currentPlainLyrics) {
-         UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom:50px;">${currentPlainLyrics.replace(/\n/g, "<br>")}</div>`;
-    } else {
-         const lines = document.querySelectorAll('.lyrics-line');
-         let text = "";
-         lines.forEach(l => text += l.textContent + "\n");
-         UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom:50px;">${text.replace(/\n/g, "<br>")}</div>`;
-    }
-    showToast("System", "Lyrics sync disabled.");
-});
-
-UI.searchInput.addEventListener('input', (e) => {
-    if(document.activeElement === UI.searchInput) {
-        switchTab('results', true); 
-    }
-});
-UI.searchInput.addEventListener('focus', (e) => {
-    switchTab('results', true);
-});
-
-document.getElementById('startSessionBtn').addEventListener('click', () => {
-    hasUserInteracted = true;
-    UI.welcomeOverlay.classList.remove('active');
-    
-    if (player && player.playVideo) player.playVideo();
-    
-    if(currentVideoId) {
-        const currentSong = currentQueue.find(s => s.videoId === currentVideoId);
-        if(currentSong) {
-             updateMediaSessionMetadata(currentSong.title, currentSong.uploader, currentSong.thumbnail);
+if(document.getElementById('unsyncLyricsBtn')) {
+    document.getElementById('unsyncLyricsBtn').addEventListener('click', () => {
+        stopLyricsSync();
+        currentLyrics = null;
+        document.getElementById('unsyncLyricsBtn').style.display = 'none';
+        
+        // Render plain text
+        if(currentPlainLyrics) {
+             UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom:50px;">${currentPlainLyrics.replace(/\n/g, "<br>")}</div>`;
+        } else {
+             const lines = document.querySelectorAll('.lyrics-line');
+             let text = "";
+             lines.forEach(l => text += l.textContent + "\n");
+             UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom:50px;">${text.replace(/\n/g, "<br>")}</div>`;
         }
-    }
-});
+        showToast("System", "Lyrics sync disabled.");
+    });
+}
+
+if (UI.searchInput) {
+    UI.searchInput.addEventListener('input', (e) => {
+        if(document.activeElement === UI.searchInput) {
+            switchTab('results', true); 
+        }
+    });
+    UI.searchInput.addEventListener('focus', (e) => {
+        switchTab('results', true);
+    });
+}
+
+if(document.getElementById('startSessionBtn')) {
+    document.getElementById('startSessionBtn').addEventListener('click', () => {
+        hasUserInteracted = true;
+        UI.welcomeOverlay.classList.remove('active');
+        
+        if (player && player.playVideo) player.playVideo();
+        
+        if(currentVideoId) {
+            const currentSong = currentQueue.find(s => s.videoId === currentVideoId);
+            if(currentSong) {
+                 updateMediaSessionMetadata(currentSong.title, currentSong.uploader, currentSong.thumbnail);
+            }
+        }
+    });
+}
 
 async function handleSearch() {
     const input = UI.searchInput;
+    if (!input) return;
     const query = input.value.trim();
     if (!query) return;
 
@@ -1311,13 +1377,15 @@ async function handleSearch() {
     const ytPlaylistMatch = query.match(/[?&]list=([^#\&\?]+)/);
     if (ytPlaylistMatch) {
         showToast("System", "Fetching YouTube Playlist..."); 
-        fetchPlaylist(ytPlaylistMatch[1]);
-        input.value = ''; return;
+        // Fixed: Await this so logic doesn't continue prematurely
+        await fetchPlaylist(ytPlaylistMatch[1]);
+        input.value = ''; 
+        return;
     }
     
     // REGULAR SEARCH
     switchTab('results', true);
-    UI.resultsList.innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
+    if(UI.resultsList) UI.resultsList.innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
     
     const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
     
@@ -1325,6 +1393,7 @@ async function handleSearch() {
         const res = await fetch(searchUrl);
         const data = await res.json();
         const list = UI.resultsList;
+        if (!list) return;
         list.innerHTML = '';
         
         if (!data.items || data.items.length === 0) {
@@ -1338,9 +1407,11 @@ async function handleSearch() {
         const detailsData = await detailsRes.json();
         
         const durationMap = {};
-        detailsData.items.forEach(v => {
-            durationMap[v.id] = parseDuration(v.contentDetails.duration);
-        });
+        if (detailsData.items) {
+            detailsData.items.forEach(v => {
+                durationMap[v.id] = parseDuration(v.contentDetails.duration);
+            });
+        }
 
         const fragment = document.createDocumentFragment();
         data.items.forEach(item => {
@@ -1381,25 +1452,32 @@ function parseDuration(pt) {
     return `${m}:${s.toString().padStart(2,'0')}`;
 }
 
+// FIX: Added 'await' to recursive call
 async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
     const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${YOUTUBE_API_KEY}&pageToken=${pageToken}`;
     try {
         const res = await fetch(url);
         const data = await res.json();
-        const songs = data.items.filter(i=>i.snippet.resourceId.kind==='youtube#video').map(i => ({
+        const items = data.items || [];
+        const songs = items.filter(i=>i.snippet.resourceId.kind==='youtube#video').map(i => ({
             videoId: i.snippet.resourceId.videoId,
             title: smartCleanTitle(i.snippet.title), 
             uploader: i.snippet.channelTitle, 
             thumbnail: i.snippet.thumbnails.default.url
         }));
         allSongs = [...allSongs, ...songs];
-        if (data.nextPageToken) fetchPlaylist(playlistId, data.nextPageToken, allSongs);
-        else addBatchToQueue(allSongs);
+        
+        if (data.nextPageToken) {
+            await fetchPlaylist(playlistId, data.nextPageToken, allSongs);
+        } else {
+            addBatchToQueue(allSongs);
+        }
     } catch(e) { console.error(e); }
 }
 
 function displayChatMessage(key, user, text, timestamp, image = null, seen = false) {
     const box = UI.chatMessages;
+    if (!box) return;
     const isMe = user === myName;
     
     // Create Main Message Container
@@ -1452,6 +1530,7 @@ function displayChatMessage(key, user, text, timestamp, image = null, seen = fal
 
 function showToast(user, text) {
     const container = UI.toastContainer;
+    if (!container) return;
     
     const toast = document.createElement('div');
     toast.className = 'toast';
@@ -1479,64 +1558,75 @@ function showToast(user, text) {
     }, 4000);
 }
 
-document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
-document.getElementById('prev-btn').addEventListener('click', initiatePrevSong);
-document.getElementById('next-btn').addEventListener('click', initiateNextSong);
+if(document.getElementById('play-pause-btn')) document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
+if(document.getElementById('prev-btn')) document.getElementById('prev-btn').addEventListener('click', initiatePrevSong);
+if(document.getElementById('next-btn')) document.getElementById('next-btn').addEventListener('click', initiateNextSong);
 
-document.getElementById('search-btn').addEventListener('click', handleSearch);
-UI.searchInput.addEventListener('keypress', (e) => { if(e.key==='Enter') handleSearch(); });
+if(document.getElementById('search-btn')) document.getElementById('search-btn').addEventListener('click', handleSearch);
+if(UI.searchInput) UI.searchInput.addEventListener('keydown', (e) => { if(e.key==='Enter') handleSearch(); });
 
-document.getElementById('chatSendBtn').addEventListener('click', () => {
-    const val = document.getElementById('chatInput').value.trim();
-    if(val) { 
-        chatRef.push({ user: myName, text: val, timestamp: Date.now(), seen: false }); 
-        document.getElementById('chatInput').value=''; 
-    }
-});
-document.getElementById('chatInput').addEventListener('keypress', (e) => {
-    if(e.key === 'Enter') document.getElementById('chatSendBtn').click();
-});
+if(document.getElementById('chatSendBtn')) {
+    document.getElementById('chatSendBtn').addEventListener('click', () => {
+        const val = document.getElementById('chatInput').value.trim();
+        if(val && chatRef) { 
+            chatRef.push({ user: myName, text: val, timestamp: Date.now(), seen: false }); 
+            document.getElementById('chatInput').value=''; 
+        }
+    });
+}
+if(document.getElementById('chatInput')) {
+    document.getElementById('chatInput').addEventListener('keydown', (e) => {
+        if(e.key === 'Enter') document.getElementById('chatSendBtn').click();
+    });
+}
 
-document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
+if(document.getElementById('clearQueueBtn')) document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?") && queueRef) queueRef.remove(); });
 
 // --- SHUFFLE BUTTON LISTENER ---
-document.getElementById('shuffleQueueBtn').addEventListener('click', () => {
-    if (currentQueue.length < 2) {
-        showToast("System", "Not enough songs to shuffle.");
-        return;
-    }
+if(document.getElementById('shuffleQueueBtn')) {
+    document.getElementById('shuffleQueueBtn').addEventListener('click', () => {
+        if (currentQueue.length < 2) {
+            showToast("System", "Not enough songs to shuffle.");
+            return;
+        }
 
-    // Identify current song to keep it playing/at top
-    let playingSong = null;
-    let songsToShuffle = [];
+        // Identify current song to keep it playing/at top
+        let playingSong = null;
+        let songsToShuffle = [];
 
-    if (currentVideoId) {
-        playingSong = currentQueue.find(s => s.videoId === currentVideoId);
-        songsToShuffle = currentQueue.filter(s => s.videoId !== currentVideoId);
-    } else {
-        songsToShuffle = [...currentQueue];
-    }
+        if (currentVideoId) {
+            playingSong = currentQueue.find(s => s.videoId === currentVideoId);
+            songsToShuffle = currentQueue.filter(s => s.videoId !== currentVideoId);
+        } else {
+            songsToShuffle = [...currentQueue];
+        }
 
-    if (songsToShuffle.length === 0) return;
+        if (songsToShuffle.length === 0) return;
 
-    // Fisher-Yates Shuffle
-    for (let i = songsToShuffle.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [songsToShuffle[i], songsToShuffle[j]] = [songsToShuffle[j], songsToShuffle[i]];
-    }
+        // Fisher-Yates Shuffle
+        for (let i = songsToShuffle.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [songsToShuffle[i], songsToShuffle[j]] = [songsToShuffle[j], songsToShuffle[i]];
+        }
 
-    // Reconstruct list: Current Song -> Shuffled Songs
-    const newOrderList = playingSong ? [playingSong, ...songsToShuffle] : songsToShuffle;
+        // Reconstruct list: Current Song -> Shuffled Songs
+        const newOrderList = playingSong ? [playingSong, ...songsToShuffle] : songsToShuffle;
 
-    updateQueueOrder(newOrderList);
-    showToast("System", "Queue shuffled!");
-    triggerHaptic();
-});
+        updateQueueOrder(newOrderList);
+        showToast("System", "Queue shuffled!");
+        triggerHaptic();
+    });
+}
 
-document.getElementById('forceSyncBtn').addEventListener('click', () => {
-    UI.syncOverlay.classList.remove('active');
-    player.playVideo(); broadcastState('play', player.getCurrentTime(), currentVideoId);
-});
+if(document.getElementById('forceSyncBtn')) {
+    document.getElementById('forceSyncBtn').addEventListener('click', () => {
+        if(UI.syncOverlay) UI.syncOverlay.classList.remove('active');
+        if(player && player.playVideo) {
+            player.playVideo(); 
+            broadcastState('play', player.getCurrentTime(), currentVideoId);
+        }
+    });
+}
 
 // Fixed Info/About Button Logic
 const infoBtn = document.getElementById('infoBtn');
