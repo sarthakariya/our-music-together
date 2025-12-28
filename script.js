@@ -60,12 +60,13 @@ let lastQueueSignature = "";
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
 let wasInAd = false; 
+let lastAdBroadcastTime = 0;
 
-// --- SYNC THRESHOLDS (SNAPPY) ---
-// If we drift more than 1.0 second, we SEEK.
-const SYNC_THRESHOLD_HARD = 1.0; 
-// If we drift more than 0.15s, we adjust SPEED.
-const SYNC_THRESHOLD_SOFT = 0.15; 
+// --- SYNC THRESHOLDS (SMOOTHER, LESS CUTS) ---
+// Increased from 1.0 to 2.5 to prevent "cutting" on bad wifi.
+// It will speed up instead of skipping.
+const SYNC_THRESHOLD_HARD = 2.5; 
+const SYNC_THRESHOLD_SOFT = 0.2; 
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -200,8 +201,8 @@ function onPlayerReady(event) {
     // Heartbeat: 300ms (Active) - Super fast updates
     setSmartInterval(heartbeatSync, 300, 3000);
     
-    // Monitor Sync: 300ms (Active) - Active Looping for Sync/Ad
-    setSmartInterval(monitorSyncHealth, 300, 3000);
+    // Monitor Sync: 200ms (Active) - FASTER LOCK LOOP
+    setSmartInterval(monitorSyncHealth, 200, 3000);
     
     // Ad Check: 300ms (Active) - Instant Recovery
     setSmartInterval(monitorAdStatus, 300, 3000);
@@ -247,20 +248,26 @@ function detectAd() {
     return false;
 }
 
-// --- AD MONITOR LOOP (INSTANT EXIT) ---
+// --- AD MONITOR LOOP (ADVERTISING STATE) ---
 function monitorAdStatus() {
-    // If hidden and paused, reduce checks. Otherwise check FAST.
-    if (document.hidden && userIntentionallyPaused) return;
     if (!player || !currentVideoId) return;
 
     const isAd = detectAd();
     
     if (isAd) {
+        // Send Ad signal immediately
         if (!wasInAd) {
             wasInAd = true;
             lastBroadcaster = myName; 
-            broadcastState('ad_pause', 0, currentVideoId, true); 
+            broadcastState('ad_playing', 0, currentVideoId, true);
+            lastAdBroadcastTime = Date.now();
             updateSyncStatus();
+        } else {
+            // RE-BROADCAST every 1 second to ensure connection cuts don't break the lock
+            if (Date.now() - lastAdBroadcastTime > 1000) {
+                 broadcastState('ad_playing', 0, currentVideoId, true);
+                 lastAdBroadcastTime = Date.now();
+            }
         }
     } else {
         if (wasInAd) {
@@ -370,23 +377,22 @@ function monitorSyncHealth() {
     if (lastBroadcaster === myName || isSwitchingSong) return;
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     
-    // Don't fight the user if they just clicked something
-    if (Date.now() - lastLocalInteractionTime < 1000) return;
-
-    // --- ACTIVE AD WAITING LOOP ---
-    // If the remote state is AD_PAUSE, we loop here.
-    // We actively force PAUSE to ensure we wait for them.
-    if (currentRemoteState.action === 'ad_pause') {
-        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-            // "Looping behavior": Force pause if play slips through
+    // --- AGGRESSIVE AD LOCK LOOP ---
+    // If partner has Ad, we MUST wait. Even if user tries to click play.
+    if (currentRemoteState.action === 'ad_playing' || currentRemoteState.action === 'ad_pause') {
+        const myState = player.getPlayerState();
+        if (myState !== YT.PlayerState.PAUSED) {
+            // Force pause if trying to play
             player.pauseVideo();
+            console.log("Forcing pause: Partner has Ad");
         }
         updateSyncStatus(); 
-        // We return to skip the rest, but because this function runs every 300ms,
-        // it effectively acts as a high-frequency polling loop waiting for the Ad to end.
-        return; 
+        return; // EXIT HERE. Do not proceed to playing logic.
     }
     
+    // Don't fight the user if they just clicked something locally (unless it was Ad Lock)
+    if (Date.now() - lastLocalInteractionTime < 1000) return;
+
     if (currentRemoteState.action === 'switching_pause') {
         if (Date.now() - (currentRemoteState.timestamp || 0) > 4000) {
             updateSyncStatus(); 
@@ -414,20 +420,22 @@ function monitorSyncHealth() {
         const drift = estimatedTime - currentLoc; 
         const absDrift = Math.abs(drift);
 
-        // 3. Correct Drift (Snappy)
+        // 3. Correct Drift (Smoother)
         if (absDrift > SYNC_THRESHOLD_HARD) {
-            // > 1.0s drift? Snap to time immediately.
+            // Only SEEK if drift is massive (> 2.5s)
             if (!detectAd()) { 
                 player.seekTo(estimatedTime, true); 
                 player.setPlaybackRate(1);
             }
         } else if (absDrift > SYNC_THRESHOLD_SOFT) {
-            // Micro-adjust speed for small drifts
+            // Micro-adjust speed for small drifts (No Cut)
             let targetRate = 1;
             if (drift > 0) { 
-                targetRate = absDrift > 0.5 ? 1.3 : 1.15; 
+                // Behind -> Speed Up slightly
+                targetRate = absDrift > 0.5 ? 1.25 : 1.1; 
             } else { 
-                targetRate = absDrift > 0.5 ? 0.75 : 0.9;
+                // Ahead -> Slow Down slightly
+                targetRate = absDrift > 0.5 ? 0.8 : 0.95;
             }
             if (player.getPlaybackRate() !== targetRate) {
                 player.setPlaybackRate(targetRate);
@@ -716,7 +724,8 @@ function applyRemoteCommand(state) {
     // Lowered latency guard to 1s
     if (Date.now() - lastLocalInteractionTime < 1000) return;
     
-    if (state.action === 'ad_pause') {
+    // PRIORITY: AD STATUS
+    if (state.action === 'ad_playing' || state.action === 'ad_pause') {
         suppressBroadcast(2000);
         lastBroadcaster = state.lastUpdater;
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
@@ -809,8 +818,9 @@ function updateSyncStatus() {
     else if (isSwitchingSong) {
         icon = 'fa-spinner fa-spin'; text = 'Switching...'; className = 'sync-status-3d status-switching';
     }
-    else if (currentRemoteState && currentRemoteState.action === 'ad_pause') {
-        icon = 'fa-eye-slash'; text = `${currentRemoteState.lastUpdater} having Ad...`; className = 'sync-status-3d status-ad-remote';
+    // Remote Ad status handling
+    else if (currentRemoteState && (currentRemoteState.action === 'ad_playing' || currentRemoteState.action === 'ad_pause')) {
+        icon = 'fa-eye-slash'; text = `Waiting for ${currentRemoteState.lastUpdater}'s Ad...`; className = 'sync-status-3d status-ad-remote';
     }
     else if (currentRemoteState && currentRemoteState.action === 'switching_pause') {
         if (Date.now() - (currentRemoteState.timestamp || 0) > 4000) {
