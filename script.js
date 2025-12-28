@@ -62,11 +62,11 @@ let userIntentionallyPaused = false;
 let wasInAd = false; 
 let lastAdBroadcastTime = 0;
 
-// --- SYNC THRESHOLDS (SMOOTHER, LESS CUTS) ---
-// Increased from 1.0 to 2.5 to prevent "cutting" on bad wifi.
-// It will speed up instead of skipping.
-const SYNC_THRESHOLD_HARD = 2.5; 
-const SYNC_THRESHOLD_SOFT = 0.2; 
+// --- SYNC THRESHOLDS (The "System") ---
+// If drift > 2.0s (Network Issue/Lag), we HARD SEEK (Jump).
+const SYNC_THRESHOLD_HARD = 2.0; 
+// If drift > 0.15s, we MICRO-ADJUST SPEED (Catch up smoothly).
+const SYNC_THRESHOLD_SOFT = 0.15; 
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -197,14 +197,14 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // --- HIGH FREQUENCY CHECKERS ---
-    // Heartbeat: 300ms (Active) - Super fast updates
+    // --- HIGH FREQUENCY LOOP SYSTEM ---
+    // Heartbeat: 300ms (Sends my status)
     setSmartInterval(heartbeatSync, 300, 3000);
     
-    // Monitor Sync: 200ms (Active) - FASTER LOCK LOOP
+    // Monitor Sync: 200ms (The "Loop" that checks partner)
     setSmartInterval(monitorSyncHealth, 200, 3000);
     
-    // Ad Check: 300ms (Active) - Instant Recovery
+    // Ad Check: 300ms (Checks for Ads locally)
     setSmartInterval(monitorAdStatus, 300, 3000);
 
     syncRef.once('value').then(snapshot => {
@@ -255,7 +255,7 @@ function monitorAdStatus() {
     const isAd = detectAd();
     
     if (isAd) {
-        // Send Ad signal immediately
+        // I am having an Ad. Tell partner to WAIT.
         if (!wasInAd) {
             wasInAd = true;
             lastBroadcaster = myName; 
@@ -263,7 +263,7 @@ function monitorAdStatus() {
             lastAdBroadcastTime = Date.now();
             updateSyncStatus();
         } else {
-            // RE-BROADCAST every 1 second to ensure connection cuts don't break the lock
+            // Keep shouting "I have an Ad" every 1s so they don't resume
             if (Date.now() - lastAdBroadcastTime > 1000) {
                  broadcastState('ad_playing', 0, currentVideoId, true);
                  lastAdBroadcastTime = Date.now();
@@ -272,12 +272,12 @@ function monitorAdStatus() {
     } else {
         if (wasInAd) {
             wasInAd = false;
-            // Ad Just Ended.
-            // 1. Force Play Locally
+            // Ad Finished. 
+            // 1. Force Play locally to be sure
             if(player.getPlayerState() !== YT.PlayerState.PLAYING) {
                 player.playVideo();
             }
-            // 2. Broadcast 'PLAY' immediately with ZERO delay
+            // 2. Broadcast PLAY + My Current Timestamp immediately
             lastBroadcaster = myName;
             broadcastState('play', player.getCurrentTime(), currentVideoId, true);
             updateSyncStatus();
@@ -332,7 +332,7 @@ setInterval(() => {
 function getEstimatedRemoteTime() {
     if (!currentRemoteState) return 0;
     if (currentRemoteState.action !== 'play') return currentRemoteState.time;
-    // Calculate exact drift time
+    // Calculate exact time based on when the signal was sent
     const elapsed = (Date.now() - currentRemoteState.timestamp) / 1000;
     return currentRemoteState.time + elapsed;
 }
@@ -372,25 +372,26 @@ function heartbeatSync() {
     }
 }
 
+// --- THE MASTER SYNC LOOP ---
 function monitorSyncHealth() {
     if (!hasUserInteracted) return;
+    // If I am the leader, I don't check sync, I set it.
     if (lastBroadcaster === myName || isSwitchingSong) return;
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     
-    // --- AGGRESSIVE AD LOCK LOOP ---
-    // If partner has Ad, we MUST wait. Even if user tries to click play.
+    // --- 1. AD LOCK LOOP ---
+    // Loop Condition: If partner has Ad, I MUST wait. 
     if (currentRemoteState.action === 'ad_playing' || currentRemoteState.action === 'ad_pause') {
         const myState = player.getPlayerState();
         if (myState !== YT.PlayerState.PAUSED) {
-            // Force pause if trying to play
+            // Force pause repeatedly if necessary
             player.pauseVideo();
-            console.log("Forcing pause: Partner has Ad");
         }
         updateSyncStatus(); 
-        return; // EXIT HERE. Do not proceed to playing logic.
+        return; // Break the loop, wait for next cycle
     }
     
-    // Don't fight the user if they just clicked something locally (unless it was Ad Lock)
+    // Allow user to seek/pause locally without fighting the loop immediately
     if (Date.now() - lastLocalInteractionTime < 1000) return;
 
     if (currentRemoteState.action === 'switching_pause') {
@@ -402,10 +403,10 @@ function monitorSyncHealth() {
 
     const myState = player.getPlayerState();
     
-    // --- SYNC CORRECTION ---
+    // --- 2. SYNC CORRECTION SYSTEM ---
     if (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart') {
         
-        // 1. Auto-Resume if partner is playing
+        // A. Auto-Play if Stopped
         if (myState !== YT.PlayerState.PLAYING && myState !== YT.PlayerState.BUFFERING) {
             if (detectAd()) return; 
             userIntentionallyPaused = false;
@@ -414,34 +415,37 @@ function monitorSyncHealth() {
         
         if (myState === YT.PlayerState.BUFFERING) return;
 
-        // 2. Check Drift
-        const estimatedTime = getEstimatedRemoteTime();
-        const currentLoc = player.getCurrentTime();
-        const drift = estimatedTime - currentLoc; 
+        // B. Calculate Discrepancy
+        const targetTime = getEstimatedRemoteTime();
+        const currentTime = player.getCurrentTime();
+        const drift = targetTime - currentTime; 
         const absDrift = Math.abs(drift);
 
-        // 3. Correct Drift (Smoother)
+        // C. The "Fix It" Logic
         if (absDrift > SYNC_THRESHOLD_HARD) {
-            // Only SEEK if drift is massive (> 2.5s)
+            // CASE: Network Issue or Huge Lag (> 2.0s)
+            // ACTION: Hard Jump (Seek) to align timestamps
             if (!detectAd()) { 
-                player.seekTo(estimatedTime, true); 
+                player.seekTo(targetTime, true); 
                 player.setPlaybackRate(1);
             }
         } else if (absDrift > SYNC_THRESHOLD_SOFT) {
-            // Micro-adjust speed for small drifts (No Cut)
+            // CASE: Minor Drift (0.15s - 2.0s)
+            // ACTION: Speed up or Slow down to catch up smoothly
             let targetRate = 1;
             if (drift > 0) { 
-                // Behind -> Speed Up slightly
+                // Behind -> Speed Up
                 targetRate = absDrift > 0.5 ? 1.25 : 1.1; 
             } else { 
-                // Ahead -> Slow Down slightly
+                // Ahead -> Slow Down
                 targetRate = absDrift > 0.5 ? 0.8 : 0.95;
             }
             if (player.getPlaybackRate() !== targetRate) {
                 player.setPlaybackRate(targetRate);
             }
         } else {
-            // Perfect Sync
+            // CASE: Synced
+            // ACTION: Normal Speed
             if (player.getPlaybackRate() !== 1) {
                 player.setPlaybackRate(1);
             }
