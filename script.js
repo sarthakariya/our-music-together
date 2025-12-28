@@ -1,5 +1,3 @@
-// --- START OF FILE script(100010).js ---
-
 // --- CONFIGURATION ---
 const firebaseConfig = {
     apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co",
@@ -58,7 +56,6 @@ let currentRemoteState = null;
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
 let lastQueueSignature = ""; 
-let lastRenderedState = null; // Optimization: Cache last state
 
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
@@ -117,11 +114,11 @@ document.addEventListener('visibilitychange', () => {
     // 2. Pause/Resume Visuals
     if (document.hidden) {
         // Paused visual updates save GPU
-        if(UI.equalizer) UI.equalizer.classList.add('paused'); 
+        UI.equalizer.classList.add('paused'); 
         stopLyricsSync(); 
     } else {
         // Resume visual updates
-        if(UI.equalizer) UI.equalizer.classList.remove('paused');
+        UI.equalizer.classList.remove('paused');
         if (currentVideoId) {
              const song = currentQueue.find(s => s.videoId === currentVideoId);
              if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
@@ -200,15 +197,14 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // UPDATED: Timings reduced to 3.5s (3500ms) for better responsiveness
-    // SMART TIMER: Heartbeat sync (1s active, 3.5s hidden)
-    setSmartInterval(heartbeatSync, 1000, 3500);
+    // SMART TIMER: Heartbeat sync (1s active, 5s hidden)
+    setSmartInterval(heartbeatSync, 1000, 5000);
     
-    // SMART TIMER: Monitor Sync Health (2s active, 3.5s hidden)
-    setSmartInterval(monitorSyncHealth, 2000, 3500);
+    // SMART TIMER: Monitor Sync Health (2s active, 5s hidden)
+    setSmartInterval(monitorSyncHealth, 2000, 5000);
     
-    // SMART TIMER: Ad Check (1s active, 2.5s hidden - faster than 3s)
-    setSmartInterval(monitorAdStatus, 1000, 2500);
+    // SMART TIMER: Ad Check (1s active, 3s hidden)
+    setSmartInterval(monitorAdStatus, 1000, 3000);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -253,7 +249,7 @@ function detectAd() {
 
 // --- AD MONITOR LOOP ---
 function monitorAdStatus() {
-    // Optimization: Skip CPU work if hidden and intentionally paused
+    // If we are hidden and paused intentionally, don't waste CPU checking ads
     if (document.hidden && userIntentionallyPaused) return;
     if (!player || !currentVideoId) return;
 
@@ -315,7 +311,7 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
 }
 
 // --- AGGRESSIVE BACKGROUND KEEP-ALIVE ---
-// UPDATED: Reduced from 4000 to 3500ms
+// We use a slow interval to kick the player if it drifts while hidden
 setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
@@ -324,7 +320,7 @@ setInterval(() => {
             player.playVideo();
         }
     }
-}, 3500); 
+}, 4000); // 4 seconds is enough for keep-alive
 
 // --- CORE SYNC LOGIC ---
 
@@ -352,7 +348,7 @@ function heartbeatSync() {
             }
         }
         
-        // Lightweight: Only update DOM if visible and significant time passed
+        // Only update DOM if visible to save battery
         if(!document.hidden && Date.now() - lastLocalInteractionTime > 1000) {
             updatePlayPauseButton(state);
         }
@@ -413,17 +409,14 @@ function monitorSyncHealth() {
 
 function updatePlayPauseButton(state) {
     if (!UI.playPauseBtn) return;
+    
     if (isSwitchingSong) return;
 
     const isPlaying = (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING);
-    // Optimization: Strictly check current class to avoid redraws
-    const currentIcon = UI.playPauseBtn.querySelector('i');
-    const isShowingPause = currentIcon && currentIcon.classList.contains('fa-pause');
-    
-    if (isPlaying && !isShowingPause) {
-        UI.playPauseBtn.innerHTML = `<i class="fa-solid fa-pause"></i>`;
-    } else if (!isPlaying && isShowingPause) {
-        UI.playPauseBtn.innerHTML = `<i class="fa-solid fa-play"></i>`;
+    const iconClass = isPlaying ? 'fa-pause' : 'fa-play';
+    // Optimization: Check includes before writing innerHTML
+    if (!UI.playPauseBtn.innerHTML.includes(iconClass)) {
+        UI.playPauseBtn.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
     }
     
     if(navigator.mediaSession) navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
@@ -737,8 +730,7 @@ function applyRemoteCommand(state) {
 }
 
 function updateSyncStatus() {
-    // Lightweight Optimization: Return immediately if hidden to save battery
-    // We don't even calculate string logic here
+    // If hidden, skip DOM updates completely to save battery
     if (document.hidden) return;
 
     const msgEl = UI.syncStatusMsg;
