@@ -19,7 +19,6 @@ if (typeof firebase !== 'undefined' && !firebase.apps.length) {
 }
 
 const db = (typeof firebase !== 'undefined') ? firebase.database() : null;
-// Safety check if db failed to load
 const syncRef = db ? db.ref('sync') : null;
 const queueRef = db ? db.ref('queue') : null;
 const chatRef = db ? db.ref('chat') : null; 
@@ -106,7 +105,7 @@ function setSmartInterval(callback, normalMs, hiddenMs) {
             clearInterval(this.id);
             const ms = document.hidden ? this.hiddenMs : this.normalMs;
             if (ms !== Infinity) {
-                 this.id = setInterval(this.callback, ms); // Fixed: callback is in 'this'
+                 this.id = setInterval(this.callback, ms);
             }
         }
     };
@@ -188,13 +187,18 @@ window.addEventListener('offline', () => {
 });
 
 // --- YOUTUBE PLAYER ---
-// FIX: Expose this to window so the API can find it
 window.onYouTubeIframeAPIReady = function() {
     player = new YT.Player('player', {
         height: '100%', width: '100%', videoId: '',
         playerVars: { 
-            'controls': 1, 'disablekb': 0, 'rel': 0, 'modestbranding': 1, 'autoplay': 1, 'origin': window.location.origin,
-            'playsinline': 1 
+            'controls': 1, 
+            'disablekb': 0, 
+            'rel': 0, 
+            'modestbranding': 1, 
+            'autoplay': 1, 
+            'origin': window.location.origin,
+            'playsinline': 1,
+            'iv_load_policy': 3 // 3 = Disable video annotations (No cards/carts)
         },
         events: { 
             'onReady': onPlayerReady, 
@@ -210,8 +214,8 @@ function onPlayerReady(event) {
     // SMART TIMER: Heartbeat sync (1s active, 5s hidden)
     setSmartInterval(heartbeatSync, 1000, 5000);
     
-    // SMART TIMER: Monitor Sync Health (2s active, 5s hidden)
-    setSmartInterval(monitorSyncHealth, 2000, 5000);
+    // SMART TIMER: Monitor Sync Health (1s active, 5s hidden) - Checks every second
+    setSmartInterval(monitorSyncHealth, 1000, 5000);
     
     // SMART TIMER: Ad Check (1s active, 3s hidden)
     setSmartInterval(monitorAdStatus, 1000, 3000);
@@ -242,23 +246,27 @@ function onPlayerError(event) {
     }, 1000);
 }
 
-// --- ROBUST AD DETECTION ---
+// --- ROBUST AD DETECTION & HANDLING ---
 function detectAd() {
     if (!player) return false;
     try {
         if (typeof player.getPlayerState !== 'function') return false;
+        
+        // Basic Ad State Check
+        // Note: IFrame API doesn't always expose ad state accurately, so we infer.
         if (player.getPlayerState() !== YT.PlayerState.PLAYING) return false;
 
         const data = player.getVideoData();
         if (!data) return false;
 
+        // 1. ID Mismatch (Ad playing instead of requested song)
         if (currentVideoId && data.video_id && data.video_id !== currentVideoId) return true;
+        // 2. Empty Author (Common in ads)
         if (data.author === "") return true;
+        // 3. Title Flags
         if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
 
-    } catch(e) {
-        // console.warn("Ad detection error", e);
-    }
+    } catch(e) {}
     return false;
 }
 
@@ -275,10 +283,22 @@ function monitorAdStatus() {
             lastBroadcaster = myName; 
             broadcastState('ad_pause', 0, currentVideoId, true); 
             updateSyncStatus();
+            
+            // AGGRESSIVE AD SKIP ATTEMPT
+            try {
+                if(player.mute) player.mute(); // Mute ad
+                if(player.setPlaybackRate) player.setPlaybackRate(2); // Speed up ad
+            } catch(e) {}
         }
     } else {
         if (wasInAd) {
             wasInAd = false;
+            
+            // RESTORE AUDIO & SPEED
+            try {
+                if(player.unMute) player.unMute();
+                if(player.setPlaybackRate) player.setPlaybackRate(1);
+            } catch(e) {}
             
             if(player.getPlayerState && player.getPlayerState() !== YT.PlayerState.PLAYING) {
                 player.playVideo();
@@ -346,6 +366,7 @@ function heartbeatSync() {
         return;
     }
 
+    // Only the "Broadcaster" (person who last touched controls) updates the DB
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
         const state = player.getPlayerState();
         if (state === YT.PlayerState.PLAYING) {
@@ -362,17 +383,20 @@ function heartbeatSync() {
             }
         }
         
-        // Only update DOM if visible to save battery
         if(!document.hidden && Date.now() - lastLocalInteractionTime > 1000) {
             updatePlayPauseButton(state);
         }
     }
 }
 
+// --- PRECISION SYNC CHECKER ---
+// Checks every second if we are drifting from the group
 function monitorSyncHealth() {
     if (!hasUserInteracted) return;
+    // Don't sync if I am the one broadcasting or we are switching songs
     if (lastBroadcaster === myName || isSwitchingSong) return;
     if (!player || !currentRemoteState || !player.getPlayerState) return;
+    // Don't sync if I just clicked something myself
     if (Date.now() - lastLocalInteractionTime < 2000) return;
 
     if (currentRemoteState.action === 'ad_pause') {
@@ -394,9 +418,10 @@ function monitorSyncHealth() {
     
     if (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart') {
         let needsFix = false;
+        
+        // 1. Check State Mismatch
         if (myState !== YT.PlayerState.PLAYING && myState !== YT.PlayerState.BUFFERING) {
             if (detectAd()) return; 
-            
             userIntentionallyPaused = false;
             player.playVideo(); 
             needsFix = true;
@@ -404,12 +429,25 @@ function monitorSyncHealth() {
         
         if (myState === YT.PlayerState.BUFFERING) return;
 
-        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 4.0) {
+        // 2. Check Time Drift with LATENCY COMPENSATION
+        const now = Date.now();
+        const msgAge = now - currentRemoteState.timestamp; // How long ago the message was sent (ms)
+        const latencySec = msgAge / 1000;
+        
+        // The song *should* be at: recorded_time + elapsed_time_since_record
+        const targetTime = currentRemoteState.time + latencySec;
+        const myTime = player.getCurrentTime();
+        
+        // DRIFT THRESHOLD: 1.5 Seconds (Strict Sync)
+        if (Math.abs(myTime - targetTime) > 1.5) {
             if (!detectAd()) { 
-                player.seekTo(currentRemoteState.time, true); 
+                console.log(`Syncing: Drift detected. Mine: ${myTime}, Target: ${targetTime}`);
+                player.seekTo(targetTime, true); 
                 needsFix = true; 
             }
         }
+        
+        // If we corrected, suppress our own broadcasts for a bit so we don't cause a loop
         if (needsFix) suppressBroadcast(3000); 
     }
     else if (currentRemoteState.action === 'pause') {
@@ -428,7 +466,6 @@ function updatePlayPauseButton(state) {
 
     const isPlaying = (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING);
     const iconClass = isPlaying ? 'fa-pause' : 'fa-play';
-    // Optimization: Check includes before writing innerHTML
     if (!UI.playPauseBtn.innerHTML.includes(iconClass)) {
         UI.playPauseBtn.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
     }
@@ -496,7 +533,6 @@ function togglePlayPause() {
     clearTimeout(ignoreTimer);
     lastBroadcaster = myName; 
 
-    // Safety check if player is ready
     if (typeof player.getPlayerState !== 'function') return;
 
     const state = player.getPlayerState();
@@ -568,7 +604,6 @@ function loadInitialData() {
         list.sort((a, b) => (a.order || 0) - (b.order || 0));
         currentQueue = list;
         
-        // Smart Diffing: Only render if queue signature changed
         const signature = JSON.stringify(list.map(s => s.key));
         if (signature !== lastQueueSignature) {
             lastQueueSignature = signature;
@@ -729,9 +764,9 @@ function applyRemoteCommand(state) {
         }
     } 
     else {
-        // Safety check
         if (typeof player.getPlayerState !== 'function') return;
         const playerState = player.getPlayerState();
+        
         if (state.action === 'restart') {
             player.seekTo(0, true); 
             userIntentionallyPaused = false;
@@ -739,7 +774,13 @@ function applyRemoteCommand(state) {
             player.playVideo();
         }
         else if (state.action === 'play') {
-            if (Math.abs(player.getCurrentTime() - state.time) > 4.0) player.seekTo(state.time, true);
+            // COMPENSATION LOGIC
+            const now = Date.now();
+            const latency = (now - state.timestamp) / 1000;
+            const target = state.time + latency;
+
+            if (Math.abs(player.getCurrentTime() - target) > 1.5) player.seekTo(target, true);
+            
             if (playerState !== YT.PlayerState.PLAYING && playerState !== YT.PlayerState.BUFFERING) {
                 userIntentionallyPaused = false;
                 player.setVolume(100);
@@ -757,7 +798,6 @@ function applyRemoteCommand(state) {
 }
 
 function updateSyncStatus() {
-    // If hidden, skip DOM updates completely to save battery
     if (document.hidden) return;
 
     const msgEl = UI.syncStatusMsg;
@@ -768,7 +808,6 @@ function updateSyncStatus() {
     let icon = '', text = '', className = '';
     let eqActive = false;
 
-    // Determine state
     if (detectAd()) {
         icon = 'fa-rectangle-ad'; text = 'Ad Playing'; className = 'sync-status-3d status-ad';
     }
@@ -798,17 +837,15 @@ function updateSyncStatus() {
         }
     }
 
-    // Smart DOM Update: Only write if changed to reduce reflows
     const newHTML = `<i class="fa-solid ${icon}"></i> ${text}`;
     if (msgEl.innerHTML !== newHTML) msgEl.innerHTML = newHTML;
     if (msgEl.className !== className) {
         msgEl.className = className;
         msgEl.classList.remove('pop-anim');
-        void msgEl.offsetWidth; // Trigger reflow for animation reset
+        void msgEl.offsetWidth; 
         msgEl.classList.add('pop-anim');
     }
 
-    // Toggle EQ class only if changed
     if (eq) {
         if (eqActive && !eq.classList.contains('active')) eq.classList.add('active');
         if (!eqActive && eq.classList.contains('active')) eq.classList.remove('active');
@@ -1104,7 +1141,6 @@ function sendVibe(emoji) {
     if(chatRef) chatRef.push({ user: myName, text: text, timestamp: Date.now(), seen: false });
     triggerHaptic();
 }
-// Attach to window if called via inline onclick handlers
 window.sendVibe = sendVibe;
 
 function decodeHTMLEntities(text) {
@@ -1169,7 +1205,6 @@ function renderSyncedLyrics(lyrics) {
 
 function startLyricsSync() {
     if(lyricsInterval) clearInterval(lyricsInterval);
-    // Optimization: Check if overlay is active before starting
     if(UI.lyricsOverlay && UI.lyricsOverlay.classList.contains('active')) {
         lyricsInterval = setInterval(syncLyricsDisplay, 1000); 
     }
@@ -1180,14 +1215,12 @@ function stopLyricsSync() {
 }
 
 function syncLyricsDisplay() {
-    // Optimization: Do nothing if hidden to save battery
     if (document.hidden) return;
     if (!player || typeof player.getCurrentTime !== 'function' || !currentLyrics) return;
     
     const time = player.getCurrentTime();
     let activeIndex = -1;
 
-    // Optimization: Start search from last known index if time moved forward
     let startIdx = 0;
     if (lastLyricsIndex !== -1 && currentLyrics[lastLyricsIndex] && currentLyrics[lastLyricsIndex].time < time) {
         startIdx = lastLyricsIndex;
@@ -1201,7 +1234,6 @@ function syncLyricsDisplay() {
         }
     }
     
-    // DOM Update optimization
     if(activeIndex !== -1 && activeIndex !== lastLyricsIndex) {
         lastLyricsIndex = activeIndex;
         
@@ -1284,7 +1316,6 @@ async function fetchLyrics(manualQuery = null) {
                    const p2 = parts[1].trim();
                    let fallbackUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(p1)}/${encodeURIComponent(p2)}`;
                    
-                   // FIX: 'let' cannot be redeclared in the same block. Use assignment.
                    let fRes = await fetch(fallbackUrl);
                    let fData = await fRes.json();
                    if(fData.lyrics) {
@@ -1377,7 +1408,6 @@ async function handleSearch() {
     const ytPlaylistMatch = query.match(/[?&]list=([^#\&\?]+)/);
     if (ytPlaylistMatch) {
         showToast("System", "Fetching YouTube Playlist..."); 
-        // Fixed: Await this so logic doesn't continue prematurely
         await fetchPlaylist(ytPlaylistMatch[1]);
         input.value = ''; 
         return;
@@ -1452,7 +1482,6 @@ function parseDuration(pt) {
     return `${m}:${s.toString().padStart(2,'0')}`;
 }
 
-// FIX: Added 'await' to recursive call
 async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
     const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${YOUTUBE_API_KEY}&pageToken=${pageToken}`;
     try {
@@ -1517,124 +1546,4 @@ function displayChatMessage(key, user, text, timestamp, image = null, seen = fal
         tickSpan.id = `tick-${key}`;
         tickSpan.className = `msg-tick ${seen ? 'seen' : ''}`;
         tickSpan.innerHTML = seen ? '<i class="fa-solid fa-check-double"></i>' : '<i class="fa-solid fa-check"></i>';
-        meta.appendChild(tickSpan);
-    }
-    
-    div.appendChild(meta);
-    box.appendChild(div);
-
-    if(isChatActive()) {
-        forceChatScroll();
-    }
-}
-
-function showToast(user, text) {
-    const container = UI.toastContainer;
-    if (!container) return;
-    
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.innerHTML = `
-        <i class="fa-solid fa-comment-dots" style="color:#ff4081; font-size:1.4rem;"></i>
-        <div class="toast-body">
-            <h4>${user}</h4>
-            <p>${text.substring(0, 40)}${text.length>40?'...':''}</p>
-        </div>
-    `;
-    toast.onclick = () => { switchTab('chat'); toast.remove(); };
-    
-    container.prepend(toast);
-
-    while (container.children.length > 3) {
-        container.removeChild(container.lastChild);
-    }
-    
-    setTimeout(() => { 
-        toast.style.opacity='0'; 
-        toast.style.transform='translateX(50px)';
-        setTimeout(()=> {
-            if(toast.parentElement) toast.remove();
-        }, 400); 
-    }, 4000);
-}
-
-if(document.getElementById('play-pause-btn')) document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
-if(document.getElementById('prev-btn')) document.getElementById('prev-btn').addEventListener('click', initiatePrevSong);
-if(document.getElementById('next-btn')) document.getElementById('next-btn').addEventListener('click', initiateNextSong);
-
-if(document.getElementById('search-btn')) document.getElementById('search-btn').addEventListener('click', handleSearch);
-if(UI.searchInput) UI.searchInput.addEventListener('keydown', (e) => { if(e.key==='Enter') handleSearch(); });
-
-if(document.getElementById('chatSendBtn')) {
-    document.getElementById('chatSendBtn').addEventListener('click', () => {
-        const val = document.getElementById('chatInput').value.trim();
-        if(val && chatRef) { 
-            chatRef.push({ user: myName, text: val, timestamp: Date.now(), seen: false }); 
-            document.getElementById('chatInput').value=''; 
-        }
-    });
-}
-if(document.getElementById('chatInput')) {
-    document.getElementById('chatInput').addEventListener('keydown', (e) => {
-        if(e.key === 'Enter') document.getElementById('chatSendBtn').click();
-    });
-}
-
-if(document.getElementById('clearQueueBtn')) document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?") && queueRef) queueRef.remove(); });
-
-// --- SHUFFLE BUTTON LISTENER ---
-if(document.getElementById('shuffleQueueBtn')) {
-    document.getElementById('shuffleQueueBtn').addEventListener('click', () => {
-        if (currentQueue.length < 2) {
-            showToast("System", "Not enough songs to shuffle.");
-            return;
-        }
-
-        // Identify current song to keep it playing/at top
-        let playingSong = null;
-        let songsToShuffle = [];
-
-        if (currentVideoId) {
-            playingSong = currentQueue.find(s => s.videoId === currentVideoId);
-            songsToShuffle = currentQueue.filter(s => s.videoId !== currentVideoId);
-        } else {
-            songsToShuffle = [...currentQueue];
-        }
-
-        if (songsToShuffle.length === 0) return;
-
-        // Fisher-Yates Shuffle
-        for (let i = songsToShuffle.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [songsToShuffle[i], songsToShuffle[j]] = [songsToShuffle[j], songsToShuffle[i]];
-        }
-
-        // Reconstruct list: Current Song -> Shuffled Songs
-        const newOrderList = playingSong ? [playingSong, ...songsToShuffle] : songsToShuffle;
-
-        updateQueueOrder(newOrderList);
-        showToast("System", "Queue shuffled!");
-        triggerHaptic();
-    });
-}
-
-if(document.getElementById('forceSyncBtn')) {
-    document.getElementById('forceSyncBtn').addEventListener('click', () => {
-        if(UI.syncOverlay) UI.syncOverlay.classList.remove('active');
-        if(player && player.playVideo) {
-            player.playVideo(); 
-            broadcastState('play', player.getCurrentTime(), currentVideoId);
-        }
-    });
-}
-
-// Fixed Info/About Button Logic
-const infoBtn = document.getElementById('infoBtn');
-const closeInfoBtn = document.getElementById('closeInfoBtn');
-
-if(infoBtn && UI.infoOverlay) {
-    infoBtn.addEventListener('click', () => UI.infoOverlay.classList.add('active'));
-}
-if(closeInfoBtn && UI.infoOverlay) {
-    closeInfoBtn.addEventListener('click', () => UI.infoOverlay.classList.remove('active'));
-}
+        meta.appendChild(tic
