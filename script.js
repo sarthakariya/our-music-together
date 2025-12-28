@@ -49,6 +49,10 @@ const UI = {
     resultsList: document.getElementById('results-list')
 };
 
+// --- PERFORMANCE CACHE VARIABLES ---
+const _decoderTextArea = document.createElement("textarea"); // RAM OPTIMIZATION: Reusable decoder
+let _activeLyricLine = null; // CPU OPTIMIZATION: Cache active lyric element
+
 let player, currentQueue = [], currentVideoId = null;
 let lastBroadcaster = "System"; 
 let activeTab = 'queue'; 
@@ -78,7 +82,8 @@ let smartIntervals = [];
 
 function setSmartInterval(callback, normalMs, hiddenMs) {
     let intervalId = null;
-    let currentMs = document.hidden ? hiddenMs : normalMs;
+    // Current Interval State
+    let currentIsHidden = document.hidden;
     
     const run = () => {
         if(document.hidden && hiddenMs === Infinity) {
@@ -88,7 +93,8 @@ function setSmartInterval(callback, normalMs, hiddenMs) {
         }
     };
 
-    intervalId = setInterval(run, currentMs);
+    // Initialize
+    intervalId = setInterval(run, currentIsHidden ? hiddenMs : normalMs);
 
     const handler = {
         id: intervalId,
@@ -111,20 +117,19 @@ document.addEventListener('visibilitychange', () => {
     // 1. Re-adjust all smart timers
     smartIntervals.forEach(h => h.restart());
     
-    // 2. Pause/Resume Visuals
+    // 2. Pause/Resume Visuals to save GPU
     if (document.hidden) {
-        // Paused visual updates save GPU
         UI.equalizer.classList.add('paused'); 
         stopLyricsSync(); 
     } else {
-        // Resume visual updates
         UI.equalizer.classList.remove('paused');
         if (currentVideoId) {
              const song = currentQueue.find(s => s.videoId === currentVideoId);
              if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
         }
         if(currentLyrics) startLyricsSync();
-        updateSyncStatus();
+        // Trigger a calm update
+        requestAnimationFrame(updateSyncStatus);
     }
 });
 
@@ -135,10 +140,13 @@ function triggerHaptic() {
     }
 }
 
+// Event Delegation (CPU Optimization)
 document.addEventListener('click', (e) => {
     const t = e.target;
-    if (t.tagName === 'BUTTON' || t.closest('button') || 
-        t.closest('.song-item') || t.closest('.nav-tab')) {
+    // Check using closest only if necessary
+    if (t.tagName === 'BUTTON' || (t.parentElement && t.closest('button')) || 
+        (t.classList.contains('song-item') || t.closest('.song-item')) || 
+        (t.classList.contains('nav-tab') || t.closest('.nav-tab'))) {
         triggerHaptic();
     }
 });
@@ -198,11 +206,9 @@ function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
     // SMART TIMER: Heartbeat sync (1s active, 3.5s hidden)
-    // CHANGED: Reduced from 5000 to 3500 for snappier background sync
     setSmartInterval(heartbeatSync, 1000, 3500);
     
     // SMART TIMER: Monitor Sync Health (2s active, 3.5s hidden)
-    // CHANGED: Reduced from 5000 to 3500 for snappier background sync
     setSmartInterval(monitorSyncHealth, 2000, 3500);
     
     // SMART TIMER: Ad Check (1s active, 3s hidden)
@@ -251,7 +257,7 @@ function detectAd() {
 
 // --- AD MONITOR LOOP ---
 function monitorAdStatus() {
-    // If we are hidden and paused intentionally, don't waste CPU checking ads
+    // BATTERY SAVER: If hidden and paused intentionally, don't waste CPU checking ads
     if (document.hidden && userIntentionallyPaused) return;
     if (!player || !currentVideoId) return;
 
@@ -313,16 +319,15 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
 }
 
 // --- AGGRESSIVE BACKGROUND KEEP-ALIVE ---
-// We use a slow interval to kick the player if it drifts while hidden
+// Slow interval to kick the player if it drifts while hidden
 setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
-        // If we are supposed to be playing but are paused (browser throttling), force play
         if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
             player.playVideo();
         }
     }
-}, 4000); // 4 seconds is enough for keep-alive
+}, 4000); 
 
 // --- CORE SYNC LOGIC ---
 
@@ -341,6 +346,7 @@ function heartbeatSync() {
             
             const duration = player.getDuration();
             const current = player.getCurrentTime();
+            // End of song check
             if (duration > 0 && duration - current < 1) initiateNextSong(); 
             else broadcastState('play', current, currentVideoId);
         }
@@ -350,7 +356,7 @@ function heartbeatSync() {
             }
         }
         
-        // Only update DOM if visible to save battery
+        // VISIBILITY CHECK: Only update DOM if visible to save battery
         if(!document.hidden && Date.now() - lastLocalInteractionTime > 1000) {
             updatePlayPauseButton(state);
         }
@@ -416,7 +422,7 @@ function updatePlayPauseButton(state) {
 
     const isPlaying = (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING);
     const iconClass = isPlaying ? 'fa-pause' : 'fa-play';
-    // Optimization: Check includes before writing innerHTML
+    // Optimization: Check includes before writing innerHTML to avoid parsing
     if (!UI.playPauseBtn.innerHTML.includes(iconClass)) {
         UI.playPauseBtn.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
     }
@@ -732,7 +738,7 @@ function applyRemoteCommand(state) {
 }
 
 function updateSyncStatus() {
-    // If hidden, skip DOM updates completely to save battery
+    // BATTERY SAVER: Absolute stop if hidden
     if (document.hidden) return;
 
     const msgEl = UI.syncStatusMsg;
@@ -771,13 +777,15 @@ function updateSyncStatus() {
         }
     }
 
-    // Smart DOM Update: Only write if changed to reduce reflows
+    // MICRO-OPTIMIZATION: Avoid innerHTML if only class changes
     const newHTML = `<i class="fa-solid ${icon}"></i> ${text}`;
     if (msgEl.innerHTML !== newHTML) msgEl.innerHTML = newHTML;
+    
     if (msgEl.className !== className) {
         msgEl.className = className;
         msgEl.classList.remove('pop-anim');
-        void msgEl.offsetWidth; // Trigger reflow for animation reset
+        // Reflow is expensive, but necessary for restart. We accept this cost only on status change.
+        void msgEl.offsetWidth; 
         msgEl.classList.add('pop-anim');
     }
 
@@ -937,6 +945,7 @@ function renderQueue(queueArray, currentVideoId) {
         return;
     }
     
+    // RAM OPTIMIZATION: Use DocumentFragment to batch DOM inserts
     const fragment = document.createDocumentFragment();
 
     queueArray.forEach((song, index) => {
@@ -1061,11 +1070,11 @@ function sendVibe(emoji) {
     triggerHaptic();
 }
 
+// MEMORY OPTIMIZATION: Reuse textarea for decoding
 function decodeHTMLEntities(text) {
     if (!text) return "";
-    const txt = document.createElement("textarea");
-    txt.innerHTML = text;
-    return txt.value;
+    _decoderTextArea.innerHTML = text;
+    return _decoderTextArea.value;
 }
 
 function smartCleanTitle(title) {
@@ -1110,6 +1119,9 @@ function renderSyncedLyrics(lyrics) {
     const wrapper = document.createElement('div');
     wrapper.className = 'synced-lyrics-wrapper';
     
+    // CPU OPTIMIZATION: Clean cache when rendering new lyrics
+    _activeLyricLine = null;
+
     lyrics.forEach((line, index) => {
         const p = document.createElement('p');
         p.className = 'lyrics-line';
@@ -1133,14 +1145,14 @@ function stopLyricsSync() {
 }
 
 function syncLyricsDisplay() {
-    // Optimization: Do nothing if hidden to save battery
+    // BATTERY SAVER: Do nothing if hidden
     if (document.hidden) return;
     if (!player || !player.getCurrentTime || !currentLyrics) return;
     
     const time = player.getCurrentTime();
     let activeIndex = -1;
 
-    // Optimization: Start search from last known index if time moved forward
+    // ALGORITHM OPTIMIZATION: Start search from last known index
     let startIdx = 0;
     if (lastLyricsIndex !== -1 && currentLyrics[lastLyricsIndex] && currentLyrics[lastLyricsIndex].time < time) {
         startIdx = lastLyricsIndex;
@@ -1154,15 +1166,21 @@ function syncLyricsDisplay() {
         }
     }
     
-    // DOM Update optimization
+    // CPU OPTIMIZATION: Only touch DOM if index changed
     if(activeIndex !== -1 && activeIndex !== lastLyricsIndex) {
         lastLyricsIndex = activeIndex;
         
-        const prevActive = document.querySelector('.lyrics-line.active');
-        if (prevActive) prevActive.classList.remove('active');
+        // Remove class from cached element instead of querySelector
+        if (_activeLyricLine) {
+            _activeLyricLine.classList.remove('active');
+        } else {
+            const prev = document.querySelector('.lyrics-line.active');
+            if(prev) prev.classList.remove('active');
+        }
         
         const activeLine = document.getElementById('lyric-line-' + activeIndex);
         if(activeLine) {
+            _activeLyricLine = activeLine; // Update cache
             activeLine.classList.add('active');
             activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
