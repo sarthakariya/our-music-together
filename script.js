@@ -61,9 +61,9 @@ let lastQueueSignature = "";
 let userIntentionallyPaused = false; 
 let wasInAd = false; 
 
-// --- SYNC THRESHOLDS (Adjusted to 3s per request) ---
-const SYNC_THRESHOLD_HARD = 3.0; // If drift > 3.0s, SEEK (Break audio)
-const SYNC_THRESHOLD_SOFT = 0.15; // If drift > 0.15s, use SPEED (Smooth correction)
+// --- SYNC THRESHOLDS (ULTRA LOW LATENCY) ---
+const SYNC_THRESHOLD_HARD = 1.8; // If drift > 1.8s, SEEK (Break audio)
+const SYNC_THRESHOLD_SOFT = 0.10; // If drift > 0.10s, use SPEED (Smooth correction)
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -201,16 +201,15 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // FASTER TIMERS FOR RESPONSIVENESS (3 Seconds Max)
+    // HIGH PERFORMANCE SYNC TIMERS
+    // Heartbeat: 500ms (Active), 3000ms (Hidden)
+    setSmartInterval(heartbeatSync, 500, 3000);
     
-    // Heartbeat: 800ms (Active), 3000ms (Hidden - Reduced from 5s)
-    setSmartInterval(heartbeatSync, 800, 3000);
+    // Monitor Health: 800ms (Active), 3000ms (Hidden)
+    setSmartInterval(monitorSyncHealth, 800, 3000);
     
-    // Monitor Health: 1000ms (Active), 3000ms (Hidden - Reduced from 5s)
-    setSmartInterval(monitorSyncHealth, 1000, 3000);
-    
-    // Ad Check: 1000ms (Active), 3000ms (Hidden - Reduced from 5s)
-    setSmartInterval(monitorAdStatus, 1000, 3000);
+    // Ad Check: 800ms (Active), 3000ms (Hidden)
+    setSmartInterval(monitorAdStatus, 800, 3000);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -414,27 +413,27 @@ function monitorSyncHealth() {
         const drift = estimatedTime - currentLoc; // Positive = I am Behind. Negative = I am Ahead.
         const absDrift = Math.abs(drift);
 
-        // Logic: Bring to same timestamp without breaking (seeking) unless it's > 3s
+        // Logic: Bring to same timestamp without breaking (seeking) unless it's > 1.8s
         if (absDrift > SYNC_THRESHOLD_HARD) {
-            // Big Drift (>3s)? Hard Seek.
+            // Big Drift (>1.8s)? Hard Seek.
             if (!detectAd()) { 
                 console.log("Hard Sync: Seeking to " + estimatedTime);
                 player.seekTo(estimatedTime, true); 
                 player.setPlaybackRate(1);
             }
         } else if (absDrift > SYNC_THRESHOLD_SOFT) {
-            // Drift between 0.15s and 3.0s
+            // Drift between 0.10s and 1.8s
             // Use Speed Correction (No breaking)
             let targetRate = 1;
             
             if (drift > 0) { 
                 // I am behind. Speed up.
-                // If behind by > 1.0s, go faster (1.25x). If < 1.0s, go slightly faster (1.1x).
-                targetRate = absDrift > 1.0 ? 1.25 : 1.1; 
+                // If behind by > 0.5s, go faster (1.3x). If < 0.5s, go slightly faster (1.15x).
+                targetRate = absDrift > 0.5 ? 1.3 : 1.15; 
             } else { 
                 // I am ahead. Slow down.
-                // If ahead by > 1.0s, go slower (0.75x). If < 1.0s, go slightly slower (0.9x).
-                targetRate = absDrift > 1.0 ? 0.75 : 0.9;
+                // If ahead by > 0.5s, go slower (0.75x). If < 0.5s, go slightly slower (0.9x).
+                targetRate = absDrift > 0.5 ? 0.75 : 0.9;
             }
 
             if (player.getPlaybackRate() !== targetRate) {
@@ -527,23 +526,35 @@ function onPlayerStateChange(event) {
     updateSyncStatus();
 }
 
+// --- OPTIMIZED TOGGLE FUNCTION: INSTANT RESPONSIVENESS ---
 function togglePlayPause() {
     if (!player || isSwitchingSong) return;
     
+    triggerHaptic();
     lastLocalInteractionTime = Date.now();
     ignoreSystemEvents = false;
     clearTimeout(ignoreTimer);
     lastBroadcaster = myName; 
 
     const state = player.getPlayerState();
+    const isPlaying = (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING);
 
-    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
+    if (isPlaying) {
+        // INSTANT UI UPDATE: Paused
         UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>'; 
+        UI.syncStatusMsg.className = 'sync-status-3d status-paused';
+        UI.syncStatusMsg.innerHTML = '<i class="fa-solid fa-pause"></i> Paused by You';
+        
         userIntentionallyPaused = true; 
         player.pauseVideo();
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
+        // INSTANT UI UPDATE: Playing
         UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>'; 
+        UI.syncStatusMsg.className = 'sync-status-3d status-playing';
+        UI.syncStatusMsg.innerHTML = '<i class="fa-solid fa-heart-pulse"></i> Vibing Together';
+        if(!UI.equalizer.classList.contains('active')) UI.equalizer.classList.add('active');
+
         userIntentionallyPaused = false; 
         if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
         else if (currentVideoId) {
