@@ -197,10 +197,12 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // SMART TIMER: Heartbeat sync (1s active, 3.5s hidden for better latency)
+    // SMART TIMER: Heartbeat sync (1s active, 3.5s hidden)
+    // CHANGED: Reduced from 5000 to 3500 for snappier background sync
     setSmartInterval(heartbeatSync, 1000, 3500);
     
-    // SMART TIMER: Monitor Sync Health (2s active, 3.5s hidden for better latency)
+    // SMART TIMER: Monitor Sync Health (2s active, 3.5s hidden)
+    // CHANGED: Reduced from 5000 to 3500 for snappier background sync
     setSmartInterval(monitorSyncHealth, 2000, 3500);
     
     // SMART TIMER: Ad Check (1s active, 3s hidden)
