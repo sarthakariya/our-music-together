@@ -62,10 +62,12 @@ let userIntentionallyPaused = false;
 let wasInAd = false; 
 let lastAdBroadcastTime = 0;
 
-// --- SYNC THRESHOLDS (The "System") ---
-// If drift > 2.0s (Network Issue/Lag), we HARD SEEK (Jump).
+// --- STUCK DETECTION VARIABLES ---
+let lastStuckCheckTime = 0;
+let stuckFrameCount = 0;
+
+// --- SYNC THRESHOLDS ---
 const SYNC_THRESHOLD_HARD = 2.0; 
-// If drift > 0.15s, we MICRO-ADJUST SPEED (Catch up smoothly).
 const SYNC_THRESHOLD_SOFT = 0.15; 
 
 // --- LYRICS SYNC VARIABLES ---
@@ -198,13 +200,8 @@ function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
     // --- HIGH FREQUENCY LOOP SYSTEM ---
-    // Heartbeat: 300ms (Sends my status)
     setSmartInterval(heartbeatSync, 300, 3000);
-    
-    // Monitor Sync: 200ms (The "Loop" that checks partner)
     setSmartInterval(monitorSyncHealth, 200, 3000);
-    
-    // Ad Check: 300ms (Checks for Ads locally)
     setSmartInterval(monitorAdStatus, 300, 3000);
 
     syncRef.once('value').then(snapshot => {
@@ -248,14 +245,34 @@ function detectAd() {
     return false;
 }
 
-// --- AD MONITOR LOOP (ADVERTISING STATE) ---
+// --- AD & STUCK MONITOR LOOP ---
 function monitorAdStatus() {
     if (!player || !currentVideoId) return;
 
-    const isAd = detectAd();
+    let isAd = detectAd();
+    
+    // --- STUCK DETECTION (Treats Stagnation as Ad/Issue) ---
+    // If player says "PLAYING" but time isn't moving for ~2s, assume stuck/ad.
+    if (!isAd && player.getPlayerState() === YT.PlayerState.PLAYING) {
+        const curr = player.getCurrentTime();
+        if (Math.abs(curr - lastStuckCheckTime) < 0.1) {
+            stuckFrameCount++;
+        } else {
+            stuckFrameCount = 0;
+            lastStuckCheckTime = curr;
+        }
+        
+        // 6 ticks * 300ms = 1.8 seconds stuck
+        if (stuckFrameCount > 6) {
+            isAd = true; 
+        }
+    } else {
+        stuckFrameCount = 0; 
+        if(player && player.getCurrentTime) lastStuckCheckTime = player.getCurrentTime();
+    }
     
     if (isAd) {
-        // I am having an Ad. Tell partner to WAIT.
+        // I am stuck or having an Ad. Broadcast this to force partner to wait.
         if (!wasInAd) {
             wasInAd = true;
             lastBroadcaster = myName; 
@@ -263,7 +280,7 @@ function monitorAdStatus() {
             lastAdBroadcastTime = Date.now();
             updateSyncStatus();
         } else {
-            // Keep shouting "I have an Ad" every 1s so they don't resume
+            // Keep shouting "I have an Ad" every 1s
             if (Date.now() - lastAdBroadcastTime > 1000) {
                  broadcastState('ad_playing', 0, currentVideoId, true);
                  lastAdBroadcastTime = Date.now();
@@ -272,14 +289,15 @@ function monitorAdStatus() {
     } else {
         if (wasInAd) {
             wasInAd = false;
-            // Ad Finished. 
-            // 1. Force Play locally to be sure
-            if(player.getPlayerState() !== YT.PlayerState.PLAYING) {
-                player.playVideo();
-            }
-            // 2. Broadcast PLAY + My Current Timestamp immediately
+            // Ad/Stuck Finished. 
+            // RECOVERY ACTION: Restart from 0:00 for everyone.
+            
+            player.seekTo(0, true);
+            player.playVideo();
+            
             lastBroadcaster = myName;
-            broadcastState('play', player.getCurrentTime(), currentVideoId, true);
+            // Send RESTART command specifically
+            broadcastState('restart', 0, currentVideoId, true);
             updateSyncStatus();
         }
     }
@@ -379,12 +397,12 @@ function monitorSyncHealth() {
     if (lastBroadcaster === myName || isSwitchingSong) return;
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     
-    // --- 1. AD LOCK LOOP ---
-    // Loop Condition: If partner has Ad, I MUST wait. 
+    // --- 1. AD LOCK LOOP (The "Waiting" Loop) ---
+    // If partner has Ad/Stuck, I MUST wait. 
     if (currentRemoteState.action === 'ad_playing' || currentRemoteState.action === 'ad_pause') {
         const myState = player.getPlayerState();
         if (myState !== YT.PlayerState.PAUSED) {
-            // Force pause repeatedly if necessary
+            // Force pause repeatedly to ensure we wait
             player.pauseVideo();
         }
         updateSyncStatus(); 
@@ -423,32 +441,22 @@ function monitorSyncHealth() {
 
         // C. The "Fix It" Logic
         if (absDrift > SYNC_THRESHOLD_HARD) {
-            // CASE: Network Issue or Huge Lag (> 2.0s)
-            // ACTION: Hard Jump (Seek) to align timestamps
+            // Hard Jump (Seek)
             if (!detectAd()) { 
                 player.seekTo(targetTime, true); 
                 player.setPlaybackRate(1);
             }
         } else if (absDrift > SYNC_THRESHOLD_SOFT) {
-            // CASE: Minor Drift (0.15s - 2.0s)
-            // ACTION: Speed up or Slow down to catch up smoothly
+            // Soft Speed Adjustment
             let targetRate = 1;
-            if (drift > 0) { 
-                // Behind -> Speed Up
-                targetRate = absDrift > 0.5 ? 1.25 : 1.1; 
-            } else { 
-                // Ahead -> Slow Down
-                targetRate = absDrift > 0.5 ? 0.8 : 0.95;
-            }
+            if (drift > 0) targetRate = absDrift > 0.5 ? 1.25 : 1.1; 
+            else targetRate = absDrift > 0.5 ? 0.8 : 0.95;
+            
             if (player.getPlaybackRate() !== targetRate) {
                 player.setPlaybackRate(targetRate);
             }
         } else {
-            // CASE: Synced
-            // ACTION: Normal Speed
-            if (player.getPlaybackRate() !== 1) {
-                player.setPlaybackRate(1);
-            }
+            if (player.getPlaybackRate() !== 1) player.setPlaybackRate(1);
         }
     }
     else if (currentRemoteState.action === 'pause') {
