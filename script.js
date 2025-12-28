@@ -61,9 +61,11 @@ let lastQueueSignature = "";
 let userIntentionallyPaused = false; 
 let wasInAd = false; 
 
-// --- SYNC THRESHOLDS (ULTRA LOW LATENCY) ---
-const SYNC_THRESHOLD_HARD = 1.5; // If drift > 1.5s, SEEK immediately
-const SYNC_THRESHOLD_SOFT = 0.15; // Micro-adjust speed if drift > 0.15s
+// --- SYNC THRESHOLDS (SNAPPY) ---
+// If we drift more than 1.0 second, we SEEK.
+const SYNC_THRESHOLD_HARD = 1.0; 
+// If we drift more than 0.15s, we adjust SPEED.
+const SYNC_THRESHOLD_SOFT = 0.15; 
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -112,29 +114,22 @@ function setSmartInterval(callback, normalMs, hiddenMs) {
 }
 
 document.addEventListener('visibilitychange', () => {
-    // 1. Re-adjust all smart timers
     smartIntervals.forEach(h => h.restart());
-    
-    // 2. Pause/Resume Visuals
     if (document.hidden) {
-        // Paused visual updates save GPU
         UI.equalizer.classList.add('paused'); 
         stopLyricsSync(); 
     } else {
-        // Resume visual updates
         UI.equalizer.classList.remove('paused');
         if (currentVideoId) {
              const song = currentQueue.find(s => s.videoId === currentVideoId);
              if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
         }
         if(currentLyrics) startLyricsSync();
-        // Immediate sync check on tab visible
         if(player && currentRemoteState) applyRemoteCommand(currentRemoteState);
         updateSyncStatus();
     }
 });
 
-// --- HAPTIC FEEDBACK HELPER ---
 function triggerHaptic() {
     if (navigator.vibrate) {
         navigator.vibrate(60); 
@@ -201,15 +196,15 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // EXTREME PERFORMANCE SYNC TIMERS
-    // Heartbeat: 400ms (Active) - Very fast updates
-    setSmartInterval(heartbeatSync, 400, 3000);
+    // --- HIGH FREQUENCY CHECKERS ---
+    // Heartbeat: 300ms (Active) - Super fast updates
+    setSmartInterval(heartbeatSync, 300, 3000);
     
-    // Monitor Health: 500ms (Active) - Fast correction
-    setSmartInterval(monitorSyncHealth, 500, 3000);
+    // Monitor Sync: 300ms (Active) - Active Looping for Sync/Ad
+    setSmartInterval(monitorSyncHealth, 300, 3000);
     
-    // Ad Check: 400ms (Active) - Instant Ad Recovery
-    setSmartInterval(monitorAdStatus, 400, 3000);
+    // Ad Check: 300ms (Active) - Instant Recovery
+    setSmartInterval(monitorAdStatus, 300, 3000);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -252,9 +247,9 @@ function detectAd() {
     return false;
 }
 
-// --- AD MONITOR LOOP (FAST RECOVERY) ---
+// --- AD MONITOR LOOP (INSTANT EXIT) ---
 function monitorAdStatus() {
-    // Don't check ads if hidden and paused (save battery), otherwise check fast
+    // If hidden and paused, reduce checks. Otherwise check FAST.
     if (document.hidden && userIntentionallyPaused) return;
     if (!player || !currentVideoId) return;
 
@@ -264,21 +259,21 @@ function monitorAdStatus() {
         if (!wasInAd) {
             wasInAd = true;
             lastBroadcaster = myName; 
-            // Broadcast AD PAUSE immediately
             broadcastState('ad_pause', 0, currentVideoId, true); 
             updateSyncStatus();
         }
     } else {
         if (wasInAd) {
             wasInAd = false;
-            // Ad just finished - RESUME IMMEDIATELY
+            // Ad Just Ended.
+            // 1. Force Play Locally
             if(player.getPlayerState() !== YT.PlayerState.PLAYING) {
                 player.playVideo();
             }
-            // Force broadcast 'play' to partner with 0 delay
+            // 2. Broadcast 'PLAY' immediately with ZERO delay
             lastBroadcaster = myName;
             broadcastState('play', player.getCurrentTime(), currentVideoId, true);
-            updateSyncStatus(); // Force status update to "Vibing"
+            updateSyncStatus();
         }
     }
 }
@@ -319,7 +314,6 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
 setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
-        // If we are supposed to be playing but are paused (browser throttling), force play
         if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
             player.playVideo();
         }
@@ -376,16 +370,21 @@ function monitorSyncHealth() {
     if (lastBroadcaster === myName || isSwitchingSong) return;
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     
-    // Don't fight the user if they just clicked something (Shortened to 1s for snappiness)
+    // Don't fight the user if they just clicked something
     if (Date.now() - lastLocalInteractionTime < 1000) return;
 
-    // --- AD LOGIC FIX: NO LOOPS ---
+    // --- ACTIVE AD WAITING LOOP ---
+    // If the remote state is AD_PAUSE, we loop here.
+    // We actively force PAUSE to ensure we wait for them.
     if (currentRemoteState.action === 'ad_pause') {
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+            // "Looping behavior": Force pause if play slips through
             player.pauseVideo();
         }
         updateSyncStatus(); 
-        return; // JUST RETURN. Do not seek to 0. Do not pass Go.
+        // We return to skip the rest, but because this function runs every 300ms,
+        // it effectively acts as a high-frequency polling loop waiting for the Ad to end.
+        return; 
     }
     
     if (currentRemoteState.action === 'switching_pause') {
@@ -397,9 +396,10 @@ function monitorSyncHealth() {
 
     const myState = player.getPlayerState();
     
+    // --- SYNC CORRECTION ---
     if (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart') {
         
-        // Auto-Resume if partner is playing
+        // 1. Auto-Resume if partner is playing
         if (myState !== YT.PlayerState.PLAYING && myState !== YT.PlayerState.BUFFERING) {
             if (detectAd()) return; 
             userIntentionallyPaused = false;
@@ -408,30 +408,27 @@ function monitorSyncHealth() {
         
         if (myState === YT.PlayerState.BUFFERING) return;
 
-        // --- SNAPPY MICRO-SYNC ---
+        // 2. Check Drift
         const estimatedTime = getEstimatedRemoteTime();
         const currentLoc = player.getCurrentTime();
         const drift = estimatedTime - currentLoc; 
         const absDrift = Math.abs(drift);
 
+        // 3. Correct Drift (Snappy)
         if (absDrift > SYNC_THRESHOLD_HARD) {
-            // Hard Seek (Only if really far behind)
+            // > 1.0s drift? Snap to time immediately.
             if (!detectAd()) { 
                 player.seekTo(estimatedTime, true); 
                 player.setPlaybackRate(1);
             }
         } else if (absDrift > SYNC_THRESHOLD_SOFT) {
-            // Adaptive Speed (Smooth)
+            // Micro-adjust speed for small drifts
             let targetRate = 1;
-            
             if (drift > 0) { 
-                // Behind -> Speed Up
                 targetRate = absDrift > 0.5 ? 1.3 : 1.15; 
             } else { 
-                // Ahead -> Slow Down
                 targetRate = absDrift > 0.5 ? 0.75 : 0.9;
             }
-
             if (player.getPlaybackRate() !== targetRate) {
                 player.setPlaybackRate(targetRate);
             }
@@ -447,7 +444,7 @@ function monitorSyncHealth() {
              userIntentionallyPaused = true;
              player.pauseVideo();
              player.setPlaybackRate(1);
-             suppressBroadcast(500); // Short suppression
+             suppressBroadcast(500); 
          }
     }
 }
@@ -589,7 +586,6 @@ function initiateSongLoad(songObj) {
         action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
     });
 
-    // Shortened timeout for snappiness
     setTimeout(() => {
         if (isSwitchingSong) {
             isSwitchingSong = false;
