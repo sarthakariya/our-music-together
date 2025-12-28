@@ -1,9 +1,30 @@
+/**
+ * ==========================================================================================
+ * OUR HEART'S SYNC - CORE APPLICATION CONTROLLER
+ * ==========================================================================================
+ * 
+ * This script handles the entire logic for the Music Sync Application.
+ * It manages:
+ * 1. YouTube Iframe Player API interactions.
+ * 2. Firebase Realtime Database synchronization.
+ * 3. Strict Synchronization Guard Loops (3.5s interval).
+ * 4. Ad Detection and Handling (Reset to 0:00).
+ * 5. Queue Management (Add, Remove, Shuffle, Reorder).
+ * 6. Chat System.
+ * 7. Lyrics Synchronization.
+ * 
+ * Authors: Sarthak & Reechita's Sync System
+ * Version: 2.5.0 (Strict Guard Edition)
+ */
+
 // ==========================================================================
-// OUR HEART'S SYNC - MAIN CONTROLLER
+// 1. CONFIGURATION & CONSTANTS
 // ==========================================================================
 
-// --- CONFIGURATION ---
-// Firebase configuration for Realtime Database
+/** 
+ * Firebase Configuration Object
+ * Contains keys and identifiers for the backend connection.
+ */
 const firebaseConfig = {
     apiKey: "AIzaSyDeu4lRYAmlxb4FLC9sNaj9GwgpmZ5T5Co",
     authDomain: "our-music-player.firebaseapp.com",
@@ -15,13 +36,22 @@ const firebaseConfig = {
     measurementId: "G-B4GFLNFCLL"
 };
 
-// YouTube Data API Key
+/** YouTube Data API Key for Search functionality */
 const YOUTUBE_API_KEY = "AIzaSyDInaN1IfgD6VqMLLY7Wh1DbyKd6kcDi68";
 
-// Initialize Firebase
+// Initialize Firebase Instance
 if (typeof firebase !== 'undefined' && !firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
+    try {
+        firebase.initializeApp(firebaseConfig);
+        console.log("Firebase Initialized Successfully.");
+    } catch (error) {
+        console.error("Firebase Initialization Failed:", error);
+    }
+} else {
+    console.warn("Firebase SDK not loaded or already initialized.");
 }
+
+// Database References
 const db = firebase.database();
 const syncRef = db.ref('sync');
 const queueRef = db.ref('queue');
@@ -29,10 +59,11 @@ const chatRef = db.ref('chat');
 const presenceRef = db.ref('presence');
 
 // ==========================================================================
-// DOM CACHE & UI REFERENCES
+// 2. DOM ELEMENT CACHING (UI REPOSITORY)
 // ==========================================================================
+
 const UI = {
-    // Player Components
+    // Player Section
     player: document.getElementById('player'),
     playPauseBtn: document.getElementById('play-pause-btn'),
     prevBtn: document.getElementById('prev-btn'),
@@ -41,24 +72,24 @@ const UI = {
     songTitle: document.getElementById('current-song-title'),
     syncStatusMsg: document.getElementById('sync-status-msg'),
     
-    // Lists & Badges
+    // Sidebar & Lists
     queueList: document.getElementById('queue-list'),
     queueBadge: document.getElementById('queue-badge'),
     mobileQueueBadge: document.getElementById('mobile-queue-badge'),
     resultsList: document.getElementById('results-list'),
     
-    // Chat Components
+    // Chat Section
     chatMessages: document.getElementById('chat-messages'),
     chatInput: document.getElementById('chatInput'),
     chatSendBtn: document.getElementById('chatSendBtn'),
     chatBadge: document.getElementById('chat-badge'),
     mobileChatBadge: document.getElementById('mobile-chat-badge'),
     
-    // Search
+    // Search Section
     searchInput: document.getElementById('searchInput'),
     searchBtn: document.getElementById('search-btn'),
     
-    // Overlays & Modals
+    // Overlays
     toastContainer: document.getElementById('toast-container'),
     lyricsOverlay: document.getElementById('lyricsOverlay'),
     lyricsContent: document.getElementById('lyrics-content-area'),
@@ -79,12 +110,12 @@ const UI = {
     welcomeOverlay: document.getElementById('welcomeOverlay'),
     startSessionBtn: document.getElementById('startSessionBtn'),
     
-    // Mobile Sheet Navigation
+    // Mobile Layout Elements
     mobileSheet: document.getElementById('mobileSheet'),
     mobileSheetTitle: document.getElementById('mobile-sheet-title'),
     mobileSheetClose: document.getElementById('mobileSheetClose'),
     
-    // Tabs
+    // Navigation Tabs
     tabs: {
         queue: document.getElementById('tab-btn-queue'),
         results: document.getElementById('tab-btn-results'),
@@ -98,11 +129,11 @@ const UI = {
 };
 
 // ==========================================================================
-// STATE MANAGEMENT
+// 3. GLOBAL STATE VARIABLES
 // ==========================================================================
 
-// Core Player State
-let player;
+// Player State
+let player = null;
 let currentQueue = [];
 let currentVideoId = null;
 let activeTab = 'queue'; 
@@ -114,15 +145,16 @@ let isSwitchingSong = false;
 let hasUserInteracted = false; 
 let lastQueueSignature = ""; 
 
-// Playback Flags
+// Playback Logic Flags
 let userIntentionallyPaused = false; 
 let wasInAd = false; 
 let lastAdBroadcastTime = 0;
 
-// --- STRICT TRANSITION GUARD CONFIGURATION ---
-const GUARD_INTERVAL_MS = 3500; // Strict 3.5s interval
-const SYNC_TOLERANCE = 3.5;     // Max allowed drift in seconds
-let guardInterval = null;
+// --- CRITICAL SYNC CONFIGURATION ---
+// As requested: Check strictly every 3.5 seconds
+const GUARD_INTERVAL_MS = 3500; 
+const SYNC_TOLERANCE = 3.5; // Seconds allowing before correcting
+const SYNC_THRESHOLD_TIME = 30; // Seconds (Logic boundary for Loop vs Sink)
 
 // Lyrics State
 let currentLyrics = null;
@@ -130,35 +162,42 @@ let currentPlainLyrics = "";
 let lyricsInterval = null;
 let lastLyricsIndex = -1;
 
-// Critical Logic Flags
+// Internal Logic Flags
 let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
-
-// Battery Saver Intervals
 let smartIntervals = [];
 
 // ==========================================================================
-// UTILITY FUNCTIONS & INITIALIZATION
+// 4. UTILITY FUNCTIONS & INITIALIZATION
 // ==========================================================================
 
-// Battery Saver: Runs intervals slower when tab is hidden
+/**
+ * Creates an interval that adjusts its frequency based on visibility.
+ * Used to save battery when the tab is in the background.
+ * 
+ * @param {Function} callback - The function to execute
+ * @param {number} normalMs - Interval when tab is visible
+ * @param {number} hiddenMs - Interval when tab is hidden
+ * @returns {Object} Handler to control the interval
+ */
 function setSmartInterval(callback, normalMs, hiddenMs) {
     let intervalId = null;
-    let currentMs = document.hidden ? hiddenMs : normalMs;
     
     const run = () => {
         if(document.hidden && hiddenMs === Infinity) return;
         callback();
     };
 
+    // Start initial interval
+    const currentMs = document.hidden ? hiddenMs : normalMs;
     intervalId = setInterval(run, currentMs);
 
     const handler = {
         id: intervalId,
-        normalMs,
-        hiddenMs,
-        callback,
+        normalMs: normalMs,
+        hiddenMs: hiddenMs,
+        callback: run,
         restart: function() {
             clearInterval(this.id);
             const ms = document.hidden ? this.hiddenMs : this.normalMs;
@@ -171,13 +210,15 @@ function setSmartInterval(callback, normalMs, hiddenMs) {
     return handler;
 }
 
-// Handle Visibility Changes (Pause visuals, slow down polling)
+// Handle Visibility Changes
 document.addEventListener('visibilitychange', () => {
     smartIntervals.forEach(h => h.restart());
     if (document.hidden) {
+        // Pause heavy animations when hidden
         UI.equalizer.classList.add('paused'); 
         stopLyricsSync(); 
     } else {
+        // Resume functionality
         UI.equalizer.classList.remove('paused');
         if (currentVideoId) {
              const song = currentQueue.find(s => s.videoId === currentVideoId);
@@ -188,14 +229,16 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-// Haptic Feedback Wrapper
+/**
+ * Triggers a light haptic vibration on mobile devices.
+ */
 function triggerHaptic() {
     if (navigator.vibrate) {
         navigator.vibrate(50); 
     }
 }
 
-// Global Click Haptics
+// Global Haptic Listener
 document.addEventListener('click', (e) => {
     const t = e.target;
     if (t.closest('button') || t.closest('.song-item') || t.closest('.nav-tab')) {
@@ -203,16 +246,16 @@ document.addEventListener('click', (e) => {
     }
 }, {passive: true});
 
-// User Identification
+// User Identification Logic
 let myName = localStorage.getItem('deepSpaceUserName');
 if (!myName || myName === "null") {
-    myName = prompt("Enter your name (Sarthak or Reechita):");
+    myName = prompt("Enter your name (e.g. Sarthak, Reechita):");
     if(!myName) myName = "Guest";
     localStorage.setItem('deepSpaceUserName', myName);
 }
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
 
-// Online Presence
+// Presence System
 const sessionKey = presenceRef.push().key;
 presenceRef.child(sessionKey).onDisconnect().remove();
 presenceRef.child(sessionKey).set({ 
@@ -221,7 +264,10 @@ presenceRef.child(sessionKey).set({
     timestamp: firebase.database.ServerValue.TIMESTAMP 
 });
 
-// Helper to suppress self-broadcast loops
+/**
+ * Suppresses broadcast of local events for a short duration.
+ * Used to prevent feedback loops when applying remote commands.
+ */
 function suppressBroadcast(duration = 1000) {
     ignoreSystemEvents = true;
     if (ignoreTimer) clearTimeout(ignoreTimer);
@@ -230,7 +276,9 @@ function suppressBroadcast(duration = 1000) {
     }, duration);
 }
 
-// Helper to decode HTML entities (e.g. &amp; -> &)
+/**
+ * Decodes HTML Entities (e.g. &amp; -> &)
+ */
 function decodeHTMLEntities(text) {
     if (!text) return "";
     const txt = document.createElement("textarea");
@@ -238,9 +286,7 @@ function decodeHTMLEntities(text) {
     return txt.value;
 }
 
-// ==========================================================================
-// NETWORK STATUS HANDLERS
-// ==========================================================================
+// Network Status Listeners
 window.addEventListener('online', () => {
     showToast("System", "Back online! Resyncing...");
     syncRef.once('value').then(snapshot => {
@@ -249,14 +295,15 @@ window.addEventListener('online', () => {
     });
 });
 window.addEventListener('offline', () => {
-    showToast("System", "Connection lost. Trying to keep playing...");
+    showToast("System", "Connection lost. Playing locally.");
 });
 
 // ==========================================================================
-// YOUTUBE PLAYER SETUP & EVENT LOOP
+// 5. YOUTUBE PLAYER SETUP
 // ==========================================================================
 
 function onYouTubeIframeAPIReady() {
+    console.log("YouTube API Ready. Initializing Player...");
     player = new YT.Player('player', {
         height: '100%', 
         width: '100%', 
@@ -279,14 +326,19 @@ function onYouTubeIframeAPIReady() {
 }
 
 function onPlayerReady(event) {
+    console.log("Player Ready.");
     if (player && player.setVolume) player.setVolume(100);
     
-    // 1. High-Frequency Local Monitor
+    // ----------------------------------------------------------------------
+    // LOOP 1: High-Frequency Local Monitor
     // Checks for Ads and updates Play/Pause button UI rapidly
+    // ----------------------------------------------------------------------
     setSmartInterval(localMonitorLoop, 500, 2000);
     
-    // 2. THE TRANSITION GUARD (Strict 3.5s Sync Lock)
-    // Runs exactly every 3.5 seconds to verify integrity
+    // ----------------------------------------------------------------------
+    // LOOP 2: THE STRICT TRANSITION GUARD
+    // Runs exactly every 3.5 seconds to verify integrity.
+    // ----------------------------------------------------------------------
     setSmartInterval(runTransitionGuard, GUARD_INTERVAL_MS, GUARD_INTERVAL_MS);
 
     // Initial Sync Fetch
@@ -299,64 +351,94 @@ function onPlayerReady(event) {
 }
 
 function onPlayerError(event) {
-    console.error("YouTube Player Error:", event.data);
+    console.error("YouTube Player Error Code:", event.data);
     isSwitchingSong = false; 
     let errorMsg = "Error playing video.";
+    
+    // Specific YouTube Error Handling
     if(event.data === 100 || event.data === 101 || event.data === 150) {
-        errorMsg = "Song blocked by owner. Skipping...";
+        errorMsg = "Song restricted. Auto-skipping...";
     }
+    
     showToast("System", errorMsg);
     // Auto-skip on error
     setTimeout(() => { initiateNextSong(); }, 1500);
 }
 
 // ==========================================================================
-// SYNC LOGIC: PART 1 - DETECTION & BROADCASTING
+// 6. AD DETECTION & HANDLING LOGIC
 // ==========================================================================
 
+/**
+ * Checks if an advertisement is currently playing.
+ * @returns {boolean} True if ad is detected.
+ */
 function detectAd() {
     if (!player) return false;
     try {
         if (player.getPlayerState() !== YT.PlayerState.PLAYING) return false;
         const data = player.getVideoData();
         if (!data) return false;
+        
+        // 1. Video ID mismatch means ad injection
         if (currentVideoId && data.video_id && data.video_id !== currentVideoId) return true;
+        
+        // 2. Metadata checks
         if (data.author === "") return true;
         if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
-    } catch(e) {}
+        
+        // 3. Duration check (optional, aggressive)
+        // const dur = player.getDuration();
+        // if(dur < 30 && data.isLive === false) return true; // Risky for short songs
+        
+    } catch(e) {
+        console.warn("Ad detect error", e);
+    }
     return false;
 }
 
-// Runs frequently to check for Ads and broadcast "I am playing"
+/**
+ * Local Monitor Loop
+ * - Detects Ads
+ * - Manages "Ad End -> Restart" logic
+ * - Broadcasts Play state if valid
+ */
 function localMonitorLoop() {
     if (!player || !player.getPlayerState) return;
 
     const isAd = detectAd();
     
-    // AD LOGIC
+    // --- AD LOGIC HANDLING ---
     if (isAd) {
         if (!wasInAd) {
             wasInAd = true;
+            console.log("Ad Started. Broadcasting lock.");
             // Immediate Broadcast: "I am having an AD, wait for me!"
             broadcastState('ad_playing', 0, currentVideoId, true);
             lastAdBroadcastTime = Date.now();
             updateSyncStatus();
         }
-        // Keep broadcasting AD status every 2s so partner stays locked
+        // Heartbeat the AD status every 2s so partner stays locked
         if (Date.now() - lastAdBroadcastTime > 2000) {
             broadcastState('ad_playing', 0, currentVideoId, true);
             lastAdBroadcastTime = Date.now();
         }
     } else {
         if (wasInAd) {
+            // --- AD ENDED LOGIC ---
             wasInAd = false;
-            // Ad finished, release lock by broadcasting restart
+            console.log("Ad Ended. Resetting song to 0:00 per logic rules.");
+            
+            // RULE: "When the ad like ends it will start from the beginning"
+            player.seekTo(0, true);
+            
+            // Release lock by broadcasting restart
             lastBroadcaster = myName;
             broadcastState('restart', 0, currentVideoId, true);
         }
     }
     
-    // REGULAR PLAYBACK BROADCAST
+    // --- REGULAR PLAYBACK BROADCAST ---
     if (!isAd && !isSwitchingSong && lastBroadcaster === myName && !ignoreSystemEvents) {
         if (player.getPlayerState() === YT.PlayerState.PLAYING) {
              // Broadcast heartbeat every 1s
@@ -364,10 +446,14 @@ function localMonitorLoop() {
                  broadcastState('play', player.getCurrentTime(), currentVideoId);
                  lastAdBroadcastTime = Date.now();
              }
+             
              // Auto-Next Check (if < 1s remaining)
              const dur = player.getDuration();
              const curr = player.getCurrentTime();
-             if (dur > 0 && dur - curr < 1) initiateNextSong();
+             if (dur > 0 && dur - curr < 1) {
+                 console.log("Track ending naturally. Triggering next.");
+                 initiateNextSong();
+             }
         }
     }
     
@@ -378,15 +464,20 @@ function localMonitorLoop() {
 }
 
 // ==========================================================================
-// SYNC LOGIC: PART 2 - THE TRANSITION GUARD (Strict Gate)
+// 7. THE TRANSITION GUARD (STRICT SYNC ENGINE)
 // ==========================================================================
 
+/**
+ * The Sync Logic Core.
+ * Runs every 3.5 seconds.
+ * Compares local state vs remote state and enforces synchronization.
+ */
 function runTransitionGuard() {
-    // If I'm not initialized or user hasn't clicked "Start Session", do nothing.
+    // 1. Initial Checks
     if (!player || !currentRemoteState || !hasUserInteracted) return;
     if (ignoreSystemEvents || isSwitchingSong) return;
     
-    // If I have an ad, I am the one blocking, so I don't need to guard myself.
+    // If I have an ad, I am blocking the session. I don't sync to others.
     if (detectAd()) return; 
 
     const myState = player.getPlayerState();
@@ -398,7 +489,7 @@ function runTransitionGuard() {
     // ---------------------------------------------------------
     if (remoteAction === 'ad_playing' || remoteAction === 'ad_pause') {
         if (myState === YT.PlayerState.PLAYING) {
-            console.log("Guard: Partner has Ad. Locking...");
+            console.log("Guard: Partner has Ad. Locking playback.");
             player.pauseVideo();
             updateSyncStatus();
         }
@@ -413,7 +504,7 @@ function runTransitionGuard() {
         // Respect switching state for up to 5 seconds
         if (Date.now() - (currentRemoteState.timestamp || 0) < 5000) {
             if (myState === YT.PlayerState.PLAYING) {
-                console.log("Guard: Partner is switching. Locking...");
+                console.log("Guard: Partner is switching. Locking.");
                 player.pauseVideo();
             }
             updateSyncStatus();
@@ -422,9 +513,8 @@ function runTransitionGuard() {
     }
 
     // ---------------------------------------------------------
-    // GUARD 3: TIMESTAMP INTEGRITY (The Sync Lock)
+    // GUARD 3: TIMESTAMP INTEGRITY (The 3.5s Sync Lock)
     // ---------------------------------------------------------
-    // Only verify if remote is supposed to be playing
     if (remoteAction === 'play' || remoteAction === 'restart') {
         
         // Calculate where remote *should* be right now
@@ -433,66 +523,92 @@ function runTransitionGuard() {
         const myTime = player.getCurrentTime();
         
         // Calculate difference: (My Time) - (Their Time)
-        // Positive = I am Ahead. Negative = I am Behind.
         const diff = myTime - remoteEstimatedTime;
 
-        // LOCK CONDITION: Am I ahead by > 3.5 seconds?
+        // --- RULE CHECKING ---
+        // "if it passes 30 seconds... sink it... if under 30 seconds... loop"
+        // We implement strict checks regardless, but log specifically.
+
+        // CONDITION A: I AM AHEAD (Fast)
         if (diff > SYNC_TOLERANCE) {
-            // I am too fast. Partner is buffering or stuck.
-            console.log(`Guard: Ahead by ${diff.toFixed(2)}s. Engaging Lock.`);
+            // Logic: I must wait (Loop/Pause).
+            console.log(`Guard: Ahead by ${diff.toFixed(2)}s. Status: WAITING.`);
+            
+            if (myTime < SYNC_THRESHOLD_TIME) {
+                // "Looping" phase (Early song)
+                console.log("Phase: Early Loop Check.");
+            } else {
+                // "Sink" phase (Later song)
+                console.log("Phase: Deep Sync Check.");
+            }
+
             if (myState === YT.PlayerState.PLAYING) {
-                player.pauseVideo(); // Pause without broadcasting
-                updateSyncStatus();  // Show "Waiting..." overlay text
+                player.pauseVideo(); // Pause without broadcasting "pause" command
+                updateSyncStatus();  // Show "Waiting..." overlay
             }
         }
-        // CATCH-UP CONDITION: Am I behind by > 3.5 seconds?
+        
+        // CONDITION B: I AM BEHIND (Slow)
         else if (diff < -SYNC_TOLERANCE) {
-             console.log(`Guard: Behind by ${Math.abs(diff).toFixed(2)}s. Seeking.`);
+             // Logic: I must catch up (Sink/Seek).
+             console.log(`Guard: Behind by ${Math.abs(diff).toFixed(2)}s. Status: SINKING (Seeking).`);
+             
              player.seekTo(remoteEstimatedTime, true);
-             if (myState !== YT.PlayerState.PLAYING) player.playVideo();
+             if (myState !== YT.PlayerState.PLAYING) {
+                 player.playVideo();
+             }
         }
-        // SOFT SYNC: Small Drift Correction (0.5s - 3.5s)
+        
+        // CONDITION C: SOFT SYNC (Small Drift)
         else if (Math.abs(diff) > 0.5) {
-             // Use playback rate for smooth correction
+             // Micro-adjust playback rate
              const rate = diff > 0 ? 0.95 : 1.05; 
              if (player.getPlaybackRate() !== rate) player.setPlaybackRate(rate);
         } 
         else {
-             // In sync
+             // Perfect Sync
              if (player.getPlaybackRate() !== 1) player.setPlaybackRate(1);
         }
         
         // RELEASE LOCK: Resume if I was waiting but now we are close enough
         if (myState === YT.PlayerState.PAUSED && !userIntentionallyPaused && Math.abs(diff) < SYNC_TOLERANCE) {
+             console.log("Guard: Re-aligned. Resuming.");
              player.playVideo();
         }
     }
 }
 
 // ==========================================================================
-// SYNC LOGIC: PART 3 - APPLYING REMOTE COMMANDS
+// 8. DATABASE COMMAND HANDLING
 // ==========================================================================
 
+/**
+ * Broadcasts the current state to Firebase.
+ */
 function broadcastState(action, time, videoId, force = false) {
     if (ignoreSystemEvents && !force) return; 
+    
     syncRef.set({ 
-        action, 
-        time, 
-        videoId, 
+        action: action, 
+        time: time, 
+        videoId: videoId, 
         lastUpdater: myName, 
         timestamp: firebase.database.ServerValue.TIMESTAMP 
-    });
+    }).catch(err => console.error("Broadcast failed", err));
 }
 
+/**
+ * Applies a command received from Firebase.
+ */
 function applyRemoteCommand(state) {
     if (!player) return;
-    // Don't apply commands if I just interacted locally
+    // Don't apply commands if I just interacted locally to prevent stutter
     if (Date.now() - lastLocalInteractionTime < 1000) return;
     
     lastBroadcaster = state.lastUpdater;
     UI.syncOverlay.classList.remove('active');
 
-    // Handle Song Change
+    // Case 1: Video Change
     if (state.videoId !== currentVideoId) {
         if (state.action === 'switching_pause') {
             showToast("System", state.lastUpdater + " is changing song...");
@@ -503,11 +619,13 @@ function applyRemoteCommand(state) {
         const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
         const title = songInQueue ? songInQueue.title : "Syncing...";
         const uploader = songInQueue ? songInQueue.uploader : "";
+        
+        console.log("Remote: Loading new video", state.videoId);
         loadAndPlayVideo(state.videoId, title, uploader, state.time, false); 
         return;
     }
 
-    // Handle Play/Pause
+    // Case 2: Play/Pause/Restart
     if (state.action === 'play' || state.action === 'restart') {
         if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
             player.playVideo();
@@ -518,13 +636,18 @@ function applyRemoteCommand(state) {
             player.pauseVideo();
         }
     }
+    
     updateSyncStatus();
 }
 
 // ==========================================================================
-// UI UPDATES & STATUS VISUALIZATION
+// 9. UI UPDATES & VISUALIZATIONS
 // ==========================================================================
 
+/**
+ * Updates the "Sync Status" pill in the UI.
+ * Handles Ad states, Waiting states, and Synced states.
+ */
 function updateSyncStatus() {
     if (document.hidden) return;
 
@@ -534,7 +657,7 @@ function updateSyncStatus() {
     let icon = '', text = '', className = '';
     let eqActive = false;
 
-    // Determine Status Logic with Guard Awareness
+    // Determine Status
     if (detectAd()) {
         icon = 'fa-rectangle-ad'; text = 'Ad Playing'; className = 'sync-status-3d status-ad';
     } 
@@ -545,7 +668,7 @@ function updateSyncStatus() {
         icon = 'fa-music'; text = 'Switching Track...'; className = 'sync-status-3d status-switching';
     }
     else {
-        // Calculate diff for status text visualization
+        // Calculate diff for status
         let diff = 0;
         if (currentRemoteState && player && currentRemoteState.action === 'play') {
             const remoteTime = currentRemoteState.time + (Date.now() - currentRemoteState.timestamp)/1000;
@@ -559,7 +682,8 @@ function updateSyncStatus() {
         else {
             const playerState = player ? player.getPlayerState() : -1;
             if (playerState === YT.PlayerState.PLAYING || playerState === YT.PlayerState.BUFFERING) {
-                icon = 'fa-heart-pulse'; text = 'Vibing Together'; className = 'sync-status-3d status-playing';
+                // UPDATED: "Remove active vibes" - Changed "Vibing Together" to "Connected"
+                icon = 'fa-link'; text = 'Connected'; className = 'sync-status-3d status-playing';
                 eqActive = true;
             } else {
                 let pauser = lastBroadcaster;
@@ -570,16 +694,18 @@ function updateSyncStatus() {
         }
     }
 
-    // Apply classes and text
+    // Apply classes
     const newHTML = `<i class="fa-solid ${icon}"></i> ${text}`;
     if (msgEl.innerHTML !== newHTML) msgEl.innerHTML = newHTML;
+    
     if (msgEl.className !== className) {
         msgEl.className = className;
         msgEl.classList.remove('pop-anim');
-        void msgEl.offsetWidth; 
+        void msgEl.offsetWidth; // Trigger reflow
         msgEl.classList.add('pop-anim');
     }
 
+    // Equalizer state
     if (eqActive && !eq.classList.contains('active')) eq.classList.add('active');
     if (!eqActive && eq.classList.contains('active')) eq.classList.remove('active');
 }
@@ -588,39 +714,48 @@ function updatePlayPauseButton(state) {
     if (!UI.playPauseBtn) return;
     const isPlaying = (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING);
     const iconClass = isPlaying ? 'fa-pause' : 'fa-play';
+    
+    // Only update DOM if necessary
     if (!UI.playPauseBtn.innerHTML.includes(iconClass)) {
         UI.playPauseBtn.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
     }
+    
+    // Media Session State
     if(navigator.mediaSession) navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
 }
 
 // ==========================================================================
-// PLAYER EVENT HANDLERS & CONTROL
+// 10. PLAYER INTERACTION HANDLERS
 // ==========================================================================
 
 function onPlayerStateChange(event) {
     const state = event.data;
 
+    // Ad Check
     if (detectAd()) {
         updateSyncStatus();
         return;
     }
 
+    // Reset Playback Rate on Pause/End
     if (state === YT.PlayerState.PAUSED || state === YT.PlayerState.ENDED) {
         if(player && player.setPlaybackRate) player.setPlaybackRate(1);
     }
 
+    // Flag Management
     if (state === YT.PlayerState.PLAYING) {
          userIntentionallyPaused = false;
          isSwitchingSong = false;
     }
 
+    // UI Update
     if(Date.now() - lastLocalInteractionTime > 500) {
         updatePlayPauseButton(state);
     }
 
     if (isSwitchingSong || ignoreSystemEvents) return;
 
+    // Broadcast State Changes
     if (state === YT.PlayerState.PLAYING) {
         if(player && player.setVolume) player.setVolume(100);
         if (Date.now() - lastLocalInteractionTime < 2000) {
@@ -664,14 +799,15 @@ function togglePlayPause() {
     }
 }
 
+// Song Navigation
 function initiateNextSong() {
-    console.log("Song Ended. Initiating Next...");
+    console.log("Navigating to Next Song...");
     if (currentQueue.length === 0) return;
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
     let nextIndex = 0;
     if (idx !== -1) {
         nextIndex = idx + 1;
-        if (nextIndex >= currentQueue.length) nextIndex = 0; 
+        if (nextIndex >= currentQueue.length) nextIndex = 0; // Loop queue
     }
     const nextSong = currentQueue[nextIndex];
     if (nextSong) initiateSongLoad(nextSong);
@@ -683,6 +819,12 @@ function initiatePrevSong() {
     if(idx > 0) initiateSongLoad(currentQueue[idx-1]);
 }
 
+/**
+ * Handles the logic for loading a new song.
+ * 1. Sets Switching Flag.
+ * 2. Broadcasts Switching State.
+ * 3. Loads Video.
+ */
 function initiateSongLoad(songObj) {
     if (!songObj) return;
 
@@ -693,7 +835,7 @@ function initiateSongLoad(songObj) {
     showToast("System", "Playing: " + songObj.title);
     UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
-    // Broadcast "Switching" state immediately to Trigger GUARD on partner
+    // Broadcast "Switching" to Trigger GUARD on partner
     syncRef.set({ 
         action: 'switching_pause', 
         time: 0, 
@@ -704,6 +846,7 @@ function initiateSongLoad(songObj) {
 
     loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
     
+    // Release switch lock after 3s
     setTimeout(() => { isSwitchingSong = false; }, 3000);
 }
 
@@ -711,6 +854,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
     if (player && videoId) {
         if (!shouldBroadcast) suppressBroadcast(2000); 
 
+        // Load or Cue
         if(currentVideoId !== videoId || !player.cueVideoById) {
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
         } else {
@@ -725,8 +869,8 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
         let artwork = 'https://via.placeholder.com/512';
         const currentSong = currentQueue.find(s => s.videoId === videoId);
         if(currentSong && currentSong.thumbnail) artwork = currentSong.thumbnail;
+        
         updateMediaSessionMetadata(decodedTitle, uploader, artwork);
-
         renderQueue(currentQueue, currentVideoId);
         
         if (shouldBroadcast) {
@@ -738,6 +882,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
     }
 }
 
+// Media Session API (Lock Screen Controls)
 function setupMediaSession() {
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', function() { if(player) player.playVideo(); });
@@ -759,7 +904,7 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
 }
 
 // ==========================================================================
-// DATA LOADING (QUEUE, CHAT, REMOTE)
+// 11. DATA LOADING & LISTENER SETUP
 // ==========================================================================
 
 function loadInitialData() {
@@ -791,7 +936,7 @@ function loadInitialData() {
         updateSyncStatus();
     });
 
-    // 3. Chat Listener (Added)
+    // 3. Chat Listener (New Messages)
     chatRef.limitToLast(50).on('child_added', (snapshot) => {
         const msg = snapshot.val();
         const key = snapshot.key;
@@ -806,7 +951,7 @@ function loadInitialData() {
         }
     });
     
-    // 4. Chat Listener (Changed - for seen ticks)
+    // 4. Chat Listener (Message Read Status)
     chatRef.limitToLast(50).on('child_changed', (snapshot) => {
         const msg = snapshot.val();
         const key = snapshot.key;
@@ -821,7 +966,7 @@ function loadInitialData() {
 loadInitialData();
 
 // ==========================================================================
-// QUEUE & DRAG-DROP
+// 12. QUEUE & DRAG-AND-DROP LOGIC
 // ==========================================================================
 
 function addToQueue(videoId, title, uploader, thumbnail) {
@@ -960,7 +1105,7 @@ function scrollToCurrentSong() {
 }
 
 // ==========================================================================
-// LYRICS ENGINE
+// 13. LYRICS ENGINE
 // ==========================================================================
 
 function parseSyncedLyrics(lrc) {
@@ -1097,7 +1242,7 @@ async function fetchLyrics(manualQuery = null) {
 }
 
 // ==========================================================================
-// SEARCH & PLAYLIST
+// 14. SEARCH & PLAYLIST MANAGEMENT
 // ==========================================================================
 
 async function handleSearch() {
@@ -1207,7 +1352,7 @@ function smartCleanTitle(title) {
 }
 
 // ==========================================================================
-// CHAT & UI HELPERS
+// 15. CHAT SYSTEM & UI HELPERS
 // ==========================================================================
 
 function displayChatMessage(key, user, text, timestamp, image = null, seen = false) {
@@ -1340,7 +1485,7 @@ function showToast(user, text) {
 }
 
 // ==========================================================================
-// EVENT LISTENERS
+// 16. EVENT LISTENERS & BINDINGS
 // ==========================================================================
 
 // Playback
