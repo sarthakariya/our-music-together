@@ -60,6 +60,7 @@ let lastQueueSignature = "";
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
 let wasInAd = false; 
+let lastLocalSwitchTime = 0; // NEW: Prevents looping on auto-next
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -200,8 +201,9 @@ function onPlayerReady(event) {
     // SMART TIMER: Heartbeat sync (1s active, 5s hidden)
     setSmartInterval(heartbeatSync, 1000, 5000);
     
-    // SMART TIMER: Monitor Sync Health (2s active, 5s hidden)
-    setSmartInterval(monitorSyncHealth, 2000, 5000);
+    // UPDATED: Monitor Sync Health (1.5s active, 3s hidden for snappier loops)
+    // Changed hiddenMs from 5000 to 3000 as requested
+    setSmartInterval(monitorSyncHealth, 1500, 3000);
     
     // SMART TIMER: Ad Check (1s active, 3s hidden)
     setSmartInterval(monitorAdStatus, 1000, 3000);
@@ -339,7 +341,11 @@ function heartbeatSync() {
             
             const duration = player.getDuration();
             const current = player.getCurrentTime();
-            if (duration > 0 && duration - current < 1) initiateNextSong(); 
+            // UPDATED: Use 1.5s buffer to prevent looping right at the edge
+            if (duration > 0 && duration - current < 1.5) {
+                // Prevent calling this multiple times
+                if (!isSwitchingSong) initiateNextSong(); 
+            }
             else broadcastState('play', current, currentVideoId);
         }
         else if (state === YT.PlayerState.PAUSED) {
@@ -390,13 +396,14 @@ function monitorSyncHealth() {
         
         if (myState === YT.PlayerState.BUFFERING) return;
 
-        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 4.0) {
+        // UPDATED: Threshold changed from 4.0 to 2.5 seconds for snappier sync
+        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 2.5) {
             if (!detectAd()) { 
                 player.seekTo(currentRemoteState.time, true); 
                 needsFix = true; 
             }
         }
-        if (needsFix) suppressBroadcast(3000); 
+        if (needsFix) suppressBroadcast(2000); // Reduced suppression time
     }
     else if (currentRemoteState.action === 'pause') {
          if (myState === YT.PlayerState.PLAYING) {
@@ -520,6 +527,7 @@ function initiateSongLoad(songObj) {
     isSwitchingSong = true;
     userIntentionallyPaused = false; 
     lastBroadcaster = myName;
+    lastLocalSwitchTime = Date.now(); // Mark time of switch
     
     showToast("System", "Switching track...");
     UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
@@ -528,16 +536,17 @@ function initiateSongLoad(songObj) {
         action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
     });
 
+    // UPDATED: Reduced safe-guard timeout to 2000ms
     setTimeout(() => {
         if (isSwitchingSong) {
             isSwitchingSong = false;
             if(player) player.playVideo();
         }
-    }, 3000);
+    }, 2000);
 
     loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
     updateMediaSessionMetadata(songObj.title, songObj.uploader, songObj.thumbnail);
-    setTimeout(() => { isSwitchingSong = false; }, 100); 
+    // Removed the quick isSwitchingSong reset here to ensure it sticks during load
 }
 
 function loadInitialData() {
@@ -657,6 +666,13 @@ function applyRemoteCommand(state) {
     if (!player) return;
     if (Date.now() - lastLocalInteractionTime < 1500) return;
     
+    // UPDATED: Prevent looping. If I just switched tracks locally, ignore remote requests for different videos
+    // coming from the partner for at least 4 seconds.
+    if (Date.now() - lastLocalSwitchTime < 4000 && state.videoId !== currentVideoId) {
+        console.log("Ignoring stale remote video during local switch");
+        return;
+    }
+
     if (state.action === 'ad_pause') {
         suppressBroadcast(2000);
         lastBroadcaster = state.lastUpdater;
@@ -712,7 +728,8 @@ function applyRemoteCommand(state) {
             player.playVideo();
         }
         else if (state.action === 'play') {
-            if (Math.abs(player.getCurrentTime() - state.time) > 4.0) player.seekTo(state.time, true);
+            // UPDATED: Threshold to 2.5
+            if (Math.abs(player.getCurrentTime() - state.time) > 2.5) player.seekTo(state.time, true);
             if (playerState !== YT.PlayerState.PLAYING && playerState !== YT.PlayerState.BUFFERING) {
                 userIntentionallyPaused = false;
                 player.setVolume(100);
@@ -792,7 +809,8 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
             player.setVolume(100); 
         } else {
-             if(Math.abs(player.getCurrentTime() - startTime) > 4.0) player.seekTo(startTime, true);
+             // UPDATED: Threshold to 2.5
+             if(Math.abs(player.getCurrentTime() - startTime) > 2.5) player.seekTo(startTime, true);
              if(shouldPlay) {
                  player.setVolume(100);
                  player.playVideo();
@@ -814,14 +832,14 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         renderQueue(currentQueue, currentVideoId);
         
+        // UPDATED: Immediate reset of switching flag
         isSwitchingSong = false;
         userIntentionallyPaused = false; 
 
         if (shouldBroadcast) {
             lastBroadcaster = myName;
-            setTimeout(() => {
-                broadcastState('restart', 0, videoId, true); 
-            }, 100);
+            // UPDATED: Immediate broadcast for snappier loading
+            broadcastState('restart', 0, videoId, true); 
         }
     }
 }
