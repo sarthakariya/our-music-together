@@ -21,10 +21,7 @@ const presenceRef = db.ref('presence');
 // --- DOM CACHE ---
 const UI = {
     player: document.getElementById('player'),
-    // Desktop Buttons
     playPauseBtn: document.getElementById('play-pause-btn'),
-    
-    // UI Elements
     syncStatusMsg: document.getElementById('sync-status-msg'),
     equalizer: document.getElementById('equalizer'),
     queueList: document.getElementById('queue-list'),
@@ -53,7 +50,7 @@ let currentRemoteState = null;
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
 let lastQueueSignature = ""; 
-let loopMode = 1; // 1 = Loop Queue
+let loopMode = 1; 
 
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
@@ -71,37 +68,27 @@ let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
 
 // --- UNIVERSAL CLICK HANDLER (Fixes Mobile Buttons) ---
-// This listens to CLICKS anywhere on the document and checks if it was a button
 document.addEventListener('click', (e) => {
-    // 1. Haptic Feedback
     const t = e.target;
+    // Haptic
     if (t.tagName === 'BUTTON' || t.closest('button') || t.closest('.song-item') || t.closest('.nav-tab')) {
         if (navigator.vibrate) navigator.vibrate(50); 
     }
-
-    // 2. Identify Button Functions by ID or Class (Desktop & Mobile)
+    // Button Logic
     const btn = t.closest('button') || t;
     if (!btn || !btn.id) return;
 
-    // Play/Pause
     if (btn.id === 'play-pause-btn' || btn.id === 'mobile-play-btn' || btn.classList.contains('play-trigger')) {
-        e.preventDefault();
-        togglePlayPause();
+        e.preventDefault(); togglePlayPause();
     }
-    // Next
     else if (btn.id === 'next-btn' || btn.id === 'mobile-next-btn') {
-        e.preventDefault();
-        initiateNextSong();
+        e.preventDefault(); initiateNextSong();
     }
-    // Prev
     else if (btn.id === 'prev-btn' || btn.id === 'mobile-prev-btn') {
-        e.preventDefault();
-        initiatePrevSong();
+        e.preventDefault(); initiatePrevSong();
     }
-    // Search
     else if (btn.id === 'search-btn') {
-        e.preventDefault();
-        handleSearch();
+        e.preventDefault(); handleSearch();
     }
 });
 
@@ -194,23 +181,15 @@ function onPlayerError(event) {
     setTimeout(() => initiateNextSong(), 1000);
 }
 
-// --- INTELLIGENT AD DETECTION & RECOVERY ---
+// --- INTELLIGENT AD DETECTION ---
 function detectAd() {
     if (!player) return false;
     try {
         if (player.getPlayerState() !== YT.PlayerState.PLAYING) return false;
         const data = player.getVideoData();
-        const duration = player.getDuration();
-        
-        // 1. ID Check
         if (currentVideoId && data.video_id && data.video_id !== currentVideoId) return true;
-        // 2. Metadata Check
         if (data.author === "") return true;
         if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
-        // 3. Duration Check (Ads are usually < 2 mins, but real songs are rarely < 30s)
-        // This is risky but helps catch unlabeled ads
-        // if (duration > 0 && duration < 15) return true; 
-        
     } catch(e) {}
     return false;
 }
@@ -223,29 +202,26 @@ function monitorAdStatus() {
     
     if (isAd) {
         if (!wasInAd) {
-            // AD STARTED
             wasInAd = true;
             lastBroadcaster = myName; 
-            // Tell partner I have an ad -> They should Pause/Wait
+            // Broadcast 'ad_pause' immediately
             broadcastState('ad_pause', 0, currentVideoId, true); 
             updateSyncStatus();
         }
     } else {
         if (wasInAd) {
-            // AD ENDED
+            // Ad Finished
             wasInAd = false;
             
-            // --- CRITICAL FIX: RESTART FROM BEGINNING ---
-            // When ad ends, we assume the song actually started now. 
-            // We force seek to 0 and tell partner to Restart.
+            // CRITICAL: Force Seek to 0 and Restart Everything
             player.seekTo(0, true);
             player.playVideo();
 
             setTimeout(() => {
                  lastBroadcaster = myName;
-                 // Send 'restart' command to force partner to 0:00
+                 // Send 'restart' to force partner to 0:00
                  broadcastState('restart', 0, currentVideoId, true);
-                 showToast("System", "Ad ended. Restarting for sync.");
+                 showToast("System", "Ad ended. Syncing start...");
             }, 500);
         }
     }
@@ -296,10 +272,8 @@ function heartbeatSync() {
             userIntentionallyPaused = false; 
             const duration = player.getDuration();
             const current = player.getCurrentTime();
-            // Check for end of song slightly early to ensure smooth transition
-            if (duration > 0 && duration - current < 0.5) {
-                initiateNextSong(); 
-            }
+            // Loop instantly at end
+            if (duration > 0 && duration - current < 0.5) initiateNextSong(); 
             else broadcastState('play', current, currentVideoId);
         }
         else if (state === YT.PlayerState.PAUSED) {
@@ -315,8 +289,13 @@ function monitorSyncHealth() {
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     if (Date.now() - lastLocalInteractionTime < 500) return;
 
+    // --- STRICT AD SYNC TRAP ---
     if (currentRemoteState.action === 'ad_pause') {
-        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+        const myTime = player.getCurrentTime();
+        // If partner has Ad, I MUST NOT play past 1 second.
+        if (myTime > 1 || player.getPlayerState() === YT.PlayerState.PLAYING) {
+            console.log("Partner has Ad. Holding at 0:00.");
+            player.seekTo(0, true);
             player.pauseVideo();
             showToast("System", "Partner has an Ad. Waiting...");
         }
@@ -576,9 +555,10 @@ function applyRemoteCommand(state) {
     if (state.action === 'ad_pause') {
         suppressBroadcast(2000);
         lastBroadcaster = state.lastUpdater;
+        // PARTNER HAS AD: Force local pause/wait
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
             player.pauseVideo();
-            showToast("System", "Partner has an Ad.");
+            showToast("System", "Partner has an Ad. Waiting...");
         }
         updateSyncStatus(); return;
     }
@@ -618,7 +598,7 @@ function applyRemoteCommand(state) {
     else {
         const playerState = player.getPlayerState();
         if (state.action === 'restart') {
-            // AD RECOVERY COMMAND: FORCE SEEK TO 0
+            // AD RECOVERY COMMAND
             player.seekTo(0, true); 
             userIntentionallyPaused = false;
             player.setVolume(100);
