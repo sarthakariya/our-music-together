@@ -61,11 +61,11 @@ let lastQueueSignature = "";
 let userIntentionallyPaused = false; 
 let wasInAd = false; 
 
-// --- NEW SYNC FLAGS FOR LOOPING LOGIC ---
-let isWaitingForPartner = false; // The "Looping" Mode
-let waitingStartTimestamp = 0;   // Timeout safety
-let syncStrikeCount = 0; 
+// --- SYNC & LOOPING FLAGS ---
+let isWaitingForPartner = false; // Strict Waiting Mode
+let waitingStartTimestamp = 0;   
 let lastSyncCorrectionTime = 0;
+let lastRemoteUpdate = 0;
 
 // --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
@@ -78,7 +78,7 @@ let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
 
-// --- BATTERY SAVER / VISIBILITY LOGIC ---
+// --- SMART TIMERS ---
 let smartIntervals = [];
 
 function setSmartInterval(callback, normalMs, hiddenMs) {
@@ -172,7 +172,7 @@ window.addEventListener('offline', () => {
     showToast("System", "Connection lost. Trying to keep playing...");
 });
 
-// --- YOUTUBE PLAYER ---
+// --- YOUTUBE PLAYER SETUP ---
 function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
         height: '100%', width: '100%', videoId: '',
@@ -191,11 +191,13 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // Heartbeat for local loop logic (1.5s active)
-    setSmartInterval(heartbeatSync, 1500, 4000);
-    // Sync monitor for remote correction
-    setSmartInterval(monitorSyncHealth, 2000, 5000);
-    setSmartInterval(monitorAdStatus, 1500, 3000);
+    // --- HIGH PERFORMANCE SNAPPY SYNC ---
+    // Heartbeat: 800ms (Very Snappy)
+    setSmartInterval(heartbeatSync, 800, 4000);
+    // Sync Health Monitor: 1200ms
+    setSmartInterval(monitorSyncHealth, 1200, 5000);
+    // Ad Monitor
+    setSmartInterval(monitorAdStatus, 1000, 3000);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -235,18 +237,16 @@ function monitorAdStatus() {
         if (!wasInAd) {
             wasInAd = true;
             lastBroadcaster = myName; 
-            // IMPORTANT: Broadcast AD_PAUSE so partner knows to wait
             broadcastState('ad_pause', 0, currentVideoId, 'system', true); 
             updateSyncStatus();
         }
     } else {
         if (wasInAd) {
             wasInAd = false;
-            // Ad finished, force play and sync
             if(player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
             setTimeout(() => {
                  lastBroadcaster = myName;
-                 broadcastState('play', 0, currentVideoId, 'system', true); // Restart song for sync
+                 broadcastState('play', 0, currentVideoId, 'system', true); 
             }, 500);
         }
     }
@@ -284,6 +284,7 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
     }
 }
 
+// Background Keeper
 setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
@@ -293,12 +294,10 @@ setInterval(() => {
     }
 }, 4000);
 
-// --- CORE SYNC LOGIC ---
+// --- CORE SYNC ENGINE ---
 
 function heartbeatSync() {
     if (isSwitchingSong) return;
-
-    // Ad Logic
     if (detectAd()) {
         if (lastBroadcaster === myName) updateSyncStatus();
         return;
@@ -308,47 +307,60 @@ function heartbeatSync() {
         const state = player.getPlayerState();
         const current = player.getCurrentTime();
 
-        // --- NEW: WAIT LOOP LOGIC (Consensus Check) ---
+        // --- THE INFINITE WAITING LOOP ---
         if (isWaitingForPartner) {
-            // Check if we should stop waiting (Timeout after 20s)
-            if (Date.now() - waitingStartTimestamp > 20000) {
+            
+            // 1. TIMEOUT CHECK (30s safety)
+            if (Date.now() - waitingStartTimestamp > 30000) {
                 isWaitingForPartner = false;
-                showToast("System", "Partner unresponsive. Playing...");
-            } else {
-                // If partner is NOT on the same video OR partner is in AD
+                showToast("System", "Partner taking too long. Starting...");
+            } 
+            else {
+                // 2. CHECK IF PARTNER IS READY
                 let partnerReady = false;
-                if (currentRemoteState) {
+                if (currentRemoteState && (Date.now() - lastRemoteUpdate < 5000)) {
+                    // Conditions: Same Video + (Playing OR Time > 0.1) + Not Ad + Not Switching
                     const isSameVideo = currentRemoteState.videoId === currentVideoId;
                     const isNotAd = currentRemoteState.action !== 'ad_pause';
-                    // We also check if partner is 'playing' or 'paused' on correct video
-                    if (isSameVideo && isNotAd) partnerReady = true;
+                    const isNotSwitching = currentRemoteState.action !== 'switching_pause';
+                    const isMoving = (currentRemoteState.action === 'play' || currentRemoteState.time > 0.1);
+                    
+                    if (isSameVideo && isNotAd && isNotSwitching && isMoving) {
+                        partnerReady = true;
+                    }
                 }
 
                 if (!partnerReady) {
-                    // LOOP: If we go past 2.5s, drag back to 0
-                    if (current > 2.5) {
+                    // 3. EXECUTE LOOP (STRICT)
+                    // If we pass 2.0s, throw back to 0.
+                    if (current > 2.0) {
                         player.seekTo(0, true);
                         showToast("Sync", "Waiting for partner...");
                     }
-                    // Don't broadcast 'play' while looping, broadcast 'switching' or 'pause'
+                    // DO NOT BROADCAST 'PLAY' WHILE LOOPING
+                    // Instead, broadcast that we are waiting
+                    if (lastBroadcaster === myName) {
+                        // Optional: Could send a 'waiting' status, but 'switching_pause' is safer to keep partner quiet
+                    }
                     return; 
                 } else {
-                    // Partner is ready! Release the loop.
+                    // 4. EXIT LOOP
                     isWaitingForPartner = false;
-                    showToast("Sync", "Connected! Playing.");
+                    showToast("Sync", "Connected! Vibe on.");
                 }
             }
         }
 
+        // --- NORMAL PLAYBACK BROADCAST ---
         if (state === YT.PlayerState.PLAYING) {
             userIntentionallyPaused = false; 
             const duration = player.getDuration();
             
-            // Auto-Next Logic
             if (duration > 0 && duration - current < 1.0) {
                 if (!isSwitchingSong) initiateNextSong('auto'); 
             }
             else {
+                // Broadcast often for snappiness
                 if (lastBroadcaster === myName) broadcastState('play', current, currentVideoId, 'sync');
             }
         }
@@ -358,7 +370,7 @@ function heartbeatSync() {
             }
         }
         
-        if(!document.hidden && Date.now() - lastLocalInteractionTime > 1000) {
+        if(!document.hidden && Date.now() - lastLocalInteractionTime > 800) {
             updatePlayPauseButton(state);
         }
     }
@@ -370,23 +382,34 @@ function monitorSyncHealth() {
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     if (Date.now() - lastLocalInteractionTime < 2000) return;
     
-    // Skip health check if I am looping waiting for partner
+    // Skip if I am already waiting
     if (isWaitingForPartner) return;
 
-    // --- AD SYNC ENFORCEMENT ---
-    if (currentRemoteState.action === 'ad_pause') {
-        // If partner has Ad, I must Pause or Loop at start
-        if (player.getCurrentTime() > 2.0) {
-            // I'm way ahead, pause
-             if (player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
-        } else {
-            // I'm at start, loop
-            if (player.getCurrentTime() > 1.5) player.seekTo(0, true);
+    // --- SMART AD/BUFFER DETECTION (USER REQUEST) ---
+    // If I am playing...
+    if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+        // And Remote is effectively PAUSED/STUCK on the same video...
+        const isRemotePaused = (currentRemoteState.action === 'pause' || currentRemoteState.action === 'ad_pause');
+        const isRemoteStuck = (Math.abs(currentRemoteState.time - 0) < 0.5); // Remote stuck at start
+        
+        if (isRemotePaused || isRemoteStuck) {
+            // But they didn't ask me to pause (User Intention Check implied by logic flow)
+            // If they paused manually, 'currentRemoteState.action' would be 'pause' and I would have paused in applyRemoteCommand.
+            // If I am still playing, it means I ignored it or it's a desync.
+            
+            // Triggers: Remote is 'ad_pause' OR Remote is 'pause' but I am ahead
+            if (currentRemoteState.action === 'ad_pause' || (isRemotePaused && player.getCurrentTime() > 1.0)) {
+                // ENTER WAITING LOOP IMMEDIATELY
+                console.log("Partner stuck/ad detected. Entering waiting loop.");
+                isWaitingForPartner = true;
+                waitingStartTimestamp = Date.now();
+                player.seekTo(0, true);
+                UI.syncStatusMsg.innerHTML = '<i class="fa-solid fa-spinner"></i> Partner Buffering/Ad...';
+                return;
+            }
         }
-        UI.syncStatusMsg.innerHTML = '<i class="fa-solid fa-eye-slash"></i> Partner watching Ad...';
-        return; 
     }
-    
+
     if (currentRemoteState.action === 'switching_pause') return;
 
     const myState = player.getPlayerState();
@@ -400,8 +423,8 @@ function monitorSyncHealth() {
         
         if (myState === YT.PlayerState.BUFFERING) return;
 
-        // Tolerance: 2.5s (Requested by user)
-        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 2.5) {
+        // --- SNAPPY CORRECTION: Tolerance 1.5s ---
+        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 1.5) {
             if (!detectAd()) { 
                 player.seekTo(currentRemoteState.time, true); 
             }
@@ -520,7 +543,6 @@ function initiatePrevSong() {
     if(idx > 0) initiateSongLoad(currentQueue[idx-1], 'manual');
 }
 
-// Added 'trigger' parameter to distinguish Auto vs Manual
 function initiateSongLoad(songObj, trigger = 'manual') {
     if (!songObj) return;
 
@@ -528,7 +550,7 @@ function initiateSongLoad(songObj, trigger = 'manual') {
     userIntentionallyPaused = false; 
     lastBroadcaster = myName;
     
-    // --- ENABLE WAITING MODE ---
+    // --- ENABLE INFINITE WAIT LOOP ---
     isWaitingForPartner = true;
     waitingStartTimestamp = Date.now();
 
@@ -575,6 +597,7 @@ function loadInitialData() {
         const state = snapshot.val();
         if (state) {
             currentRemoteState = state; 
+            lastRemoteUpdate = Date.now(); // Mark fresh data time
             if (state.lastUpdater !== myName) applyRemoteCommand(state);
             else lastBroadcaster = myName;
         }
@@ -683,17 +706,14 @@ function applyRemoteCommand(state) {
     if (state.action === 'ad_pause') {
         suppressBroadcast(2000);
         lastBroadcaster = state.lastUpdater;
-        // Do not force pause immediately, let the Monitor logic handle the loop/wait
         updateSyncStatus();
         return;
     }
 
-    // --- CONTEXT AWARE TOASTS ---
     if (state.videoId !== currentVideoId) {
         const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
         const title = songInQueue ? songInQueue.title : "Syncing...";
         
-        // Show specific toast based on how the song was changed
         if (state.trigger === 'auto' || state.trigger === 'queue') {
             showToast("Queue", "Next: " + title);
         } else if (state.trigger === 'manual' || state.trigger === 'select') {
@@ -749,7 +769,7 @@ function applyRemoteCommand(state) {
             player.playVideo();
         }
         else if (state.action === 'play') {
-            if (Math.abs(player.getCurrentTime() - state.time) > 2.5) player.seekTo(state.time, true);
+            if (Math.abs(player.getCurrentTime() - state.time) > 1.5) player.seekTo(state.time, true);
             if (playerState !== YT.PlayerState.PLAYING && playerState !== YT.PlayerState.BUFFERING) {
                 userIntentionallyPaused = false;
                 player.setVolume(100);
@@ -834,7 +854,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
             player.setVolume(100); 
         } else {
-             if(Math.abs(player.getCurrentTime() - startTime) > 2.5) player.seekTo(startTime, true);
+             if(Math.abs(player.getCurrentTime() - startTime) > 1.5) player.seekTo(startTime, true);
              if(shouldPlay) {
                  player.setVolume(100);
                  player.playVideo();
@@ -861,7 +881,6 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         if (shouldBroadcast) {
             lastBroadcaster = myName;
-            // Broadcast with trigger type
             broadcastState('restart', 0, videoId, trigger, true); 
         }
     }
@@ -916,7 +935,6 @@ function addToQueue(videoId, title, uploader, thumbnail) {
     queueRef.child(newKey).set({ videoId, title: cleanTitle, uploader, thumbnail, addedBy: myName, order: Date.now() })
         .then(() => {
             showToast("System", `Added ${cleanTitle}`);
-            // Use 'manual' trigger here for initial play
             if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title: cleanTitle, uploader}, 'manual');
         });
 }
@@ -974,7 +992,6 @@ function renderQueue(queueArray, currentVideoId) {
         item.className = `song-item ${song.videoId === currentVideoId ? 'playing' : ''}`;
         item.draggable = true;
         item.dataset.key = song.key;
-        // Use 'manual' because clicking a list item is manual
         item.onclick = () => initiateSongLoad(song, 'select');
         
         const user = song.addedBy || 'System';
