@@ -60,6 +60,7 @@ let lastQueueSignature = "";
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
 let wasInAd = false; 
+let skipProtection = false; // NEW: Prevents false ad detection on skip
 
 // --- SYNC & LOOPING FLAGS ---
 let isWaitingForPartner = false; 
@@ -190,12 +191,12 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // Heartbeat: 1.2s
-    setSmartInterval(heartbeatSync, 1200, 4000);
-    // Sync Health: 2.0s
-    setSmartInterval(monitorSyncHealth, 2000, 5000);
-    // Ad Monitor
-    setSmartInterval(monitorAdStatus, 1200, 3000);
+    // Heartbeat: 2.5s (Requested)
+    setSmartInterval(heartbeatSync, 2500, 5000);
+    // Sync Health: 2.5s (Requested)
+    setSmartInterval(monitorSyncHealth, 2500, 5000);
+    // Ad Monitor: 2.0s
+    setSmartInterval(monitorAdStatus, 2000, 4000);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -213,15 +214,27 @@ function onPlayerError(event) {
     setTimeout(() => { initiateNextSong('auto'); }, 1000);
 }
 
+// --- NEW "INFERRED" AD DETECTION ---
 function detectAd() {
     if (!player) return false;
+    if (skipProtection) return false; // Don't detect ads during manual skips
+
     try {
-        if (player.getPlayerState() !== YT.PlayerState.PLAYING) return false;
+        const state = player.getPlayerState();
+        
+        // 1. Standard YouTube Ad Detection (Video ID mismatch / Author check)
         const data = player.getVideoData();
-        if (!data) return false;
-        if (currentVideoId && data.video_id && data.video_id !== currentVideoId) return true;
-        if (data.author === "") return true;
-        if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
+        if (data) {
+            if (currentVideoId && data.video_id && data.video_id !== currentVideoId) return true;
+            if (data.author === "") return true;
+            if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
+        }
+
+        // 2. USER HEURISTIC: "If paused but not intentionally, it's an ad"
+        if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused) {
+            return true;
+        }
+
     } catch(e) {}
     return false;
 }
@@ -229,23 +242,26 @@ function detectAd() {
 function monitorAdStatus() {
     if (document.hidden && userIntentionallyPaused) return;
     if (!player || !currentVideoId) return;
+    
     const isAd = detectAd();
     
     if (isAd) {
         if (!wasInAd) {
             wasInAd = true;
             lastBroadcaster = myName; 
+            // Broadcast 'ad_pause' so partner knows to wait
             broadcastState('ad_pause', 0, currentVideoId, 'system', true); 
             updateSyncStatus();
         }
     } else {
         if (wasInAd) {
             wasInAd = false;
+            // Ad finished
             if(player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
             setTimeout(() => {
                  lastBroadcaster = myName;
-                 // On Ad finish, force restart/sync
-                 broadcastState('play', 0, currentVideoId, 'system', true); 
+                 // Force sync on ad exit
+                 broadcastState('play', player.getCurrentTime(), currentVideoId, 'system', true); 
             }, 500);
         }
     }
@@ -305,23 +321,23 @@ function heartbeatSync() {
         const state = player.getPlayerState();
         const current = player.getCurrentTime();
 
-        // --- SELF HEALING: If synced, STOP WAITING ---
+        // --- SELF HEALING ---
         if (isWaitingForPartner && currentRemoteState) {
             const timeDiff = Math.abs(current - currentRemoteState.time);
+            // If playing and close enough, stop waiting
             if (state === YT.PlayerState.PLAYING && currentRemoteState.action === 'play' && timeDiff < 4.0) {
-                // We are synced! Break the loop immediately.
                 isWaitingForPartner = false;
                 hasShownWaitToast = false;
             }
         }
 
-        // --- THE INFINITE WAITING LOOP ---
+        // --- THE "WAITING ROOM" LOOP ---
         if (isWaitingForPartner) {
             
-            // STRICT CHECK: IS PARTNER READY?
+            // Is Partner Ready?
             let partnerReady = false;
             const isUpdateFromPartner = currentRemoteState && currentRemoteState.lastUpdater !== myName;
-            const isRecent = currentRemoteState && (Date.now() - lastRemoteUpdate < 15000); // 15s window
+            const isRecent = currentRemoteState && (Date.now() - lastRemoteUpdate < 15000);
 
             if (isUpdateFromPartner && isRecent) {
                 const isSameVideo = currentRemoteState.videoId === currentVideoId;
@@ -334,7 +350,7 @@ function heartbeatSync() {
             }
 
             if (!partnerReady) {
-                // EXECUTE LOOP (STRICT)
+                // FORCE LOOP (0s - 2s)
                 if (current > 2.0) {
                     player.seekTo(0, true);
                     
@@ -347,7 +363,7 @@ function heartbeatSync() {
                         hasShownWaitToast = true;
                     }
                 }
-                return; // STAY IN LOOP
+                return; // Loop active, don't broadcast normal play
             } else {
                 // EXIT LOOP
                 isWaitingForPartner = false;
@@ -386,14 +402,13 @@ function monitorSyncHealth() {
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     if (Date.now() - lastLocalInteractionTime < 2000) return;
     
-    // If user is manually interacting (seeking/pausing), don't force loop
+    // Manual control overrides sync logic temporarily
     if (ignoreSystemEvents) return;
 
     if (isWaitingForPartner) return;
 
-    // --- SMART AD DETECTION ONLY ---
-    // Only enter loop if partner EXPLICITLY says they are in AD.
-    // Removed the "guessing" logic that caused buffering.
+    // --- CHECK PARTNER AD STATUS ---
+    // If I am playing, but partner is marked as 'ad_pause'
     if (player.getPlayerState() === YT.PlayerState.PLAYING) {
          if (currentRemoteState.lastUpdater !== myName) {
              if (currentRemoteState.action === 'ad_pause') {
@@ -401,7 +416,7 @@ function monitorSyncHealth() {
                 isWaitingForPartner = true;
                 hasShownWaitToast = false;
                 player.seekTo(0, true);
-                UI.syncStatusMsg.innerHTML = '<i class="fa-solid fa-spinner"></i> Partner watching Ad...';
+                UI.syncStatusMsg.innerHTML = '<i class="fa-solid fa-spinner"></i> Partner Buffering/Ad...';
                 return;
              }
         }
@@ -420,8 +435,8 @@ function monitorSyncHealth() {
         
         if (myState === YT.PlayerState.BUFFERING) return;
 
-        // Tolerance: 3.5s
-        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 3.5) {
+        // --- TIMESTAMP CORRECTION (2.5s Tolerance) ---
+        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 2.5) {
             if (!detectAd()) { 
                 player.seekTo(currentRemoteState.time, true); 
             }
@@ -457,7 +472,6 @@ function onPlayerStateChange(event) {
     }
 
     if (state === YT.PlayerState.BUFFERING) {
-        // If buffering (seeking), disable waiting loop
         if (isWaitingForPartner) {
             isWaitingForPartner = false;
             showToast("System", "Manual Control Taken");
@@ -485,9 +499,6 @@ function onPlayerStateChange(event) {
 
     if (isSwitchingSong || ignoreSystemEvents) return;
 
-    // --- MANUAL INTERACTION HANDLING ---
-    // If state changes, user might be seeking/skipping. 
-    // Broadcast immediately to override waiting loops.
     if (state === YT.PlayerState.PLAYING) {
         if(player && player.setVolume) player.setVolume(100);
         if (Date.now() - lastLocalInteractionTime > 500) {
@@ -511,7 +522,6 @@ function onPlayerStateChange(event) {
 function togglePlayPause() {
     if (!player || isSwitchingSong) return;
     
-    // MANUAL INTERACTION: Break all loops
     isWaitingForPartner = false;
     
     lastLocalInteractionTime = Date.now();
@@ -540,6 +550,8 @@ function togglePlayPause() {
 
 function initiateNextSong(trigger = 'manual') {
     if (isSwitchingSong) return;
+    // Activate skip protection to prevent Ad detection during load
+    activateSkipProtection(); 
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
     const next = currentQueue[(idx + 1) % currentQueue.length];
     if (next) initiateSongLoad(next, trigger);
@@ -547,8 +559,15 @@ function initiateNextSong(trigger = 'manual') {
 
 function initiatePrevSong() {
     if (isSwitchingSong) return;
+    activateSkipProtection();
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
     if(idx > 0) initiateSongLoad(currentQueue[idx-1], 'manual');
+}
+
+// --- SKIP PROTECTION ---
+function activateSkipProtection() {
+    skipProtection = true;
+    setTimeout(() => { skipProtection = false; }, 4000);
 }
 
 function initiateSongLoad(songObj, trigger = 'manual') {
@@ -557,6 +576,7 @@ function initiateSongLoad(songObj, trigger = 'manual') {
     isSwitchingSong = true;
     userIntentionallyPaused = false; 
     lastBroadcaster = myName;
+    activateSkipProtection();
     
     // Enable waiting loop for new song
     isWaitingForPartner = true;
@@ -777,7 +797,7 @@ function applyRemoteCommand(state) {
             player.playVideo();
         }
         else if (state.action === 'play') {
-            if (Math.abs(player.getCurrentTime() - state.time) > 3.5) player.seekTo(state.time, true);
+            if (Math.abs(player.getCurrentTime() - state.time) > 2.5) player.seekTo(state.time, true);
             if (playerState !== YT.PlayerState.PLAYING && playerState !== YT.PlayerState.BUFFERING) {
                 userIntentionallyPaused = false;
                 player.setVolume(100);
@@ -862,7 +882,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
             player.setVolume(100); 
         } else {
-             if(Math.abs(player.getCurrentTime() - startTime) > 3.5) player.seekTo(startTime, true);
+             if(Math.abs(player.getCurrentTime() - startTime) > 2.5) player.seekTo(startTime, true);
              if(shouldPlay) {
                  player.setVolume(100);
                  player.playVideo();
