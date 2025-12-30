@@ -62,9 +62,8 @@ let userIntentionallyPaused = false;
 let wasInAd = false; 
 
 // --- SYNC & LOOPING FLAGS ---
-let isWaitingForPartner = false; // Strict Waiting Mode
+let isWaitingForPartner = false; 
 let waitingStartTimestamp = 0;   
-let lastSyncCorrectionTime = 0;
 let lastRemoteUpdate = 0;
 
 // --- LYRICS SYNC VARIABLES ---
@@ -192,11 +191,8 @@ function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
     // --- HIGH PERFORMANCE SNAPPY SYNC ---
-    // Heartbeat: 800ms (Very Snappy)
     setSmartInterval(heartbeatSync, 800, 4000);
-    // Sync Health Monitor: 1200ms
     setSmartInterval(monitorSyncHealth, 1200, 5000);
-    // Ad Monitor
     setSmartInterval(monitorAdStatus, 1000, 3000);
 
     syncRef.once('value').then(snapshot => {
@@ -284,7 +280,6 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
     }
 }
 
-// Background Keeper
 setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
@@ -316,33 +311,39 @@ function heartbeatSync() {
                 showToast("System", "Partner taking too long. Starting...");
             } 
             else {
-                // 2. CHECK IF PARTNER IS READY
+                // 2. STRICT CHECK: IS PARTNER READY?
                 let partnerReady = false;
-                if (currentRemoteState && (Date.now() - lastRemoteUpdate < 5000)) {
-                    // Conditions: Same Video + (Playing OR Time > 0.1) + Not Ad + Not Switching
+                
+                // IMPORTANT: Check that the update is NOT from ME.
+                // If lastUpdater is ME, it's just my own echo.
+                const isUpdateFromPartner = currentRemoteState && currentRemoteState.lastUpdater !== myName;
+                const isRecent = currentRemoteState && (Date.now() - lastRemoteUpdate < 8000);
+
+                if (isUpdateFromPartner && isRecent) {
                     const isSameVideo = currentRemoteState.videoId === currentVideoId;
                     const isNotAd = currentRemoteState.action !== 'ad_pause';
                     const isNotSwitching = currentRemoteState.action !== 'switching_pause';
-                    const isMoving = (currentRemoteState.action === 'play' || currentRemoteState.time > 0.1);
                     
-                    if (isSameVideo && isNotAd && isNotSwitching && isMoving) {
+                    // Logic: If partner is playing the correct video, OR they are paused but at the start (ready)
+                    if (isSameVideo && isNotAd && isNotSwitching) {
                         partnerReady = true;
                     }
                 }
 
                 if (!partnerReady) {
                     // 3. EXECUTE LOOP (STRICT)
-                    // If we pass 2.0s, throw back to 0.
-                    if (current > 2.0) {
+                    // Loop faster (at 1.5s) for snappier feel
+                    if (current > 1.5) {
                         player.seekTo(0, true);
-                        showToast("Sync", "Waiting for partner...");
+                        
+                        // Show who we are waiting for
+                        let waitingForName = "Partner";
+                        if(currentRemoteState && currentRemoteState.lastUpdater !== myName) {
+                            waitingForName = currentRemoteState.lastUpdater;
+                        }
+                        showToast("Sync", `Waiting for ${waitingForName}...`);
                     }
-                    // DO NOT BROADCAST 'PLAY' WHILE LOOPING
-                    // Instead, broadcast that we are waiting
-                    if (lastBroadcaster === myName) {
-                        // Optional: Could send a 'waiting' status, but 'switching_pause' is safer to keep partner quiet
-                    }
-                    return; 
+                    return; // STAY IN LOOP
                 } else {
                     // 4. EXIT LOOP
                     isWaitingForPartner = false;
@@ -360,7 +361,6 @@ function heartbeatSync() {
                 if (!isSwitchingSong) initiateNextSong('auto'); 
             }
             else {
-                // Broadcast often for snappiness
                 if (lastBroadcaster === myName) broadcastState('play', current, currentVideoId, 'sync');
             }
         }
@@ -382,31 +382,25 @@ function monitorSyncHealth() {
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     if (Date.now() - lastLocalInteractionTime < 2000) return;
     
-    // Skip if I am already waiting
     if (isWaitingForPartner) return;
 
-    // --- SMART AD/BUFFER DETECTION (USER REQUEST) ---
-    // If I am playing...
+    // --- SMART AD/BUFFER DETECTION ---
     if (player.getPlayerState() === YT.PlayerState.PLAYING) {
-        // And Remote is effectively PAUSED/STUCK on the same video...
-        const isRemotePaused = (currentRemoteState.action === 'pause' || currentRemoteState.action === 'ad_pause');
-        const isRemoteStuck = (Math.abs(currentRemoteState.time - 0) < 0.5); // Remote stuck at start
         
-        if (isRemotePaused || isRemoteStuck) {
-            // But they didn't ask me to pause (User Intention Check implied by logic flow)
-            // If they paused manually, 'currentRemoteState.action' would be 'pause' and I would have paused in applyRemoteCommand.
-            // If I am still playing, it means I ignored it or it's a desync.
-            
-            // Triggers: Remote is 'ad_pause' OR Remote is 'pause' but I am ahead
-            if (currentRemoteState.action === 'ad_pause' || (isRemotePaused && player.getCurrentTime() > 1.0)) {
-                // ENTER WAITING LOOP IMMEDIATELY
+        // Check if update is from Partner
+        if (currentRemoteState.lastUpdater !== myName) {
+             const isRemotePaused = (currentRemoteState.action === 'pause' || currentRemoteState.action === 'ad_pause');
+             const isRemoteStuck = (Math.abs(currentRemoteState.time - 0) < 0.5); 
+        
+             // If partner is paused/stuck, but I am playing ahead...
+             if ((currentRemoteState.action === 'ad_pause' || (isRemotePaused && player.getCurrentTime() > 1.0)) ) {
                 console.log("Partner stuck/ad detected. Entering waiting loop.");
                 isWaitingForPartner = true;
                 waitingStartTimestamp = Date.now();
                 player.seekTo(0, true);
-                UI.syncStatusMsg.innerHTML = '<i class="fa-solid fa-spinner"></i> Partner Buffering/Ad...';
+                UI.syncStatusMsg.innerHTML = '<i class="fa-solid fa-spinner"></i> Partner Buffering...';
                 return;
-            }
+             }
         }
     }
 
@@ -423,7 +417,6 @@ function monitorSyncHealth() {
         
         if (myState === YT.PlayerState.BUFFERING) return;
 
-        // --- SNAPPY CORRECTION: Tolerance 1.5s ---
         if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 1.5) {
             if (!detectAd()) { 
                 player.seekTo(currentRemoteState.time, true); 
