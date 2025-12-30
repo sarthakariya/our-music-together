@@ -56,6 +56,7 @@ let currentRemoteState = null;
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
 let lastQueueSignature = ""; 
+let loopMode = 1; // 0: No Loop (stop), 1: Loop Queue, 2: Loop One
 
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
@@ -71,53 +72,13 @@ let lastLyricsIndex = -1;
 let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
-let syncHealthInterval = null;
-
-// --- BATTERY SAVER / VISIBILITY LOGIC ---
-let smartIntervals = [];
-
-function setSmartInterval(callback, normalMs, hiddenMs) {
-    let intervalId = null;
-    let currentMs = document.hidden ? hiddenMs : normalMs;
-    
-    const run = () => {
-        if(document.hidden && hiddenMs === Infinity) {
-            // Do not run at all if hidden and Ms is Infinity
-        } else {
-             callback();
-        }
-    };
-
-    intervalId = setInterval(run, currentMs);
-
-    const handler = {
-        id: intervalId,
-        normalMs,
-        hiddenMs,
-        callback,
-        restart: function() {
-            clearInterval(this.id);
-            const ms = document.hidden ? this.hiddenMs : this.normalMs;
-            if (ms !== Infinity) {
-                 this.id = setInterval(this.callback, ms);
-            }
-        }
-    };
-    smartIntervals.push(handler);
-    return handler;
-}
 
 document.addEventListener('visibilitychange', () => {
-    // 1. Re-adjust all smart timers
-    smartIntervals.forEach(h => h.restart());
-    
-    // 2. Pause/Resume Visuals
+    // 1. Pause/Resume Visuals (GPU Saver)
     if (document.hidden) {
-        // Paused visual updates save GPU
         UI.equalizer.classList.add('paused'); 
         stopLyricsSync(); 
     } else {
-        // Resume visual updates
         UI.equalizer.classList.remove('paused');
         if (currentVideoId) {
              const song = currentQueue.find(s => s.videoId === currentVideoId);
@@ -155,7 +116,7 @@ const sessionKey = presenceRef.push().key;
 presenceRef.child(sessionKey).onDisconnect().remove();
 presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
 
-// [OPTIMIZED] Reduced default suppression time for faster UI response
+// [OPTIMIZED] Ultra-short suppression for instant UI feedback
 function suppressBroadcast(duration = 500) {
     ignoreSystemEvents = true;
     if (ignoreTimer) clearTimeout(ignoreTimer);
@@ -198,14 +159,15 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // [OPTIMIZED] Heartbeat increased to 400ms (was 1000ms) for tighter sync
-    setSmartInterval(heartbeatSync, 400, 5000);
+    // [RESTORED & ACCELERATED] Standard Intervals (No "Smart" slowing down)
+    // 1. Heartbeat Sync: Checks every 400ms (Very Fast)
+    setInterval(heartbeatSync, 400);
     
-    // [OPTIMIZED] Monitor health more frequently (750ms) to catch drift
-    setSmartInterval(monitorSyncHealth, 750, 5000);
+    // 2. Sync Health Monitor: Checks every 750ms to correct drifts
+    setInterval(monitorSyncHealth, 750);
     
-    // SMART TIMER: Ad Check (1s active, 3s hidden)
-    setSmartInterval(monitorAdStatus, 1000, 3000);
+    // 3. Ad Monitor: Checks every 1s
+    setInterval(monitorAdStatus, 1000);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -250,7 +212,7 @@ function detectAd() {
 
 // --- AD MONITOR LOOP ---
 function monitorAdStatus() {
-    // If we are hidden and paused intentionally, don't waste CPU checking ads
+    // Ad detection can be throttled if hidden to save some CPU, but Sync cannot.
     if (document.hidden && userIntentionallyPaused) return;
     if (!player || !currentVideoId) return;
 
@@ -311,8 +273,8 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
     }
 }
 
-// --- AGGRESSIVE BACKGROUND KEEP-ALIVE ---
-// We use a slow interval to kick the player if it drifts while hidden
+// --- AGGRESSIVE BACKGROUND KEEP-ALIVE LOOP ---
+// This ensures the player doesn't "freeze" when you aren't looking.
 setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
@@ -321,7 +283,7 @@ setInterval(() => {
             player.playVideo();
         }
     }
-}, 4000); // 4 seconds is enough for keep-alive
+}, 3000); 
 
 // --- CORE SYNC LOGIC ---
 
@@ -340,7 +302,8 @@ function heartbeatSync() {
             
             const duration = player.getDuration();
             const current = player.getCurrentTime();
-            if (duration > 0 && duration - current < 1) initiateNextSong(); 
+            // Check for end of song slightly early to ensure smooth transition
+            if (duration > 0 && duration - current < 0.5) initiateNextSong(); 
             else broadcastState('play', current, currentVideoId);
         }
         else if (state === YT.PlayerState.PAUSED) {
@@ -361,7 +324,7 @@ function monitorSyncHealth() {
     if (lastBroadcaster === myName || isSwitchingSong) return;
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     
-    // [OPTIMIZED] Lowered interaction guard to 500ms
+    // [OPTIMIZED] Fast reaction time (500ms after you click)
     if (Date.now() - lastLocalInteractionTime < 500) return;
 
     if (currentRemoteState.action === 'ad_pause') {
@@ -393,7 +356,7 @@ function monitorSyncHealth() {
         
         if (myState === YT.PlayerState.BUFFERING) return;
 
-        // [OPTIMIZED] Threshold lowered to 1.2s for tighter sync
+        // [OPTIMIZED] Very tight sync threshold (1.2 seconds)
         if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 1.2) {
             if (!detectAd()) { 
                 player.seekTo(currentRemoteState.time, true); 
@@ -492,7 +455,6 @@ function togglePlayPause() {
         UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>'; 
         userIntentionallyPaused = true; 
         player.pauseVideo();
-        // [OPTIMIZED] Immediate broadcast
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
         UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>'; 
@@ -506,10 +468,24 @@ function togglePlayPause() {
     }
 }
 
+// [FIXED] Loop Logic - Ensures it always loops correctly
 function initiateNextSong() {
     if (isSwitchingSong) return;
+    
+    if (currentQueue.length === 0) return;
+    
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
-    const next = currentQueue[(idx + 1) % currentQueue.length];
+    let nextIndex;
+
+    // Loop Mode 2: Repeat One Song
+    if (loopMode === 2) {
+        nextIndex = idx;
+    } else {
+        // Loop Mode 1 (Default): Repeat Queue
+        nextIndex = (idx + 1) % currentQueue.length;
+    }
+
+    const next = currentQueue[nextIndex];
     if (next) initiateSongLoad(next);
 }
 
@@ -533,6 +509,7 @@ function initiateSongLoad(songObj) {
         action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
     });
 
+    // Safety timeout to prevent getting stuck in switching state
     setTimeout(() => {
         if (isSwitchingSong) {
             isSwitchingSong = false;
@@ -1488,72 +1465,4 @@ function showToast(user, text) {
     }, 4000);
 }
 
-document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
-document.getElementById('prev-btn').addEventListener('click', initiatePrevSong);
-document.getElementById('next-btn').addEventListener('click', initiateNextSong);
-
-document.getElementById('search-btn').addEventListener('click', handleSearch);
-UI.searchInput.addEventListener('keypress', (e) => { if(e.key==='Enter') handleSearch(); });
-
-document.getElementById('chatSendBtn').addEventListener('click', () => {
-    const val = document.getElementById('chatInput').value.trim();
-    if(val) { 
-        chatRef.push({ user: myName, text: val, timestamp: Date.now(), seen: false }); 
-        document.getElementById('chatInput').value=''; 
-    }
-});
-document.getElementById('chatInput').addEventListener('keypress', (e) => {
-    if(e.key === 'Enter') document.getElementById('chatSendBtn').click();
-});
-
-document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
-
-// --- SHUFFLE BUTTON LISTENER ---
-document.getElementById('shuffleQueueBtn').addEventListener('click', () => {
-    if (currentQueue.length < 2) {
-        showToast("System", "Not enough songs to shuffle.");
-        return;
-    }
-
-    // Identify current song to keep it playing/at top
-    let playingSong = null;
-    let songsToShuffle = [];
-
-    if (currentVideoId) {
-        playingSong = currentQueue.find(s => s.videoId === currentVideoId);
-        songsToShuffle = currentQueue.filter(s => s.videoId !== currentVideoId);
-    } else {
-        songsToShuffle = [...currentQueue];
-    }
-
-    if (songsToShuffle.length === 0) return;
-
-    // Fisher-Yates Shuffle
-    for (let i = songsToShuffle.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [songsToShuffle[i], songsToShuffle[j]] = [songsToShuffle[j], songsToShuffle[i]];
-    }
-
-    // Reconstruct list: Current Song -> Shuffled Songs
-    const newOrderList = playingSong ? [playingSong, ...songsToShuffle] : songsToShuffle;
-
-    updateQueueOrder(newOrderList);
-    showToast("System", "Queue shuffled!");
-    triggerHaptic();
-});
-
-document.getElementById('forceSyncBtn').addEventListener('click', () => {
-    UI.syncOverlay.classList.remove('active');
-    player.playVideo(); broadcastState('play', player.getCurrentTime(), currentVideoId);
-});
-
-// Fixed Info/About Button Logic
-const infoBtn = document.getElementById('infoBtn');
-const closeInfoBtn = document.getElementById('closeInfoBtn');
-
-if(infoBtn && UI.infoOverlay) {
-    infoBtn.addEventListener('click', () => UI.infoOverlay.classList.add('active'));
-}
-if(closeInfoBtn && UI.infoOverlay) {
-    closeInfoBtn.addEventListener('click', () => UI.infoOverlay.classList.remove('active'));
-}
+d
