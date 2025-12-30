@@ -18,11 +18,13 @@ const queueRef = db.ref('queue');
 const chatRef = db.ref('chat'); 
 const presenceRef = db.ref('presence');
 
-// --- DOM CACHE (Safe Mode) ---
-// We use a getter to prevent crashing if elements aren't ready immediately
+// --- DOM CACHE ---
 const UI = {
     player: document.getElementById('player'),
+    // Desktop Buttons
     playPauseBtn: document.getElementById('play-pause-btn'),
+    
+    // UI Elements
     syncStatusMsg: document.getElementById('sync-status-msg'),
     equalizer: document.getElementById('equalizer'),
     queueList: document.getElementById('queue-list'),
@@ -51,7 +53,7 @@ let currentRemoteState = null;
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
 let lastQueueSignature = ""; 
-let loopMode = 1; 
+let loopMode = 1; // 1 = Loop Queue
 
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
@@ -68,7 +70,42 @@ let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
 
-// --- VISIBILITY HANDLER ---
+// --- UNIVERSAL CLICK HANDLER (Fixes Mobile Buttons) ---
+// This listens to CLICKS anywhere on the document and checks if it was a button
+document.addEventListener('click', (e) => {
+    // 1. Haptic Feedback
+    const t = e.target;
+    if (t.tagName === 'BUTTON' || t.closest('button') || t.closest('.song-item') || t.closest('.nav-tab')) {
+        if (navigator.vibrate) navigator.vibrate(50); 
+    }
+
+    // 2. Identify Button Functions by ID or Class (Desktop & Mobile)
+    const btn = t.closest('button') || t;
+    if (!btn || !btn.id) return;
+
+    // Play/Pause
+    if (btn.id === 'play-pause-btn' || btn.id === 'mobile-play-btn' || btn.classList.contains('play-trigger')) {
+        e.preventDefault();
+        togglePlayPause();
+    }
+    // Next
+    else if (btn.id === 'next-btn' || btn.id === 'mobile-next-btn') {
+        e.preventDefault();
+        initiateNextSong();
+    }
+    // Prev
+    else if (btn.id === 'prev-btn' || btn.id === 'mobile-prev-btn') {
+        e.preventDefault();
+        initiatePrevSong();
+    }
+    // Search
+    else if (btn.id === 'search-btn') {
+        e.preventDefault();
+        handleSearch();
+    }
+});
+
+// --- VISIBILITY ---
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
         if(UI.equalizer) UI.equalizer.classList.add('paused'); 
@@ -81,18 +118,6 @@ document.addEventListener('visibilitychange', () => {
         }
         if(currentLyrics) startLyricsSync();
         updateSyncStatus();
-    }
-});
-
-function triggerHaptic() {
-    if (navigator.vibrate) navigator.vibrate(60); 
-}
-
-// Global Click Listener for Haptics
-document.addEventListener('click', (e) => {
-    const t = e.target;
-    if (t.tagName === 'BUTTON' || t.closest('button') || t.closest('.song-item') || t.closest('.nav-tab')) {
-        triggerHaptic();
     }
 });
 
@@ -169,15 +194,23 @@ function onPlayerError(event) {
     setTimeout(() => initiateNextSong(), 1000);
 }
 
+// --- INTELLIGENT AD DETECTION & RECOVERY ---
 function detectAd() {
     if (!player) return false;
     try {
         if (player.getPlayerState() !== YT.PlayerState.PLAYING) return false;
         const data = player.getVideoData();
-        if (!data) return false;
+        const duration = player.getDuration();
+        
+        // 1. ID Check
         if (currentVideoId && data.video_id && data.video_id !== currentVideoId) return true;
+        // 2. Metadata Check
         if (data.author === "") return true;
         if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
+        // 3. Duration Check (Ads are usually < 2 mins, but real songs are rarely < 30s)
+        // This is risky but helps catch unlabeled ads
+        // if (duration > 0 && duration < 15) return true; 
+        
     } catch(e) {}
     return false;
 }
@@ -187,20 +220,32 @@ function monitorAdStatus() {
     if (!player || !currentVideoId) return;
 
     const isAd = detectAd();
+    
     if (isAd) {
         if (!wasInAd) {
+            // AD STARTED
             wasInAd = true;
             lastBroadcaster = myName; 
+            // Tell partner I have an ad -> They should Pause/Wait
             broadcastState('ad_pause', 0, currentVideoId, true); 
             updateSyncStatus();
         }
     } else {
         if (wasInAd) {
+            // AD ENDED
             wasInAd = false;
-            if(player.getPlayerState() !== YT.PlayerState.PLAYING) player.playVideo();
+            
+            // --- CRITICAL FIX: RESTART FROM BEGINNING ---
+            // When ad ends, we assume the song actually started now. 
+            // We force seek to 0 and tell partner to Restart.
+            player.seekTo(0, true);
+            player.playVideo();
+
             setTimeout(() => {
                  lastBroadcaster = myName;
-                 broadcastState('play', player.getCurrentTime(), currentVideoId, true);
+                 // Send 'restart' command to force partner to 0:00
+                 broadcastState('restart', 0, currentVideoId, true);
+                 showToast("System", "Ad ended. Restarting for sync.");
             }, 500);
         }
     }
@@ -251,7 +296,10 @@ function heartbeatSync() {
             userIntentionallyPaused = false; 
             const duration = player.getDuration();
             const current = player.getCurrentTime();
-            if (duration > 0 && duration - current < 0.5) initiateNextSong(); 
+            // Check for end of song slightly early to ensure smooth transition
+            if (duration > 0 && duration - current < 0.5) {
+                initiateNextSong(); 
+            }
             else broadcastState('play', current, currentVideoId);
         }
         else if (state === YT.PlayerState.PAUSED) {
@@ -268,7 +316,10 @@ function monitorSyncHealth() {
     if (Date.now() - lastLocalInteractionTime < 500) return;
 
     if (currentRemoteState.action === 'ad_pause') {
-        if (player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
+        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+            player.pauseVideo();
+            showToast("System", "Partner has an Ad. Waiting...");
+        }
         updateSyncStatus(); return; 
     }
     
@@ -306,7 +357,13 @@ function updatePlayPauseButton(state) {
     if (isSwitchingSong) return;
     const isPlaying = (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING);
     const iconClass = isPlaying ? 'fa-pause' : 'fa-play';
+    // Update main desktop button
     if (!UI.playPauseBtn.innerHTML.includes(iconClass)) UI.playPauseBtn.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
+    
+    // Update mobile button if exists
+    const mobileBtn = document.getElementById('mobile-play-btn');
+    if (mobileBtn && !mobileBtn.innerHTML.includes(iconClass)) mobileBtn.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
+
     if(navigator.mediaSession) navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
 }
 
@@ -340,7 +397,9 @@ function onPlayerStateChange(event) {
             }
         }
     }
-    else if (state === YT.PlayerState.ENDED) initiateNextSong();
+    else if (state === YT.PlayerState.ENDED) {
+        initiateNextSong();
+    }
     updateSyncStatus();
 }
 
@@ -376,8 +435,8 @@ function initiateNextSong() {
     
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
     let nextIndex;
-    if (loopMode === 2) nextIndex = idx;
-    else nextIndex = (idx + 1) % currentQueue.length;
+    // ALWAYS LOOP QUEUE
+    nextIndex = (idx + 1) % currentQueue.length;
 
     const next = currentQueue[nextIndex];
     if (next) initiateSongLoad(next);
@@ -387,6 +446,7 @@ function initiatePrevSong() {
     if (isSwitchingSong) return;
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
     if(idx > 0) initiateSongLoad(currentQueue[idx-1]);
+    else if(currentQueue.length > 0) initiateSongLoad(currentQueue[currentQueue.length - 1]); // Loop back to end
 }
 
 function initiateSongLoad(songObj) {
@@ -516,7 +576,10 @@ function applyRemoteCommand(state) {
     if (state.action === 'ad_pause') {
         suppressBroadcast(2000);
         lastBroadcaster = state.lastUpdater;
-        if (player.getPlayerState() !== YT.PlayerState.PAUSED) player.pauseVideo();
+        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+            player.pauseVideo();
+            showToast("System", "Partner has an Ad.");
+        }
         updateSyncStatus(); return;
     }
 
@@ -555,6 +618,7 @@ function applyRemoteCommand(state) {
     else {
         const playerState = player.getPlayerState();
         if (state.action === 'restart') {
+            // AD RECOVERY COMMAND: FORCE SEEK TO 0
             player.seekTo(0, true); 
             userIntentionallyPaused = false;
             player.setVolume(100);
@@ -1156,11 +1220,6 @@ function showToast(user, text) {
 }
 
 // --- SAFE EVENT LISTENERS ---
-if(document.getElementById('play-pause-btn')) document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
-if(document.getElementById('prev-btn')) document.getElementById('prev-btn').addEventListener('click', initiatePrevSong);
-if(document.getElementById('next-btn')) document.getElementById('next-btn').addEventListener('click', initiateNextSong);
-if(document.getElementById('search-btn')) document.getElementById('search-btn').addEventListener('click', handleSearch);
-
 if(document.getElementById('chatSendBtn')) {
     document.getElementById('chatSendBtn').addEventListener('click', () => {
         const input = document.getElementById('chatInput');
