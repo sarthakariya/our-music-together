@@ -79,6 +79,7 @@ let currentRemoteState = null;
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
 let lastQueueSignature = ""; 
+let lastBroadcastTime = 0; // POWER OPTIMIZATION: Throttles network writes
 
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
@@ -149,6 +150,7 @@ document.addEventListener('visibilitychange', () => {
         }
         if(currentLyrics) startLyricsSync();
         updateSyncStatus();
+        forceChatScroll(); // Restore scroll position when visible
     }
 });
 
@@ -241,15 +243,17 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // SMART TIMER: Heartbeat sync (0.8s active, 2s hidden) 
-    // Reduced hidden time from 5s to 2s to ensure background playback doesn't lag
-    setSmartInterval(heartbeatSync, 800, 2000);
+    // SMART TIMER: Heartbeat sync (0.8s active, 4s hidden) 
+    // Optimization: Power efficient background check (4s)
+    setSmartInterval(heartbeatSync, 800, 4000);
     
-    // SMART TIMER: Monitor Sync Health (1.5s active, 2s hidden)
-    setSmartInterval(monitorSyncHealth, 1500, 2000);
+    // SMART TIMER: Monitor Sync Health (1.5s active, 4s hidden)
+    // Optimization: Checks for drift every 4s in background
+    setSmartInterval(monitorSyncHealth, 1500, 4000);
     
-    // SMART TIMER: Ad Check (1s active, 3s hidden)
-    setSmartInterval(monitorAdStatus, 1000, 3000);
+    // SMART TIMER: Ad Check (1s active, 4s hidden)
+    // Optimization: Checks for ads every 4s in background
+    setSmartInterval(monitorAdStatus, 1000, 4000);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -378,11 +382,22 @@ function heartbeatSync() {
             const duration = player.getDuration();
             const current = player.getCurrentTime();
             if (duration > 0 && duration - current < 1) initiateNextSong(); 
-            else broadcastState('play', current, currentVideoId);
+            else {
+                // POWER OPTIMIZATION: Throttle broadcast to every 1.5s unless changing state.
+                // Reduces radio usage significantly. Receiver uses timestamps to sync accurately.
+                if (Date.now() - lastBroadcastTime > 1500) {
+                     broadcastState('play', current, currentVideoId);
+                     lastBroadcastTime = Date.now();
+                }
+            }
         }
         else if (state === YT.PlayerState.PAUSED) {
             if(userIntentionallyPaused) {
-                broadcastState('pause', player.getCurrentTime(), currentVideoId);
+                // Throttle paused state broadcast too
+                if (Date.now() - lastBroadcastTime > 1500) {
+                     broadcastState('pause', player.getCurrentTime(), currentVideoId);
+                     lastBroadcastTime = Date.now();
+                }
             }
         }
         
@@ -522,14 +537,17 @@ function onPlayerStateChange(event) {
         if(player && player.setVolume) player.setVolume(100);
         if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
-             broadcastState('play', player.getCurrentTime(), currentVideoId);
+             // Immediate broadcast on state change (Force update)
+             broadcastState('play', player.getCurrentTime(), currentVideoId, true);
+             lastBroadcastTime = Date.now();
         }
     }
     else if (state === YT.PlayerState.PAUSED) {
         if (Date.now() - lastLocalInteractionTime > 500) {
             if (!document.hidden || userIntentionallyPaused) {
                 lastBroadcaster = myName; 
-                broadcastState('pause', player.getCurrentTime(), currentVideoId);
+                broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
+                lastBroadcastTime = Date.now();
             }
         }
     }
@@ -553,6 +571,7 @@ function togglePlayPause() {
         userIntentionallyPaused = true; 
         try { player.pauseVideo(); } catch(e){}
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
+        lastBroadcastTime = Date.now();
     } else {
         UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>'; 
         userIntentionallyPaused = false; 
@@ -561,6 +580,7 @@ function togglePlayPause() {
             player.setVolume(100);
             try { player.playVideo(); } catch(e){}
             broadcastState('play', player.getCurrentTime(), currentVideoId, true);
+            lastBroadcastTime = Date.now();
         }
     }
 }
@@ -691,7 +711,8 @@ function displayChatMessage(key, user, text, timestamp, image, seen) {
     `;
 
     UI.chatMessages.appendChild(msgDiv);
-    forceChatScroll();
+    // OPTIMIZATION: Only force layout calc/scroll if user is looking at the screen
+    if (!document.hidden) forceChatScroll();
 }
 
 function calculateUnreadCount() {
@@ -931,6 +952,7 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
             lastBroadcaster = myName;
             setTimeout(() => {
                 broadcastState('restart', 0, videoId, true); 
+                lastBroadcastTime = Date.now();
             }, 100);
         }
     }
