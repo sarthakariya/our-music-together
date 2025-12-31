@@ -390,9 +390,17 @@ function monitorSyncHealth() {
         
         if (myState === YT.PlayerState.BUFFERING) return;
 
-        if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 4.0) {
+        // CALCULATE EXPECTED REMOTE TIME (Latency Compensation)
+        // Extrapolate where the remote player should be right now
+        let latency = (Date.now() - currentRemoteState.timestamp) / 1000;
+        if (latency < 0 || latency > 5) latency = 0; // Sanity check for clock skew
+        
+        const expectedTime = currentRemoteState.time + latency;
+        
+        // Tight tolerance: 1.5 seconds
+        if (Math.abs(player.getCurrentTime() - expectedTime) > 1.5) {
             if (!detectAd()) { 
-                player.seekTo(currentRemoteState.time, true); 
+                player.seekTo(expectedTime, true); 
                 needsFix = true; 
             }
         }
@@ -693,11 +701,18 @@ function applyRemoteCommand(state) {
         return;
     }
 
+    // --- LATENCY COMPENSATION START ---
+    let latency = (Date.now() - state.timestamp) / 1000;
+    if (latency < 0 || latency > 5) latency = 0; // Guard against clock skew
+    const targetTime = state.time + latency;
+    // --- LATENCY COMPENSATION END ---
+
     if (state.videoId !== currentVideoId) {
         const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
         const title = songInQueue ? songInQueue.title : "Syncing...";
         const uploader = songInQueue ? songInQueue.uploader : "";
-        loadAndPlayVideo(state.videoId, title, uploader, state.time, false); 
+        // Use compensated targetTime for better start sync
+        loadAndPlayVideo(state.videoId, title, uploader, targetTime, false); 
         if(state.action === 'play' || state.action === 'restart') {
             userIntentionallyPaused = false;
             player.setVolume(100);
@@ -707,13 +722,14 @@ function applyRemoteCommand(state) {
     else {
         const playerState = player.getPlayerState();
         if (state.action === 'restart') {
-            player.seekTo(0, true); 
+            player.seekTo(targetTime, true); 
             userIntentionallyPaused = false;
             player.setVolume(100);
             player.playVideo();
         }
         else if (state.action === 'play') {
-            if (Math.abs(player.getCurrentTime() - state.time) > 4.0) player.seekTo(state.time, true);
+            // Seek if drift > 2s (using compensated time)
+            if (Math.abs(player.getCurrentTime() - targetTime) > 2.0) player.seekTo(targetTime, true);
             if (playerState !== YT.PlayerState.PLAYING && playerState !== YT.PlayerState.BUFFERING) {
                 userIntentionallyPaused = false;
                 player.setVolume(100);
@@ -1262,224 +1278,6 @@ async function fetchLyrics(manualQuery = null) {
             <p style="font-size:0.9rem; color:#aaa; margin-bottom:20px;">Use the search bar above to try manually.</p>
         `;
     }
-}
-
-// Disable Sync Button Logic
-document.getElementById('unsyncLyricsBtn').addEventListener('click', () => {
-    stopLyricsSync();
-    currentLyrics = null;
-    document.getElementById('unsyncLyricsBtn').style.display = 'none';
-    
-    // Render plain text
-    if(currentPlainLyrics) {
-         UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom:50px;">${currentPlainLyrics.replace(/\n/g, "<br>")}</div>`;
-    } else {
-         const lines = document.querySelectorAll('.lyrics-line');
-         let text = "";
-         lines.forEach(l => text += l.textContent + "\n");
-         UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom:50px;">${text.replace(/\n/g, "<br>")}</div>`;
-    }
-    showToast("System", "Lyrics sync disabled.");
-});
-
-UI.searchInput.addEventListener('input', (e) => {
-    if(document.activeElement === UI.searchInput) {
-        switchTab('results', true); 
-    }
-});
-UI.searchInput.addEventListener('focus', (e) => {
-    switchTab('results', true);
-});
-
-document.getElementById('startSessionBtn').addEventListener('click', () => {
-    hasUserInteracted = true;
-    UI.welcomeOverlay.classList.remove('active');
-    
-    if (player && player.playVideo) player.playVideo();
-    
-    if(currentVideoId) {
-        const currentSong = currentQueue.find(s => s.videoId === currentVideoId);
-        if(currentSong) {
-             updateMediaSessionMetadata(currentSong.title, currentSong.uploader, currentSong.thumbnail);
-        }
-    }
-});
-
-async function handleSearch() {
-    const input = UI.searchInput;
-    const query = input.value.trim();
-    if (!query) return;
-
-    // YOUTUBE PLAYLIST
-    const ytPlaylistMatch = query.match(/[?&]list=([^#\&\?]+)/);
-    if (ytPlaylistMatch) {
-        showToast("System", "Fetching YouTube Playlist..."); 
-        fetchPlaylist(ytPlaylistMatch[1]);
-        input.value = ''; return;
-    }
-    
-    // REGULAR SEARCH
-    switchTab('results', true);
-    UI.resultsList.innerHTML = '<p style="text-align:center; padding:30px; color:white;">Searching...</p>';
-    
-    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=10&key=${YOUTUBE_API_KEY}`;
-    
-    try {
-        const res = await fetch(searchUrl);
-        const data = await res.json();
-        const list = UI.resultsList;
-        list.innerHTML = '';
-        
-        if (!data.items || data.items.length === 0) {
-            list.innerHTML = '<div class="empty-state"><p>No results found.</p></div>';
-            return;
-        }
-
-        const videoIds = data.items.map(item => item.id.videoId).join(',');
-        const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
-        const detailsRes = await fetch(detailsUrl);
-        const detailsData = await detailsRes.json();
-        
-        const durationMap = {};
-        detailsData.items.forEach(v => {
-            durationMap[v.id] = parseDuration(v.contentDetails.duration);
-        });
-
-        const fragment = document.createDocumentFragment();
-        data.items.forEach(item => {
-            const vid = item.id.videoId;
-            const duration = durationMap[vid] || "";
-            const rawTitle = item.snippet.title;
-            const shortTitle = smartCleanTitle(rawTitle);
-
-            const div = document.createElement('div');
-            div.className = 'song-item';
-            div.innerHTML = `
-                <div class="thumb-container">
-                    <img src="${item.snippet.thumbnails.default.url}" class="song-thumb">
-                    <div class="song-duration-badge">${duration}</div>
-                </div>
-                <div class="song-details">
-                    <h4>${shortTitle}</h4>
-                    <p>${item.snippet.channelTitle}</p>
-                </div>
-                <button class="emoji-trigger" style="color:#fff; font-size:1.1rem; position:static; width:auto; height:auto; border:none; background:transparent;"><i class="fa-solid fa-plus"></i></button>
-            `;
-            div.onclick = () => addToQueue(vid, shortTitle, item.snippet.channelTitle, item.snippet.thumbnails.default.url);
-            fragment.appendChild(div);
-        });
-        list.appendChild(fragment);
-
-    } catch(e) { console.error(e); }
-    input.value = '';
-}
-
-function parseDuration(pt) {
-    let match = pt.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
-    if (!match) return "";
-    let h = match[1] ? parseInt(match[1]) : 0;
-    let m = match[2] ? parseInt(match[2]) : 0;
-    let s = match[3] ? parseInt(match[3]) : 0;
-    if (h > 0) return `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
-    return `${m}:${s.toString().padStart(2,'0')}`;
-}
-
-async function fetchPlaylist(playlistId, pageToken = '', allSongs = []) {
-    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${YOUTUBE_API_KEY}&pageToken=${pageToken}`;
-    try {
-        const res = await fetch(url);
-        const data = await res.json();
-        const songs = data.items.filter(i=>i.snippet.resourceId.kind==='youtube#video').map(i => ({
-            videoId: i.snippet.resourceId.videoId,
-            title: smartCleanTitle(i.snippet.title), 
-            uploader: i.snippet.channelTitle, 
-            thumbnail: i.snippet.thumbnails.default.url
-        }));
-        allSongs = [...allSongs, ...songs];
-        if (data.nextPageToken) fetchPlaylist(playlistId, data.nextPageToken, allSongs);
-        else addBatchToQueue(allSongs);
-    } catch(e) { console.error(e); }
-}
-
-function displayChatMessage(key, user, text, timestamp, image = null, seen = false) {
-    const box = UI.chatMessages;
-    const isMe = user === myName;
-    
-    // Create Main Message Container
-    const div = document.createElement('div');
-    div.className = `message ${isMe ? 'me' : 'partner'}`;
-    
-    // 1. Sender Name (Top)
-    const sender = document.createElement('div');
-    sender.className = 'msg-sender';
-    sender.textContent = user;
-    div.appendChild(sender);
-
-    // 2. Content (Middle)
-    const body = document.createElement('div');
-    body.className = 'msg-text-content';
-    body.textContent = text;
-    if(image) {
-        const img = document.createElement('img');
-        img.src = image;
-        img.className = 'chat-message-thumb';
-        body.appendChild(img);
-    }
-    div.appendChild(body);
-
-    // 3. Metadata Row (Bottom Right)
-    const meta = document.createElement('div');
-    meta.className = 'msg-meta';
-    
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'msg-time';
-    timeSpan.textContent = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    meta.appendChild(timeSpan);
-
-    // Read Ticks (Only for current user)
-    if (isMe) {
-        const tickSpan = document.createElement('span');
-        tickSpan.id = `tick-${key}`;
-        tickSpan.className = `msg-tick ${seen ? 'seen' : ''}`;
-        tickSpan.innerHTML = seen ? '<i class="fa-solid fa-check-double"></i>' : '<i class="fa-solid fa-check"></i>';
-        meta.appendChild(tickSpan);
-    }
-    
-    div.appendChild(meta);
-    box.appendChild(div);
-
-    if(isChatActive()) {
-        forceChatScroll();
-    }
-}
-
-function showToast(user, text) {
-    const container = UI.toastContainer;
-    
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.innerHTML = `
-        <i class="fa-solid fa-comment-dots" style="color:#ff4081; font-size:1.4rem;"></i>
-        <div class="toast-body">
-            <h4>${user}</h4>
-            <p>${text.substring(0, 40)}${text.length>40?'...':''}</p>
-        </div>
-    `;
-    toast.onclick = () => { switchTab('chat'); toast.remove(); };
-    
-    container.prepend(toast);
-
-    while (container.children.length > 3) {
-        container.removeChild(container.lastChild);
-    }
-    
-    setTimeout(() => { 
-        toast.style.opacity='0'; 
-        toast.style.transform='translateX(50px)';
-        setTimeout(()=> {
-            if(toast.parentElement) toast.remove();
-        }, 400); 
-    }, 4000);
 }
 
 document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
