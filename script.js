@@ -54,6 +54,7 @@ const UI = {
     songTitle: document.getElementById('current-song-title'),
     lyricsContent: document.getElementById('lyrics-content-area'),
     lyricsOverlay: document.getElementById('lyricsOverlay'),
+    unsyncBtn: document.getElementById('unsyncLyricsBtn'), // Added to Cache
     infoOverlay: document.getElementById('infoOverlay'), 
     syncOverlay: document.getElementById('syncOverlay'),
     welcomeOverlay: document.getElementById('welcomeOverlay'),
@@ -242,7 +243,6 @@ function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
     // SMART TIMER: Heartbeat sync (0.8s active, 2s hidden) 
-    // Reduced hidden time from 5s to 2s to ensure background playback doesn't lag
     setSmartInterval(heartbeatSync, 800, 2000);
     
     // SMART TIMER: Monitor Sync Health (1.5s active, 2s hidden)
@@ -418,11 +418,10 @@ function monitorSyncHealth() {
     
     // --- SMOOTHING LOGIC START ---
     
-    // 1. Buffering Guard: If we are buffering, assume we are catching up. 
-    // Do NOT force a seek, or we will enter a buffering loop.
+    // 1. Buffering Guard
     if (myState === YT.PlayerState.BUFFERING) return;
     
-    // 2. Anti-Thrash: If we sought recently (< 3s), let playback stabilize before correcting again.
+    // 2. Anti-Thrash
     if (Date.now() - lastSeekTime < 3000) return;
 
     if (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart') {
@@ -437,17 +436,15 @@ function monitorSyncHealth() {
         }
         
         // --- LATENCY COMPENSATION (OPTIMIZATION) ---
-        // Calculate network latency to accurately jump to where the song SHOULD be
         const now = Date.now();
         const msgTimestamp = currentRemoteState.timestamp || now;
         const latency = (now - msgTimestamp) / 1000;
-        // Cap latency to 3s to prevent crazy jumps if clocks are desynced
         const compensatedTime = currentRemoteState.time + Math.min(Math.max(0, latency), 3.0);
         
-        // 3. Tolerance: Reduced to 2.0s for tighter sync
+        // 3. Tolerance: Reduced to 1.0s for tighter sync (User Request)
         const drift = Math.abs(player.getCurrentTime() - compensatedTime);
         
-        if (drift > 2.0) {
+        if (drift > 1.0) {
             if (!detectAd()) { 
                 try { 
                     player.seekTo(compensatedTime, true); 
@@ -505,6 +502,18 @@ function onPlayerStateChange(event) {
          }
          // Ensure keep-alive audio is playing if video plays
          if(silentAudio.paused) silentAudio.play().catch(e => {});
+         
+         // --- IMMEDIATE SYNC CHECK ON PLAY ---
+         // If we just started playing, verify we aren't lagging behind immediately
+         if (currentRemoteState && currentRemoteState.videoId === currentVideoId && currentRemoteState.action === 'play') {
+             const now = Date.now();
+             const msgTimestamp = currentRemoteState.timestamp || now;
+             const latency = (now - msgTimestamp) / 1000;
+             const compensatedTime = currentRemoteState.time + Math.min(Math.max(0, latency), 3.0);
+             if (Math.abs(player.getCurrentTime() - compensatedTime) > 1.2) {
+                 try { player.seekTo(compensatedTime, true); } catch(e){}
+             }
+         }
     }
 
     if (state === YT.PlayerState.PAUSED && document.hidden && !userIntentionallyPaused) {
@@ -820,8 +829,8 @@ function applyRemoteCommand(state) {
             lastSeekTime = Date.now();
         }
         else if (state.action === 'play') {
-            // Check drift against 2.0s tolerance
-            if (Math.abs(player.getCurrentTime() - compensatedTime) > 2.0) {
+            // Check drift against 1.0s tolerance
+            if (Math.abs(player.getCurrentTime() - compensatedTime) > 1.0) {
                 try { 
                     player.seekTo(compensatedTime, true); 
                     lastSeekTime = Date.now();
@@ -1328,12 +1337,11 @@ function syncLyricsDisplay() {
 async function fetchLyrics(manualQuery = null) {
     const searchBar = document.getElementById('lyricsSearchBar');
     const lyricsTitle = document.getElementById('lyrics-title');
-    const unsyncBtn = document.getElementById('unsyncLyricsBtn');
     
     let searchWords = "";
     searchBar.classList.remove('visible');
     searchBar.style.display = 'none'; 
-    unsyncBtn.style.display = 'none';
+    if(UI.unsyncBtn) UI.unsyncBtn.style.display = 'none';
     lastLyricsIndex = -1; 
     currentPlainLyrics = ""; 
     
@@ -1366,7 +1374,7 @@ async function fetchLyrics(manualQuery = null) {
                 currentLyrics = parseSyncedLyrics(song.syncedLyrics);
                 renderSyncedLyrics(currentLyrics);
                 startLyricsSync();
-                unsyncBtn.style.display = 'grid';
+                if(UI.unsyncBtn) UI.unsyncBtn.style.display = 'grid';
             } else {
                 currentLyrics = null;
                 stopLyricsSync();
@@ -1437,6 +1445,17 @@ document.getElementById('chatSendBtn').addEventListener('click', () => {
 document.getElementById('chatInput').addEventListener('keypress', (e) => {
     if(e.key === 'Enter') document.getElementById('chatSendBtn').click();
 });
+
+// ROBUST LISTENER FOR UNSYNC BTN
+if(UI.unsyncBtn) {
+    UI.unsyncBtn.addEventListener('click', () => {
+        stopLyricsSync();
+        if(currentPlainLyrics) {
+             UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom: 50px;">${currentPlainLyrics.replace(/\n/g, "<br>")}</div>`;
+        }
+        UI.unsyncBtn.style.display = 'none';
+    });
+}
 
 document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
 
