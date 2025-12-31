@@ -43,7 +43,10 @@ const UI = {
     resultsList: document.getElementById('results-list')
 };
 
-let player, currentQueue = [], currentVideoId = null;
+let player;
+let currentQueue = []; 
+// CRITICAL: This variable holds the "Truth". If the player differs from this, it's an Ad.
+let currentVideoId = null; 
 let lastBroadcaster = "System"; 
 let activeTab = 'queue'; 
 let currentRemoteState = null; 
@@ -74,8 +77,7 @@ document.addEventListener('click', (e) => {
     if (t.tagName === 'BUTTON' || t.closest('button') || t.closest('.song-item') || t.closest('.nav-tab')) {
         if (navigator.vibrate) navigator.vibrate(50); 
     }
-    
-    // Logic
+    // Button Logic
     const btn = t.closest('button') || t;
     if (!btn || !btn.id) return;
 
@@ -121,6 +123,7 @@ const sessionKey = presenceRef.push().key;
 presenceRef.child(sessionKey).onDisconnect().remove();
 presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
 
+// --- FAST BROADCAST SUPPRESSION ---
 function suppressBroadcast(duration = 500) {
     ignoreSystemEvents = true;
     if (ignoreTimer) clearTimeout(ignoreTimer);
@@ -162,7 +165,7 @@ function onPlayerReady(event) {
     // --- HIGH SPEED LOOPS ---
     setInterval(heartbeatSync, 400);       
     setInterval(monitorSyncHealth, 750);   
-    setInterval(monitorAdStatus, 800);    // Ad Check slightly faster
+    setInterval(monitorAdStatus, 500); // Check ads every 500ms
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -181,27 +184,37 @@ function onPlayerError(event) {
     setTimeout(() => initiateNextSong(), 1000);
 }
 
-// --- ROBUST AD DETECTION (Using Data Mismatch) ---
+// --- BULLETPROOF AD DETECTION ---
 function detectAd() {
     if (!player || !player.getVideoData) return false;
+    // Safety: If we haven't selected a song yet, it's not an ad mismatch
+    if (!currentVideoId) return false;
+
     try {
-        if (player.getPlayerState() !== YT.PlayerState.PLAYING) return false;
-        
+        const playerState = player.getPlayerState();
+        // Ads usually play (1) or buffer (3). 
+        if (playerState !== YT.PlayerState.PLAYING && playerState !== YT.PlayerState.BUFFERING) return false;
+
         const data = player.getVideoData();
-        // 1. ID Mismatch: We asked for X, player is playing Y. This is the surest sign of an Ad.
-        if (currentVideoId && data.video_id && data.video_id !== currentVideoId) return true;
         
-        // 2. Author Check: Ads often have empty author fields
+        // --- THE KEY LOGIC ---
+        // If the player's internal video ID does not match our target ID
+        // AND we are not currently switching songs... IT IS AN AD.
+        if (data && data.video_id && data.video_id !== currentVideoId && !isSwitchingSong) {
+            return true;
+        }
+
+        // Secondary checks (just in case ID matches but metadata is weird)
         if (data.author === "") return true;
         
-        // 3. Title Check
-        if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
-        
-    } catch(e) {}
+    } catch(e) {
+        console.error("Ad Check Error:", e);
+    }
     return false;
 }
 
 function monitorAdStatus() {
+    // 1. Skip checks if tab hidden + paused (save battery)
     if (document.hidden && userIntentionallyPaused) return;
     if (!player || !currentVideoId) return;
 
@@ -209,29 +222,33 @@ function monitorAdStatus() {
     
     if (isAd) {
         if (!wasInAd) {
-            // AD STARTED
+            // --- AD STARTED ---
             wasInAd = true;
             lastBroadcaster = myName; 
-            // Send 'ad_wait' to tell partner to FREEZE
+            
+            // "Ad Shift": Tell partner to WAIT
             broadcastState('ad_wait', 0, currentVideoId, true); 
             updateSyncStatus();
         }
     } else {
         if (wasInAd) {
-            // AD ENDED
+            // --- AD ENDED ---
             wasInAd = false;
             
-            // --- THE FIX: RESTART FROM 0 ---
-            // Ad is done. Now we seek to 0 and tell partner "GO GO GO!"
-            player.seekTo(0, true);
-            player.playVideo();
+            // Double check we are back to the correct video
+            const data = player.getVideoData();
+            if (data && data.video_id === currentVideoId) {
+                // Force seek to start to sync with waiting partner
+                player.seekTo(0, true);
+                player.playVideo();
 
-            setTimeout(() => {
-                 lastBroadcaster = myName;
-                 // 'restart' forces everyone to 0:00
-                 broadcastState('restart', 0, currentVideoId, true);
-                 showToast("System", "Ad ended. Starting song...");
-            }, 500);
+                setTimeout(() => {
+                     lastBroadcaster = myName;
+                     // "Release": Tell everyone to restart together
+                     broadcastState('restart', 0, currentVideoId, true);
+                     showToast("System", "Ad ended. Resyncing...");
+                }, 500);
+            }
         }
     }
 }
@@ -273,7 +290,7 @@ setInterval(() => {
 // --- SYNC ENGINE ---
 function heartbeatSync() {
     if (isSwitchingSong) return;
-    // If I have an ad, I just update status, I don't sync Play/Pause time
+    // If I am watching an ad, do not broadcast play/pause
     if (detectAd()) { if (lastBroadcaster === myName) updateSyncStatus(); return; }
 
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
@@ -282,7 +299,7 @@ function heartbeatSync() {
             userIntentionallyPaused = false; 
             const duration = player.getDuration();
             const current = player.getCurrentTime();
-            // Loop check
+            // Loop instantly at end
             if (duration > 0 && duration - current < 0.5) initiateNextSong(); 
             else broadcastState('play', current, currentVideoId);
         }
@@ -299,16 +316,18 @@ function monitorSyncHealth() {
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     if (Date.now() - lastLocalInteractionTime < 500) return;
 
-    // --- AD WAIT PROTOCOL ---
+    // --- THE AD SHIFT LOGIC (RECEIVER SIDE) ---
     if (currentRemoteState.action === 'ad_wait') {
         const myTime = player.getCurrentTime();
         const myState = player.getPlayerState();
         
-        // If partner has Ad, I must stay at 0:00
-        if (myTime > 1.0 || myState === YT.PlayerState.PLAYING) {
+        // Partner has Ad. I must NOT play.
+        // I "Shift" my waiting position to 0:00
+        if (myTime > 0.5 || myState === YT.PlayerState.PLAYING) {
+            console.log("Partner has Ad. Holding at start.");
             player.seekTo(0, true);
             player.pauseVideo();
-            showToast("System", "Waiting for partner's Ad...");
+            showToast("System", "Partner has an Ad. Waiting...");
         }
         updateSyncStatus(); 
         return; 
@@ -326,7 +345,7 @@ function monitorSyncHealth() {
         let needsFix = false;
         
         if (currentRemoteState.action === 'restart') {
-            // Force reset if we are significantly ahead/behind or just to be safe
+             // Force reset to 0 if restart command received
              if (Math.abs(player.getCurrentTime()) > 2.0) {
                  player.seekTo(0, true);
                  needsFix = true;
@@ -460,6 +479,9 @@ function initiateSongLoad(songObj) {
     userIntentionallyPaused = false; 
     lastBroadcaster = myName;
     
+    // --- CRITICAL: UPDATE TARGET ID BEFORE LOADING ---
+    currentVideoId = songObj.videoId;
+
     showToast("System", "Switching track...");
     if(UI.playPauseBtn) UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
@@ -695,18 +717,21 @@ function updateSyncStatus() {
 function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadcast = true, shouldPlay = true) {
     if (player && videoId) {
         if (!shouldBroadcast) suppressBroadcast(2000); 
+        
+        // UPDATE GLOBAL ID TARGET
+        currentVideoId = videoId;
 
-        if(currentVideoId !== videoId || !player.cueVideoById) {
+        if(!player.cueVideoById) {
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
             player.setVolume(100); 
         } else {
              if(Math.abs(player.getCurrentTime() - startTime) > 1.2) player.seekTo(startTime, true);
              if(shouldPlay) { player.setVolume(100); player.playVideo(); }
+             else player.loadVideoById({videoId: videoId, startSeconds: startTime});
         }
         
         if(!shouldPlay) setTimeout(() => player.pauseVideo(), 500);
 
-        currentVideoId = videoId;
         const decodedTitle = decodeHTMLEntities(title);
         if(UI.songTitle) UI.songTitle.textContent = decodedTitle;
         
