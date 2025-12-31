@@ -1438,18 +1438,6 @@ document.getElementById('chatInput').addEventListener('keypress', (e) => {
     if(e.key === 'Enter') document.getElementById('chatSendBtn').click();
 });
 
-// NEW: Listener for Unsync Lyrics Button
-const unsyncBtnElement = document.getElementById('unsyncLyricsBtn');
-if(unsyncBtnElement) {
-    unsyncBtnElement.addEventListener('click', () => {
-        stopLyricsSync();
-        if(currentPlainLyrics) {
-             UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center; padding-bottom: 50px;">${currentPlainLyrics.replace(/\n/g, "<br>")}</div>`;
-        }
-        unsyncBtnElement.style.display = 'none';
-    });
-}
-
 document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
 
 document.getElementById('shuffleQueueBtn').addEventListener('click', () => {
