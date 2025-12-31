@@ -150,6 +150,9 @@ document.addEventListener('click', (e) => {
 // --- USER IDENTIFICATION ---
 let myName = localStorage.getItem('deepSpaceUserName');
 if (!myName || myName === "null") {
+    // If we have a welcome overlay, we might not want to prompt immediately,
+    // but the original code did. We'll keep it for now.
+    // Ideally, the welcome screen handles the name input, but we'll stick to the requested structure.
     myName = prompt("Enter your name (Sarthak or Reechita):");
     if(!myName) myName = "Guest";
     localStorage.setItem('deepSpaceUserName', myName);
@@ -1468,3 +1471,19 @@ document.querySelectorAll('.nav-tab').forEach(btn => {
          if(target) switchTab(target);
     });
 });
+
+// --- WELCOME SCREEN LOGIC (FIX FOR OPENING BUTTON) ---
+const startBtn = document.getElementById('start-btn');
+if (startBtn && UI.welcomeOverlay) {
+    startBtn.addEventListener('click', () => {
+        UI.welcomeOverlay.style.opacity = '0';
+        UI.welcomeOverlay.style.pointerEvents = 'none'; // Unblock clicks immediately
+        setTimeout(() => {
+            UI.welcomeOverlay.style.display = 'none';
+        }, 500);
+        
+        // Initialize Player Interaction (Mobile browsers require this)
+        if(player && player.unMute) player.unMute();
+        hasUserInteracted = true;
+    });
+}
