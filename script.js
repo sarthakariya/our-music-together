@@ -234,8 +234,7 @@ function onPlayerError(event) {
 function detectAd() {
     if (!player) return false;
     try {
-        if (player.getPlayerState() !== YT.PlayerState.PLAYING) return false;
-
+        // We check video data regardless of state to detect paused ads
         const data = player.getVideoData();
         if (!data) return false;
 
@@ -370,7 +369,7 @@ function monitorSyncHealth() {
     }
     
     if (currentRemoteState.action === 'switching_pause') {
-        // Reduced from 4000 to 2500 for faster sync feel
+        // Wait 2.5s before assuming ready, for faster sync feel
         if (Date.now() - (currentRemoteState.timestamp || 0) > 2500) {
             updateSyncStatus(); 
         }
@@ -534,7 +533,7 @@ function initiateSongLoad(songObj) {
             isSwitchingSong = false;
             if(player) player.playVideo();
         }
-    }, 2000); // Reduced from 3000 to 2000
+    }, 2000);
 
     loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
     updateMediaSessionMetadata(songObj.title, songObj.uploader, songObj.thumbnail);
