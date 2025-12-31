@@ -18,6 +18,131 @@ const queueRef = db.ref('queue');
 const chatRef = db.ref('chat'); 
 const presenceRef = db.ref('presence');
 
+// --- VISUAL FIXES & UI POLISH (INJECTED CSS) ---
+function injectCustomStyles() {
+    const style = document.createElement('style');
+    style.textContent = `
+        /* --- CHAT BUBBLE FIXES --- */
+        .message {
+            display: flex;
+            margin-bottom: 12px;
+            animation: fadeIn 0.3s ease;
+            width: 100%;
+        }
+        .message.me {
+            justify-content: flex-end;
+        }
+        .message.other {
+            justify-content: flex-start;
+        }
+        .msg-bubble {
+            max-width: 75%;
+            padding: 10px 14px;
+            border-radius: 18px;
+            font-size: 14px;
+            line-height: 1.4;
+            position: relative;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            word-wrap: break-word;
+        }
+        .message.me .msg-bubble {
+            background: linear-gradient(135deg, #f50057, #ff4081);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        .message.other .msg-bubble {
+            background: rgba(255, 255, 255, 0.1);
+            color: #e0e0e0;
+            border: 1px solid rgba(255,255,255,0.05);
+            border-bottom-left-radius: 4px;
+            backdrop-filter: blur(4px);
+        }
+        .msg-meta {
+            font-size: 10px;
+            margin-top: 4px;
+            opacity: 0.7;
+            text-align: right;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 4px;
+        }
+        .msg-tick { font-size: 10px; }
+        .msg-tick.seen { color: #64ffda; }
+
+        /* --- MOBILE SYNC STATUS FIX --- */
+        /* Raises the sync status pill so it's not cut off by bottom controls/nav */
+        #sync-status-msg {
+            transition: bottom 0.3s ease;
+            z-index: 1000;
+        }
+        @media (max-width: 768px) {
+            #sync-status-msg {
+                bottom: 120px !important; /* Move up significantly to clear mobile nav */
+                font-size: 14px;
+                padding: 8px 16px;
+                white-space: nowrap;
+                max-width: 85%;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                background: rgba(20, 20, 30, 0.85); /* Slightly darker for readability */
+                backdrop-filter: blur(12px);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+            }
+        }
+
+        /* --- UI POLISH (GRADIENTS & GLASS) --- */
+        /* Enhanced Background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(circle at 20% 30%, rgba(245, 0, 87, 0.08), transparent 40%),
+                        radial-gradient(circle at 80% 70%, rgba(64, 224, 208, 0.08), transparent 40%);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* Song List Polish */
+        .song-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(5px);
+            margin-bottom: 8px;
+            border-radius: 12px;
+            transition: all 0.2s ease;
+        }
+        .song-item:active {
+            transform: scale(0.98);
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .song-item.playing {
+            background: linear-gradient(90deg, rgba(245, 0, 87, 0.15), rgba(245, 0, 87, 0.05));
+            border: 1px solid rgba(245, 0, 87, 0.3);
+            box-shadow: 0 4px 12px rgba(245, 0, 87, 0.1);
+        }
+
+        /* Search Result Polish */
+        .search-result-item {
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            margin-bottom: 10px;
+        }
+        
+        /* Toast Polish */
+        .toast {
+            background: rgba(30, 30, 40, 0.95);
+            border-left: 4px solid #f50057;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            border-radius: 8px;
+        }
+    `;
+    document.head.appendChild(style);
+}
+// Inject immediately
+injectCustomStyles();
+
+
 // --- DOM CACHE (Performance Optimization) ---
 const UI = {
     player: document.getElementById('player'),
