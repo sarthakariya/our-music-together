@@ -1472,18 +1472,41 @@ document.querySelectorAll('.nav-tab').forEach(btn => {
     });
 });
 
-// --- WELCOME SCREEN LOGIC (FIX FOR OPENING BUTTON) ---
-const startBtn = document.getElementById('start-btn');
-if (startBtn && UI.welcomeOverlay) {
-    startBtn.addEventListener('click', () => {
-        UI.welcomeOverlay.style.opacity = '0';
-        UI.welcomeOverlay.style.pointerEvents = 'none'; // Unblock clicks immediately
+// --- WELCOME SCREEN LOGIC (ROBUST FIX) ---
+// Uses event delegation to handle cases where DOM elements aren't ready or IDs vary
+document.addEventListener('click', (e) => {
+    const overlay = UI.welcomeOverlay || document.getElementById('welcomeOverlay');
+    if (!overlay) return;
+
+    // Check if the overlay is actually visible/blocking
+    const isVisible = overlay.style.display !== 'none' && overlay.style.opacity !== '0';
+    if (!isVisible) return;
+
+    // Check if click was on the Start Button (or any button inside the overlay)
+    const target = e.target;
+    const isStartBtn = target.closest('#start-btn') || target.closest('.start-btn') || (overlay.contains(target) && target.closest('button'));
+
+    if (isStartBtn) {
+        // 1. Fade out overlay
+        overlay.style.opacity = '0';
+        overlay.style.pointerEvents = 'none';
+
+        // 2. Remove from DOM layout after transition
         setTimeout(() => {
-            UI.welcomeOverlay.style.display = 'none';
+            overlay.style.display = 'none';
+            overlay.classList.remove('active'); // Just in case class is used
         }, 500);
         
-        // Initialize Player Interaction (Mobile browsers require this)
-        if(player && player.unMute) player.unMute();
+        // 3. Register User Interaction (Crucial for Audio Autoplay policies)
         hasUserInteracted = true;
-    });
-}
+        if(player && player.unMute) player.unMute();
+        
+        // 4. Trigger Play if ready
+        if (player && currentVideoId) {
+             try { player.playVideo(); } catch(e){}
+        } else if (currentQueue.length > 0 && !currentVideoId) {
+             // If queue has songs but nothing playing, start the first one
+             initiateSongLoad(currentQueue[0]);
+        }
+    }
+});
