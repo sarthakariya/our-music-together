@@ -46,7 +46,9 @@ const UI = {
     viewResults: document.getElementById('view-results'),
     viewChat: document.getElementById('view-chat'),
     searchInput: document.getElementById('searchInput'),
-    resultsList: document.getElementById('results-list')
+    resultsList: document.getElementById('results-list'),
+    infoBtn: document.getElementById('infoBtn'),
+    closeInfoBtn: document.getElementById('closeInfoBtn')
 };
 
 let player, currentQueue = [], currentVideoId = null;
@@ -392,8 +394,11 @@ function monitorSyncHealth() {
 
         // CALCULATE EXPECTED REMOTE TIME (Latency Compensation)
         // Extrapolate where the remote player should be right now
-        let latency = (Date.now() - currentRemoteState.timestamp) / 1000;
-        if (latency < 0 || latency > 5) latency = 0; // Sanity check for clock skew
+        let latency = 0;
+        if (currentRemoteState.timestamp) {
+            latency = (Date.now() - currentRemoteState.timestamp) / 1000;
+            if (latency < 0 || latency > 5) latency = 0; // Sanity check for clock skew
+        }
         
         const expectedTime = currentRemoteState.time + latency;
         
@@ -702,9 +707,12 @@ function applyRemoteCommand(state) {
     }
 
     // --- LATENCY COMPENSATION START ---
-    let latency = (Date.now() - state.timestamp) / 1000;
-    if (latency < 0 || latency > 5) latency = 0; // Guard against clock skew
-    const targetTime = state.time + latency;
+    let latency = 0;
+    if (state.timestamp) {
+         latency = (Date.now() - state.timestamp) / 1000;
+         if (latency < 0 || latency > 5) latency = 0; // Guard against clock skew
+    }
+    const targetTime = (state.time || 0) + latency;
     // --- LATENCY COMPENSATION END ---
 
     if (state.videoId !== currentVideoId) {
@@ -1339,13 +1347,10 @@ document.getElementById('forceSyncBtn').addEventListener('click', () => {
     player.playVideo(); broadcastState('play', player.getCurrentTime(), currentVideoId);
 });
 
-// Fixed Info/About Button Logic
-const infoBtn = document.getElementById('infoBtn');
-const closeInfoBtn = document.getElementById('closeInfoBtn');
-
-if(infoBtn && UI.infoOverlay) {
-    infoBtn.addEventListener('click', () => UI.infoOverlay.classList.add('active'));
+// Fixed Info/About Button Logic (Moved from bottom to ensure execution)
+if(UI.infoBtn && UI.infoOverlay) {
+    UI.infoBtn.addEventListener('click', () => UI.infoOverlay.classList.add('active'));
 }
-if(closeInfoBtn && UI.infoOverlay) {
-    closeInfoBtn.addEventListener('click', () => UI.infoOverlay.classList.remove('active'));
+if(UI.closeInfoBtn && UI.infoOverlay) {
+    UI.closeInfoBtn.addEventListener('click', () => UI.infoOverlay.classList.remove('active'));
 }
