@@ -263,11 +263,15 @@ function detectAd() {
         if (currentVideoId && data.video_id && data.video_id !== currentVideoId) return true;
         if (data.author === "") return true;
         if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
+        
+        // Additional check: Duration very short? (Sometimes unreliable but helps)
+        // const dur = player.getDuration();
+        // if (dur > 0 && dur < 30 && currentQueue.length > 0) return true; 
     } catch(e) {}
     return false;
 }
 
-// --- AD MONITOR LOOP ---
+// --- AD MONITOR LOOP (UPDATED FOR LOOPING LOGIC) ---
 function monitorAdStatus() {
     if (document.hidden && userIntentionallyPaused) return;
     if (!player || !currentVideoId) return;
@@ -278,18 +282,21 @@ function monitorAdStatus() {
         if (!wasInAd) {
             wasInAd = true;
             lastBroadcaster = myName; 
-            broadcastState('ad_pause', 0, currentVideoId, true); 
+            // Send 'ad_wait' to tell others to loop/wait at 0
+            broadcastState('ad_wait', 0, currentVideoId, true); 
             updateSyncStatus();
         }
     } else {
         if (wasInAd) {
             wasInAd = false;
+            // Ad Finished: Force RESTART at 0 for everyone to sync up
             if(player.getPlayerState() !== YT.PlayerState.PLAYING) {
                 try { player.playVideo(); } catch(e){}
             }
             setTimeout(() => {
                  lastBroadcaster = myName;
-                 try { broadcastState('play', player.getCurrentTime(), currentVideoId, true); } catch(e) {}
+                 // RESTART command ensures we all start from 0:00 together
+                 broadcastState('restart', 0, currentVideoId, true); 
             }, 500);
         }
     }
@@ -345,6 +352,12 @@ function heartbeatSync() {
         if (lastBroadcaster === myName) updateSyncStatus();
         return;
     }
+    
+    // If partner is stuck in Ad, do NOT send play updates, 
+    // unless we are sending a 'pause' command explicitly.
+    if (currentRemoteState && currentRemoteState.action === 'ad_wait') {
+        return;
+    }
 
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
         const state = player.getPlayerState();
@@ -372,9 +385,32 @@ function monitorSyncHealth() {
     if (!hasUserInteracted) return;
     if (lastBroadcaster === myName || isSwitchingSong) return;
     if (!player || !currentRemoteState || !player.getPlayerState) return;
-    if (Date.now() - lastLocalInteractionTime < 2000) return;
-
+    
+    // === NEW LOGIC: HANDLE AD WAIT (LOOPING) ===
+    if (currentRemoteState.action === 'ad_wait') {
+        // Partner is in ad. Force local player to loop start.
+        updateSyncStatus();
+        
+        if (detectAd()) return; // If I also have ad, let ad logic handle it.
+        
+        const myState = player.getPlayerState();
+        const currentTime = player.getCurrentTime();
+        
+        // Loop Logic: If we progress past 2 seconds, go back to 0.
+        // Also ensure we are playing (so audio engine stays alive).
+        if (currentTime > 2.0) {
+            try { player.seekTo(0); } catch(e){}
+        }
+        
+        if (myState !== YT.PlayerState.PLAYING) {
+             try { player.playVideo(); } catch(e){}
+        }
+        
+        return; // Don't do normal sync checks
+    }
+    
     if (currentRemoteState.action === 'ad_pause') {
+        // Legacy support
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
             try { player.pauseVideo(); } catch(e){}
         }
@@ -382,6 +418,9 @@ function monitorSyncHealth() {
         return; 
     }
     
+    // Normal checks only if not in wait mode
+    if (Date.now() - lastLocalInteractionTime < 2000) return;
+
     if (currentRemoteState.action === 'switching_pause') {
         if (Date.now() - (currentRemoteState.timestamp || 0) > 1500) {
             updateSyncStatus(); 
@@ -390,20 +429,12 @@ function monitorSyncHealth() {
     }
 
     const myState = player.getPlayerState();
-    
-    // --- SMOOTHING LOGIC START ---
-    
-    // 1. Buffering Guard: If we are buffering, assume we are catching up. 
-    // Do NOT force a seek, or we will enter a buffering loop.
     if (myState === YT.PlayerState.BUFFERING) return;
-    
-    // 2. Anti-Thrash: If we sought recently (< 3s), let playback stabilize before correcting again.
     if (Date.now() - lastSeekTime < 3000) return;
 
     if (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart') {
         let needsFix = false;
         
-        // Fix Paused State
         if (myState !== YT.PlayerState.PLAYING) {
             if (detectAd()) return; 
             userIntentionallyPaused = false;
@@ -411,22 +442,18 @@ function monitorSyncHealth() {
             needsFix = true;
         }
         
-        // --- LATENCY COMPENSATION (OPTIMIZATION) ---
-        // Calculate network latency to accurately jump to where the song SHOULD be
         const now = Date.now();
         const msgTimestamp = currentRemoteState.timestamp || now;
         const latency = (now - msgTimestamp) / 1000;
-        // Cap latency to 3s to prevent crazy jumps if clocks are desynced
         const compensatedTime = currentRemoteState.time + Math.min(Math.max(0, latency), 3.0);
         
-        // 3. Tolerance: Reduced to 2.0s for tighter sync
         const drift = Math.abs(player.getCurrentTime() - compensatedTime);
         
         if (drift > 2.0) {
             if (!detectAd()) { 
                 try { 
                     player.seekTo(compensatedTime, true); 
-                    lastSeekTime = Date.now(); // Record seek time
+                    lastSeekTime = Date.now(); 
                     needsFix = true; 
                 } catch(e){}
             }
@@ -727,6 +754,27 @@ function applyRemoteCommand(state) {
     if (!player) return;
     if (Date.now() - lastLocalInteractionTime < 1500) return;
     
+    // === NEW LOGIC: RECEIVE AD WAIT ===
+    if (state.action === 'ad_wait') {
+        suppressBroadcast(2000);
+        lastBroadcaster = state.lastUpdater;
+        currentRemoteState = state; 
+        updateSyncStatus();
+        
+        // Loop logic: If I'm playing (and I'm a Premium user essentially), 
+        // I need to loop start to wait for non-premium partner.
+        if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+             const t = player.getCurrentTime();
+             if (t > 2.0) {
+                 player.seekTo(0);
+             }
+        } else if (player.getPlayerState() !== YT.PlayerState.BUFFERING) {
+             // Keep audio engine alive
+             try { player.playVideo(); } catch(e){}
+        }
+        return;
+    }
+
     if (state.action === 'ad_pause') {
         suppressBroadcast(2000);
         lastBroadcaster = state.lastUpdater;
@@ -826,6 +874,10 @@ function updateSyncStatus() {
     }
     else if (isSwitchingSong) {
         icon = 'fa-spinner fa-spin'; text = 'Switching...'; className = 'sync-status-3d status-switching';
+    }
+    else if (currentRemoteState && currentRemoteState.action === 'ad_wait') {
+        // NEW STATUS FOR AD WAIT
+        icon = 'fa-rotate-left'; text = `${currentRemoteState.lastUpdater} in Ad (Looping)`; className = 'sync-status-3d status-ad-remote';
     }
     else if (currentRemoteState && currentRemoteState.action === 'ad_pause') {
         icon = 'fa-eye-slash'; text = `${currentRemoteState.lastUpdater} having Ad...`; className = 'sync-status-3d status-ad-remote';
