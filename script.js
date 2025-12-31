@@ -224,13 +224,11 @@ function onPlayerReady(event) {
     // SMART TIMER: Heartbeat sync (0.8s active, 5s hidden)
     setSmartInterval(heartbeatSync, 800, 5000);
     
-    // SMART TIMER: Monitor Sync Health (1.0s active, 5s hidden)
-    // Decreased from 1500 to 1000 to catch looping needs faster
-    setSmartInterval(monitorSyncHealth, 1000, 5000);
+    // SMART TIMER: Monitor Sync Health (1.5s active, 5s hidden)
+    setSmartInterval(monitorSyncHealth, 1500, 5000);
     
-    // SMART TIMER: Ad Check (0.4s active, 3s hidden)
-    // Decreased from 1000 to 400 to catch ads immediately during auto-play
-    setSmartInterval(monitorAdStatus, 400, 3000);
+    // SMART TIMER: Ad Check (1s active, 3s hidden)
+    setSmartInterval(monitorAdStatus, 1000, 3000);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -265,6 +263,10 @@ function detectAd() {
         if (currentVideoId && data.video_id && data.video_id !== currentVideoId) return true;
         if (data.author === "") return true;
         if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
+        
+        // Additional check: Duration very short? (Sometimes unreliable but helps)
+        // const dur = player.getDuration();
+        // if (dur > 0 && dur < 30 && currentQueue.length > 0) return true; 
     } catch(e) {}
     return false;
 }
@@ -482,12 +484,6 @@ function updatePlayPauseButton(state) {
 
 function onPlayerStateChange(event) {
     const state = event.data;
-
-    // IMMEDIATE CHECK: Check for ad instantly when state changes to PLAYING or BUFFERING
-    // This helps catch ads during auto-play transitions much faster than waiting for interval.
-    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
-        monitorAdStatus();
-    }
 
     if (detectAd()) {
         updateSyncStatus();
@@ -954,17 +950,9 @@ function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadca
 
         if (shouldBroadcast) {
             lastBroadcaster = myName;
-            // Increased delay to 1000ms to allow Ad detection on all clients to resolve first
-            // If an ad is detected locally during this time, monitorAdStatus will handle the 'ad_wait' broadcast
             setTimeout(() => {
-                // Double check: if I am now in an ad, or if remote is in ad, don't restart
-                const amInAd = detectAd();
-                const remoteInAd = (currentRemoteState && currentRemoteState.action === 'ad_wait' && currentRemoteState.videoId === videoId);
-                
-                if (!amInAd && !remoteInAd) {
-                     broadcastState('restart', 0, videoId, true);
-                }
-            }, 1000); 
+                broadcastState('restart', 0, videoId, true); 
+            }, 100);
         }
     }
 }
@@ -1568,12 +1556,3 @@ document.addEventListener('click', (e) => {
         }
     }
 });
-
-// --- STARTUP SAFETY CHECK ---
-// Fixes "Reload page multiple times" issue by checking if Player is ready
-setTimeout(() => {
-    if (!player && window.YT && window.YT.Player) {
-        console.log("Startup Safety: Re-initializing Player...");
-        onYouTubeIframeAPIReady();
-    }
-}, 2500);
