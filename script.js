@@ -18,6 +18,26 @@ const queueRef = db.ref('queue');
 const chatRef = db.ref('chat'); 
 const presenceRef = db.ref('presence');
 
+// --- BACKGROUND KEEP-ALIVE (Mobile Background Play Fix) ---
+// A tiny silent WAV file loop. Playing this tells the OS "I am a music app" 
+// so it doesn't kill the JS logic when minimized.
+const silentAudio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
+silentAudio.loop = true;
+silentAudio.volume = 0.01; // Almost silent, but technically playing
+
+function initKeepAlive() {
+    // Only start if not already playing
+    if (silentAudio.paused) {
+        silentAudio.play().then(() => {
+            console.log("Background Keep-Alive Active");
+            // Setup Media Session immediately to ensure lock screen controls work
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = "playing";
+            }
+        }).catch(e => console.log("Keep-Alive blocked until interaction"));
+    }
+}
+
 // --- DOM CACHE (Performance Optimization) ---
 const UI = {
     player: document.getElementById('player'),
@@ -221,11 +241,12 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // SMART TIMER: Heartbeat sync (0.8s active, 5s hidden)
-    setSmartInterval(heartbeatSync, 800, 5000);
+    // SMART TIMER: Heartbeat sync (0.8s active, 2s hidden) 
+    // Reduced hidden time from 5s to 2s to ensure background playback doesn't lag
+    setSmartInterval(heartbeatSync, 800, 2000);
     
-    // SMART TIMER: Monitor Sync Health (1.5s active, 5s hidden)
-    setSmartInterval(monitorSyncHealth, 1500, 5000);
+    // SMART TIMER: Monitor Sync Health (1.5s active, 2s hidden)
+    setSmartInterval(monitorSyncHealth, 1500, 2000);
     
     // SMART TIMER: Ad Check (1s active, 3s hidden)
     setSmartInterval(monitorAdStatus, 1000, 3000);
@@ -298,6 +319,9 @@ function monitorAdStatus() {
 function setupMediaSession() {
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', function() {
+            // Re-trigger keep-alive if paused
+            if(silentAudio.paused) silentAudio.play().catch(e=>{});
+            
             if(player && player.playVideo) { 
                 userIntentionallyPaused = false;
                 try { player.playVideo(); } catch(e){} 
@@ -362,7 +386,8 @@ function heartbeatSync() {
             }
         }
         
-        if(!document.hidden && Date.now() - lastLocalInteractionTime > 1000) {
+        // Update play button more aggressively if hidden to keep media session in sync
+        if((!document.hidden && Date.now() - lastLocalInteractionTime > 1000) || document.hidden) {
             updatePlayPauseButton(state);
         }
     }
@@ -452,7 +477,11 @@ function updatePlayPauseButton(state) {
     if (!UI.playPauseBtn.innerHTML.includes(iconClass)) {
         UI.playPauseBtn.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
     }
-    if(navigator.mediaSession) navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+    
+    // Update Media Session State
+    if(navigator.mediaSession) {
+        navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+    }
 }
 
 function onPlayerStateChange(event) {
@@ -474,6 +503,8 @@ function onPlayerStateChange(event) {
              isSwitchingSong = false;
              updateSyncStatus();
          }
+         // Ensure keep-alive audio is playing if video plays
+         if(silentAudio.paused) silentAudio.play().catch(e => {});
     }
 
     if (state === YT.PlayerState.PAUSED && document.hidden && !userIntentionallyPaused) {
@@ -1481,6 +1512,9 @@ document.addEventListener('click', (e) => {
     const isStartBtn = target.closest('#start-btn') || target.closest('.start-btn') || (overlay.contains(target) && target.closest('button'));
 
     if (isStartBtn) {
+        // Initialize Background Audio Hack immediately on first interaction
+        initKeepAlive();
+
         // 1. Fade out overlay
         overlay.style.opacity = '0';
         overlay.style.pointerEvents = 'none';
