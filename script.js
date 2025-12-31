@@ -74,7 +74,8 @@ document.addEventListener('click', (e) => {
     if (t.tagName === 'BUTTON' || t.closest('button') || t.closest('.song-item') || t.closest('.nav-tab')) {
         if (navigator.vibrate) navigator.vibrate(50); 
     }
-    // Button Logic
+    
+    // Logic
     const btn = t.closest('button') || t;
     if (!btn || !btn.id) return;
 
@@ -120,7 +121,6 @@ const sessionKey = presenceRef.push().key;
 presenceRef.child(sessionKey).onDisconnect().remove();
 presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: firebase.database.ServerValue.TIMESTAMP });
 
-// --- FAST BROADCAST SUPPRESSION ---
 function suppressBroadcast(duration = 500) {
     ignoreSystemEvents = true;
     if (ignoreTimer) clearTimeout(ignoreTimer);
@@ -160,9 +160,9 @@ function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
     // --- HIGH SPEED LOOPS ---
-    setInterval(heartbeatSync, 400);       // Sync Check (400ms)
-    setInterval(monitorSyncHealth, 750);   // Drift Correction (750ms)
-    setInterval(monitorAdStatus, 1000);    // Ad Check (1s)
+    setInterval(heartbeatSync, 400);       
+    setInterval(monitorSyncHealth, 750);   
+    setInterval(monitorAdStatus, 800);    // Ad Check slightly faster
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -181,15 +181,22 @@ function onPlayerError(event) {
     setTimeout(() => initiateNextSong(), 1000);
 }
 
-// --- INTELLIGENT AD DETECTION ---
+// --- ROBUST AD DETECTION (Using Data Mismatch) ---
 function detectAd() {
-    if (!player) return false;
+    if (!player || !player.getVideoData) return false;
     try {
         if (player.getPlayerState() !== YT.PlayerState.PLAYING) return false;
+        
         const data = player.getVideoData();
+        // 1. ID Mismatch: We asked for X, player is playing Y. This is the surest sign of an Ad.
         if (currentVideoId && data.video_id && data.video_id !== currentVideoId) return true;
+        
+        // 2. Author Check: Ads often have empty author fields
         if (data.author === "") return true;
+        
+        // 3. Title Check
         if (data.title && (data.title === "Advertisement" || data.title.toLowerCase().startsWith("ad "))) return true;
+        
     } catch(e) {}
     return false;
 }
@@ -202,26 +209,28 @@ function monitorAdStatus() {
     
     if (isAd) {
         if (!wasInAd) {
+            // AD STARTED
             wasInAd = true;
             lastBroadcaster = myName; 
-            // Broadcast 'ad_pause' immediately
-            broadcastState('ad_pause', 0, currentVideoId, true); 
+            // Send 'ad_wait' to tell partner to FREEZE
+            broadcastState('ad_wait', 0, currentVideoId, true); 
             updateSyncStatus();
         }
     } else {
         if (wasInAd) {
-            // Ad Finished
+            // AD ENDED
             wasInAd = false;
             
-            // CRITICAL: Force Seek to 0 and Restart Everything
+            // --- THE FIX: RESTART FROM 0 ---
+            // Ad is done. Now we seek to 0 and tell partner "GO GO GO!"
             player.seekTo(0, true);
             player.playVideo();
 
             setTimeout(() => {
                  lastBroadcaster = myName;
-                 // Send 'restart' to force partner to 0:00
+                 // 'restart' forces everyone to 0:00
                  broadcastState('restart', 0, currentVideoId, true);
-                 showToast("System", "Ad ended. Syncing start...");
+                 showToast("System", "Ad ended. Starting song...");
             }, 500);
         }
     }
@@ -264,6 +273,7 @@ setInterval(() => {
 // --- SYNC ENGINE ---
 function heartbeatSync() {
     if (isSwitchingSong) return;
+    // If I have an ad, I just update status, I don't sync Play/Pause time
     if (detectAd()) { if (lastBroadcaster === myName) updateSyncStatus(); return; }
 
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
@@ -272,7 +282,7 @@ function heartbeatSync() {
             userIntentionallyPaused = false; 
             const duration = player.getDuration();
             const current = player.getCurrentTime();
-            // Loop instantly at end
+            // Loop check
             if (duration > 0 && duration - current < 0.5) initiateNextSong(); 
             else broadcastState('play', current, currentVideoId);
         }
@@ -289,17 +299,19 @@ function monitorSyncHealth() {
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     if (Date.now() - lastLocalInteractionTime < 500) return;
 
-    // --- STRICT AD SYNC TRAP ---
-    if (currentRemoteState.action === 'ad_pause') {
+    // --- AD WAIT PROTOCOL ---
+    if (currentRemoteState.action === 'ad_wait') {
         const myTime = player.getCurrentTime();
-        // If partner has Ad, I MUST NOT play past 1 second.
-        if (myTime > 1 || player.getPlayerState() === YT.PlayerState.PLAYING) {
-            console.log("Partner has Ad. Holding at 0:00.");
+        const myState = player.getPlayerState();
+        
+        // If partner has Ad, I must stay at 0:00
+        if (myTime > 1.0 || myState === YT.PlayerState.PLAYING) {
             player.seekTo(0, true);
             player.pauseVideo();
-            showToast("System", "Partner has an Ad. Waiting...");
+            showToast("System", "Waiting for partner's Ad...");
         }
-        updateSyncStatus(); return; 
+        updateSyncStatus(); 
+        return; 
     }
     
     if (currentRemoteState.action === 'switching_pause') {
@@ -308,18 +320,32 @@ function monitorSyncHealth() {
     }
 
     const myState = player.getPlayerState();
+    
+    // RESTART (Used after Ad) or PLAY
     if (currentRemoteState.action === 'play' || currentRemoteState.action === 'restart') {
         let needsFix = false;
+        
+        if (currentRemoteState.action === 'restart') {
+            // Force reset if we are significantly ahead/behind or just to be safe
+             if (Math.abs(player.getCurrentTime()) > 2.0) {
+                 player.seekTo(0, true);
+                 needsFix = true;
+             }
+        }
+
         if (myState !== YT.PlayerState.PLAYING && myState !== YT.PlayerState.BUFFERING) {
             if (detectAd()) return; 
             userIntentionallyPaused = false;
             player.playVideo(); 
             needsFix = true;
         }
+        
         if (myState === YT.PlayerState.BUFFERING) return;
+        
         if (Math.abs(player.getCurrentTime() - currentRemoteState.time) > 1.2) {
             if (!detectAd()) { player.seekTo(currentRemoteState.time, true); needsFix = true; }
         }
+        
         if (needsFix) suppressBroadcast(2000); 
     }
     else if (currentRemoteState.action === 'pause') {
@@ -425,7 +451,7 @@ function initiatePrevSong() {
     if (isSwitchingSong) return;
     const idx = currentQueue.findIndex(s => s.videoId === currentVideoId);
     if(idx > 0) initiateSongLoad(currentQueue[idx-1]);
-    else if(currentQueue.length > 0) initiateSongLoad(currentQueue[currentQueue.length - 1]); // Loop back to end
+    else if(currentQueue.length > 0) initiateSongLoad(currentQueue[currentQueue.length - 1]); 
 }
 
 function initiateSongLoad(songObj) {
@@ -552,10 +578,10 @@ function applyRemoteCommand(state) {
     if (!player) return;
     if (Date.now() - lastLocalInteractionTime < 500) return;
     
-    if (state.action === 'ad_pause') {
+    // PARTNER HAS AD: We must FREEZE
+    if (state.action === 'ad_wait') {
         suppressBroadcast(2000);
         lastBroadcaster = state.lastUpdater;
-        // PARTNER HAS AD: Force local pause/wait
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
             player.pauseVideo();
             showToast("System", "Partner has an Ad. Waiting...");
@@ -598,7 +624,7 @@ function applyRemoteCommand(state) {
     else {
         const playerState = player.getPlayerState();
         if (state.action === 'restart') {
-            // AD RECOVERY COMMAND
+            // RESTART COMMAND (Post-Ad Sync)
             player.seekTo(0, true); 
             userIntentionallyPaused = false;
             player.setVolume(100);
@@ -633,7 +659,7 @@ function updateSyncStatus() {
 
     if (detectAd()) { icon = 'fa-rectangle-ad'; text = 'Ad Playing'; className = 'sync-status-3d status-ad'; }
     else if (isSwitchingSong) { icon = 'fa-spinner fa-spin'; text = 'Switching...'; className = 'sync-status-3d status-switching'; }
-    else if (currentRemoteState && currentRemoteState.action === 'ad_pause') { icon = 'fa-eye-slash'; text = `${currentRemoteState.lastUpdater} having Ad...`; className = 'sync-status-3d status-ad-remote'; }
+    else if (currentRemoteState && currentRemoteState.action === 'ad_wait') { icon = 'fa-eye-slash'; text = `${currentRemoteState.lastUpdater} has Ad. Waiting...`; className = 'sync-status-3d status-ad-remote'; }
     else if (currentRemoteState && currentRemoteState.action === 'switching_pause') {
         if (Date.now() - (currentRemoteState.timestamp || 0) > 4000) { icon = 'fa-pause'; text = 'Ready'; className = 'sync-status-3d status-paused'; } 
         else { icon = 'fa-music'; text = `${currentRemoteState.lastUpdater} picking song...`; className = 'sync-status-3d status-switching'; }
