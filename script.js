@@ -199,11 +199,11 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // SMART TIMER: Heartbeat sync (1s active, 5s hidden)
-    setSmartInterval(heartbeatSync, 1000, 5000);
+    // SMART TIMER: Heartbeat sync (0.8s active, 5s hidden) - FASTER HEARTBEAT
+    setSmartInterval(heartbeatSync, 800, 5000);
     
-    // SMART TIMER: Monitor Sync Health (2s active, 5s hidden)
-    setSmartInterval(monitorSyncHealth, 2000, 5000);
+    // SMART TIMER: Monitor Sync Health (1.5s active, 5s hidden) - MORE AGGRESSIVE
+    setSmartInterval(monitorSyncHealth, 1500, 5000);
     
     // SMART TIMER: Ad Check (1s active, 3s hidden)
     setSmartInterval(monitorAdStatus, 1000, 3000);
@@ -268,12 +268,14 @@ function monitorAdStatus() {
             wasInAd = false;
             
             if(player.getPlayerState() !== YT.PlayerState.PLAYING) {
-                player.playVideo();
+                try { player.playVideo(); } catch(e){}
             }
 
             setTimeout(() => {
                  lastBroadcaster = myName;
-                 broadcastState('play', player.getCurrentTime(), currentVideoId, true);
+                 try {
+                    broadcastState('play', player.getCurrentTime(), currentVideoId, true);
+                 } catch(e) {}
             }, 500);
         }
     }
@@ -284,14 +286,14 @@ function setupMediaSession() {
         navigator.mediaSession.setActionHandler('play', function() {
             if(player && player.playVideo) { 
                 userIntentionallyPaused = false;
-                player.playVideo(); 
+                try { player.playVideo(); } catch(e){} 
                 togglePlayPause(); 
             }
         });
         navigator.mediaSession.setActionHandler('pause', function() {
             if(player && player.pauseVideo) { 
                 userIntentionallyPaused = true;
-                player.pauseVideo(); 
+                try { player.pauseVideo(); } catch(e){}
                 togglePlayPause(); 
             }
         });
@@ -318,10 +320,10 @@ setInterval(() => {
         const state = player.getPlayerState();
         // If we are supposed to be playing but are paused (browser throttling), force play
         if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
-            player.playVideo();
+            try { player.playVideo(); } catch(e){}
         }
     }
-}, 4000); // 4 seconds is enough for keep-alive
+}, 4000); 
 
 // --- CORE SYNC LOGIC ---
 
@@ -364,15 +366,15 @@ function monitorSyncHealth() {
 
     if (currentRemoteState.action === 'ad_pause') {
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-            player.pauseVideo();
+            try { player.pauseVideo(); } catch(e){}
         }
         updateSyncStatus(); 
         return; 
     }
     
     if (currentRemoteState.action === 'switching_pause') {
-        // Wait 2.5s before assuming ready, for faster sync feel
-        if (Date.now() - (currentRemoteState.timestamp || 0) > 2500) {
+        // Wait 1.5s before assuming ready - FASTER
+        if (Date.now() - (currentRemoteState.timestamp || 0) > 1500) {
             updateSyncStatus(); 
         }
         return;
@@ -386,36 +388,35 @@ function monitorSyncHealth() {
             if (detectAd()) return; 
             
             userIntentionallyPaused = false;
-            player.playVideo(); 
+            try { player.playVideo(); } catch(e){}
             needsFix = true;
         }
         
         if (myState === YT.PlayerState.BUFFERING) return;
 
         // CALCULATE EXPECTED REMOTE TIME (Latency Compensation)
-        // Extrapolate where the remote player should be right now
         let latency = 0;
         if (currentRemoteState.timestamp) {
             latency = (Date.now() - currentRemoteState.timestamp) / 1000;
-            if (latency < 0 || latency > 5) latency = 0; // Sanity check for clock skew
+            if (latency < 0 || latency > 5) latency = 0; 
         }
         
         const expectedTime = currentRemoteState.time + latency;
         
-        // Tight tolerance: 1.5 seconds
-        if (Math.abs(player.getCurrentTime() - expectedTime) > 1.5) {
+        // AGGRESSIVE TOLERANCE: 0.8 seconds (Sub-second sync)
+        if (Math.abs(player.getCurrentTime() - expectedTime) > 0.8) {
             if (!detectAd()) { 
-                player.seekTo(expectedTime, true); 
+                try { player.seekTo(expectedTime, true); } catch(e){}
                 needsFix = true; 
             }
         }
-        if (needsFix) suppressBroadcast(3000); 
+        if (needsFix) suppressBroadcast(2000); 
     }
     else if (currentRemoteState.action === 'pause') {
          if (myState === YT.PlayerState.PLAYING) {
              userIntentionallyPaused = true;
-             player.pauseVideo();
-             suppressBroadcast(1000);
+             try { player.pauseVideo(); } catch(e){}
+             suppressBroadcast(800);
          }
     }
 }
@@ -457,7 +458,7 @@ function onPlayerStateChange(event) {
     }
 
     if (state === YT.PlayerState.PAUSED && document.hidden && !userIntentionallyPaused) {
-        player.playVideo();
+        try { player.playVideo(); } catch(e){}
         return; 
     }
 
@@ -500,7 +501,7 @@ function togglePlayPause() {
     if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
         UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>'; 
         userIntentionallyPaused = true; 
-        player.pauseVideo();
+        try { player.pauseVideo(); } catch(e){}
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
         UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>'; 
@@ -508,7 +509,7 @@ function togglePlayPause() {
         if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
         else if (currentVideoId) {
             player.setVolume(100);
-            player.playVideo();
+            try { player.playVideo(); } catch(e){}
             broadcastState('play', player.getCurrentTime(), currentVideoId, true);
         }
     }
@@ -541,12 +542,13 @@ function initiateSongLoad(songObj) {
         action: 'switching_pause', time: 0, videoId: currentVideoId, lastUpdater: myName, timestamp: Date.now() 
     });
 
+    // SAFETY TIMER REDUCED TO 1.2s for FAST SWITCHING
     setTimeout(() => {
         if (isSwitchingSong) {
             isSwitchingSong = false;
-            if(player) player.playVideo();
+            try { if(player) player.playVideo(); } catch(e){}
         }
-    }, 2000);
+    }, 1200);
 
     loadAndPlayVideo(songObj.videoId, songObj.title, songObj.uploader, 0, true);
     updateMediaSessionMetadata(songObj.title, songObj.uploader, songObj.thumbnail);
@@ -674,7 +676,7 @@ function applyRemoteCommand(state) {
         suppressBroadcast(2000);
         lastBroadcaster = state.lastUpdater;
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-            player.pauseVideo();
+            try { player.pauseVideo(); } catch(e){}
         }
         updateSyncStatus();
         return;
@@ -696,8 +698,8 @@ function applyRemoteCommand(state) {
     UI.syncOverlay.classList.remove('active');
 
     if (state.action === 'switching_pause') {
-        // Reduced from 4000 to 2500 for faster sync feel
-        if (Date.now() - (state.timestamp || 0) > 2500) {
+        // Reduced from 4000 to 1500 for faster sync feel
+        if (Date.now() - (state.timestamp || 0) > 1500) {
             return;
         }
         showToast("System", "Partner is changing track...");
@@ -724,30 +726,32 @@ function applyRemoteCommand(state) {
         if(state.action === 'play' || state.action === 'restart') {
             userIntentionallyPaused = false;
             player.setVolume(100);
-            player.playVideo();
+            try { player.playVideo(); } catch(e){}
         }
     } 
     else {
         const playerState = player.getPlayerState();
         if (state.action === 'restart') {
-            player.seekTo(targetTime, true); 
+            try { player.seekTo(targetTime, true); } catch(e){}
             userIntentionallyPaused = false;
             player.setVolume(100);
-            player.playVideo();
+            try { player.playVideo(); } catch(e){}
         }
         else if (state.action === 'play') {
-            // Seek if drift > 2s (using compensated time)
-            if (Math.abs(player.getCurrentTime() - targetTime) > 2.0) player.seekTo(targetTime, true);
+            // AGGRESSIVE SEEK IF DRIFT > 0.8s
+            if (Math.abs(player.getCurrentTime() - targetTime) > 0.8) {
+                try { player.seekTo(targetTime, true); } catch(e){}
+            }
             if (playerState !== YT.PlayerState.PLAYING && playerState !== YT.PlayerState.BUFFERING) {
                 userIntentionallyPaused = false;
                 player.setVolume(100);
-                player.playVideo();
+                try { player.playVideo(); } catch(e){}
             }
         }
         else if (state.action === 'pause') {
             if (playerState !== YT.PlayerState.PAUSED) {
                 userIntentionallyPaused = true; 
-                player.pauseVideo();
+                try { player.pauseVideo(); } catch(e){}
             }
         } 
     }
@@ -775,8 +779,8 @@ function updateSyncStatus() {
         icon = 'fa-eye-slash'; text = `${currentRemoteState.lastUpdater} having Ad...`; className = 'sync-status-3d status-ad-remote';
     }
     else if (currentRemoteState && currentRemoteState.action === 'switching_pause') {
-        // Reduced from 4000 to 2500
-        if (Date.now() - (currentRemoteState.timestamp || 0) > 2500) {
+        // Reduced from 4000 to 1500
+        if (Date.now() - (currentRemoteState.timestamp || 0) > 1500) {
             icon = 'fa-pause'; text = 'Ready'; className = 'sync-status-3d status-paused';
         } else {
             icon = 'fa-music'; text = `${currentRemoteState.lastUpdater} picking song...`; className = 'sync-status-3d status-switching';
@@ -812,22 +816,22 @@ function updateSyncStatus() {
 
 function loadAndPlayVideo(videoId, title, uploader, startTime = 0, shouldBroadcast = true, shouldPlay = true) {
     if (player && videoId) {
-        // Reduced broadcast suppression from 3000 to 2000
-        if (!shouldBroadcast) suppressBroadcast(2000); 
+        // Reduced broadcast suppression from 3000 to 1000
+        if (!shouldBroadcast) suppressBroadcast(1000); 
 
         if(currentVideoId !== videoId || !player.cueVideoById) {
             player.loadVideoById({videoId: videoId, startSeconds: startTime});
             player.setVolume(100); 
         } else {
-             if(Math.abs(player.getCurrentTime() - startTime) > 4.0) player.seekTo(startTime, true);
+             if(Math.abs(player.getCurrentTime() - startTime) > 4.0) try { player.seekTo(startTime, true); } catch(e){}
              if(shouldPlay) {
                  player.setVolume(100);
-                 player.playVideo();
+                 try { player.playVideo(); } catch(e){}
              }
         }
         
         if(!shouldPlay) {
-            setTimeout(() => player.pauseVideo(), 500);
+            setTimeout(() => { try { player.pauseVideo(); } catch(e){} }, 500);
         }
 
         currentVideoId = videoId;
@@ -1347,7 +1351,7 @@ document.getElementById('forceSyncBtn').addEventListener('click', () => {
     player.playVideo(); broadcastState('play', player.getCurrentTime(), currentVideoId);
 });
 
-// Fixed Info/About Button Logic (Moved from bottom to ensure execution)
+// Fixed Info/About Button Logic
 if(UI.infoBtn && UI.infoOverlay) {
     UI.infoBtn.addEventListener('click', () => UI.infoOverlay.classList.add('active'));
 }
