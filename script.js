@@ -82,6 +82,9 @@ let smartIntervals = [];
 
 function setSmartInterval(callback, normalMs, hiddenMs) {
     let intervalId = null;
+    // CRITICAL FIX: For background playback on mobile, do NOT increase interval significantly.
+    // Keeping the interval short ensures the JS loop catches the "song ended" event
+    // before the OS suspends the tab.
     let currentMs = document.hidden ? hiddenMs : normalMs;
     
     const run = () => {
@@ -221,14 +224,16 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // SMART TIMER: Heartbeat sync (0.8s active, 5s hidden)
-    setSmartInterval(heartbeatSync, 800, 5000);
+    // SMART TIMER FIX: Heartbeat sync (0.8s active, 1s hidden)
+    // We keep the hidden interval SHORT (1000ms) to prevent the OS from killing the tab
+    // during the silence between songs.
+    setSmartInterval(heartbeatSync, 800, 1000);
     
-    // SMART TIMER: Monitor Sync Health (1.5s active, 5s hidden)
-    setSmartInterval(monitorSyncHealth, 1500, 5000);
+    // SMART TIMER FIX: Monitor Sync Health (1.5s active, 1.5s hidden)
+    setSmartInterval(monitorSyncHealth, 1500, 1500);
     
-    // SMART TIMER: Ad Check (1s active, 3s hidden)
-    setSmartInterval(monitorAdStatus, 1000, 3000);
+    // SMART TIMER: Ad Check (1s active, 2s hidden)
+    setSmartInterval(monitorAdStatus, 1000, 2000);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -334,14 +339,28 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
     }
 }
 
+// --- AGGRESSIVE BACKGROUND KEEP-ALIVE LOOP ---
+// This loop runs frequently to force the player to start if it gets stuck
+// in a buffering or unstarted state while in the background.
 setInterval(() => {
+    // Only intervene if browser is hidden (background)
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
+        
+        // CASE 1: Stopped/Paused but NOT by user. Force Play.
         if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
+            console.log("Background Keep-Alive: Resuming paused video");
             try { player.playVideo(); } catch(e){}
         }
+        
+        // CASE 2: Ended or Unstarted but user wanted to play. Force Next/Play.
+        // -1 = unstarted, 0 = ended, 5 = cued
+        if ((state === -1 || state === 0 || state === 5) && !userIntentionallyPaused && !isSwitchingSong) {
+             console.log("Background Keep-Alive: Kickstarting stuck video");
+             try { player.playVideo(); } catch(e){}
+        }
     }
-}, 4000); 
+}, 1000); // Check every 1 second
 
 // --- CORE SYNC LOGIC ---
 
@@ -503,7 +522,9 @@ function onPlayerStateChange(event) {
          }
     }
 
+    // Force resume if paused in background (and not by user)
     if (state === YT.PlayerState.PAUSED && document.hidden && !userIntentionallyPaused) {
+        console.log("State Changed to PAUSED in background. Resuming...");
         try { player.playVideo(); } catch(e){}
         return; 
     }
