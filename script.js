@@ -1032,20 +1032,31 @@ if(UI.closeInfoBtn && UI.infoOverlay) UI.closeInfoBtn.addEventListener('click', 
 document.querySelectorAll('.mobile-nav-item').forEach(btn => { btn.addEventListener('click', (e) => { const target = e.currentTarget.dataset.target; if(target) switchTab(target); }); });
 document.querySelectorAll('.nav-tab').forEach(btn => { btn.addEventListener('click', (e) => { const target = e.currentTarget.dataset.target; if(target) switchTab(target); }); });
 
+// SIMPLIFIED WELCOME SCREEN LOGIC
 document.addEventListener('click', (e) => {
-    const overlay = UI.welcomeOverlay || document.getElementById('welcomeOverlay');
-    if (!overlay) return;
-    const isVisible = overlay.style.display !== 'none' && overlay.style.opacity !== '0';
-    if (!isVisible) return;
-    const target = e.target;
-    const isStartBtn = target.closest('#start-btn') || target.closest('.start-btn') || (overlay.contains(target) && target.closest('button'));
-    if (isStartBtn) {
+    // If the user clicks the START button directly or inside it
+    if (e.target.closest('#start-btn')) {
+        const overlay = document.getElementById('welcomeOverlay');
+        
+        // Logic to run when start is clicked
         initKeepAlive();
-        overlay.style.opacity = '0'; overlay.style.pointerEvents = 'none';
-        setTimeout(() => { overlay.style.display = 'none'; overlay.classList.remove('active'); }, 500);
+        
+        if (overlay) {
+            overlay.style.opacity = '0';
+            overlay.style.pointerEvents = 'none';
+            setTimeout(() => { 
+                overlay.style.display = 'none'; 
+                overlay.classList.remove('active'); 
+            }, 500);
+        }
+
         hasUserInteracted = true;
         if(player && player.unMute) player.unMute();
-        if (player && currentVideoId) { try { player.playVideo(); } catch(e){} } 
-        else if (currentQueue.length > 0 && !currentVideoId) { initiateSongLoad(currentQueue[0]); }
+        
+        if (player && currentVideoId) { 
+            try { player.playVideo(); } catch(e){} 
+        } else if (currentQueue.length > 0 && !currentVideoId) { 
+            initiateSongLoad(currentQueue[0]); 
+        }
     }
 });
