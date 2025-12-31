@@ -416,20 +416,20 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
 }
 
 /* 1. Larger Sender Name */
-.msg-user { /* Renamed from msg-sender to match JS */
+.msg-sender {
     font-size: 0.95rem; 
-    font-weight: 800; /* Extra Bold */
-    margin-bottom: 8px; /* Vertical Gap */
+    font-weight: 700;
+    margin-bottom: 4px;
     opacity: 1;
     color: var(--gold); /* Distinct color for names */
     align-self: flex-start;
 }
-.message.me .msg-user { color: white; opacity: 0.95; }
+.message.me .msg-sender { color: white; opacity: 0.95; }
 
 /* Message Content */
-.msg-text { /* Renamed from msg-text-content to match JS */
+.msg-text-content {
     line-height: 1.45;
-    margin-bottom: 8px; /* Vertical Gap between text and time */
+    margin-bottom: 4px;
     font-weight: 400;
 }
 
@@ -510,11 +510,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     position: fixed; inset: 0; background: rgba(0,0,0,0.85); 
     z-index: 2000; display: none; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s ease;
 }
-.overlay.active { 
-    display: flex; 
-    opacity: 1; 
-    pointer-events: auto; /* ENSURE CLICKABLE */
-}
+.overlay.active { display: flex; opacity: 1; }
 .modal-card {
     background: #16101a;
     border: 1px solid rgba(255,255,255,0.15); 
@@ -524,7 +520,6 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     max-height: 90vh; overflow-y: auto; 
     animation: elasticPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     contain: layout;
-    pointer-events: auto; /* ENSURE CONTENT CLICKABLE */
 }
 @keyframes elasticPop {
     0% { transform: scale(0.9); opacity: 0; }
@@ -542,27 +537,6 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     background: linear-gradient(to right, #fff, #bbb);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     text-align: center; font-family: 'Montserrat', sans-serif;
-}
-
-/* SPECIFIC STYLE FOR WELCOME BUTTON */
-.start-btn {
-    width: 80px !important;
-    height: 80px !important;
-    font-size: 2.2rem !important;
-    background: linear-gradient(135deg, #f50057, #d500f9) !important;
-    border-bottom: 5px solid #880e4f !important;
-    box-shadow: 0 10px 25px rgba(245, 0, 87, 0.4) !important;
-    z-index: 2001; /* Ensure above overlay base */
-    cursor: pointer;
-    pointer-events: auto !important;
-}
-.start-btn:hover {
-    transform: translateY(-3px);
-    background: linear-gradient(135deg, #ff4081, #e040fb) !important;
-}
-.start-btn:active {
-    transform: translateY(2px);
-    border-bottom-width: 0 !important;
 }
 
 .guide-content { font-family: 'Inter', sans-serif; color: #ccc; }
@@ -960,8 +934,7 @@ button:active, .song-item:active, .mobile-nav-item:active, .emoji-trigger:active
     /* --- MOBILE TYPOGRAPHY TWEAKS --- */
     .lyrics-content { font-size: 0.95rem; line-height: 1.6; }
     .lyrics-line { font-size: 1.05rem; }
-    #lyrics-title { font-size: 1.1rem !important; } /* Smaller Heading on Mobile */
-
+    
     .modal-card { padding: 20px; width: 95%; }
     .modal-card h2 { font-size: 1.4rem; margin-bottom: 15px; }
     .guide-item i { font-size: 1.1rem; }
