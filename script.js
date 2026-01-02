@@ -1340,6 +1340,22 @@ document.getElementById('manualLyricsInput').addEventListener('keypress', (e) =>
     if(e.key === 'Enter') document.getElementById('manualLyricsBtn').click();
 });
 
+// NEW LISTENER FOR SYNC TOGGLE
+const unsyncLyricsBtn = document.getElementById('unsyncLyricsBtn');
+if (unsyncLyricsBtn) {
+    unsyncLyricsBtn.addEventListener('click', () => {
+        if (lyricsInterval) {
+            stopLyricsSync();
+            unsyncLyricsBtn.innerHTML = '<i class="fa-solid fa-play"></i> Resume Sync';
+            showToast("System", "Lyrics sync paused");
+        } else {
+            startLyricsSync();
+            unsyncLyricsBtn.innerHTML = '<i class="fa-solid fa-pause"></i> Stop Sync';
+            showToast("System", "Lyrics sync resumed");
+        }
+    });
+}
+
 const dedicateBtn = document.getElementById('dedicateBtn');
 if (dedicateBtn) {
     dedicateBtn.addEventListener('click', () => {
@@ -1433,6 +1449,7 @@ function startLyricsSync() {
 
 function stopLyricsSync() {
     if(lyricsInterval) clearInterval(lyricsInterval);
+    lyricsInterval = null; // Ensure variable is reset
 }
 
 function syncLyricsDisplay() {
@@ -1477,7 +1494,10 @@ async function fetchLyrics(manualQuery = null) {
     let searchWords = "";
     searchBar.classList.remove('visible');
     searchBar.style.display = 'none'; 
-    unsyncBtn.style.display = 'none';
+    if(unsyncBtn) {
+        unsyncBtn.style.display = 'none';
+        unsyncBtn.innerHTML = '<i class="fa-solid fa-pause"></i> Stop Sync';
+    }
     lastLyricsIndex = -1; 
     currentPlainLyrics = ""; 
     
@@ -1510,7 +1530,10 @@ async function fetchLyrics(manualQuery = null) {
                 currentLyrics = parseSyncedLyrics(song.syncedLyrics);
                 renderSyncedLyrics(currentLyrics);
                 startLyricsSync();
-                unsyncBtn.style.display = 'grid';
+                if(unsyncBtn) {
+                     unsyncBtn.style.display = 'grid';
+                     unsyncBtn.innerHTML = '<i class="fa-solid fa-pause"></i> Stop Sync';
+                }
             } else {
                 currentLyrics = null;
                 stopLyricsSync();
