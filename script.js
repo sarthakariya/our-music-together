@@ -1293,31 +1293,182 @@ function renderQueue(queueArray, currentVideoId) {
 
 function initDragAndDrop(list) {
     let draggedItem = null;
-    list.querySelectorAll('.song-item').forEach(item => {
-        item.addEventListener('dragstart', () => { draggedItem = item; item.classList.add('dragging'); });
+    let isTouch = false;
+
+    // Helper for vibration (battery friendly checks)
+    const haptic = (pattern) => {
+        if (navigator.vibrate) navigator.vibrate(pattern);
+    };
+
+    const items = list.querySelectorAll('.song-item');
+    items.forEach(item => {
+        // --- DESKTOP (Native Drag API) ---
+        item.addEventListener('dragstart', (e) => { 
+            draggedItem = item;
+            isTouch = false;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', item.dataset.key);
+            setTimeout(() => item.classList.add('dragging'), 0);
+            haptic(20); // Pickup feedback
+        });
+
         item.addEventListener('dragend', () => {
             item.classList.remove('dragging');
             draggedItem = null;
-            const newOrderKeys = Array.from(list.querySelectorAll('.song-item')).map(el => el.dataset.key);
-            const newOrder = newOrderKeys.map(key => currentQueue.find(s => s.key === key));
-            updateQueueOrder(newOrder);
+            saveQueueOrder(list);
+            haptic(20); // Drop feedback
         });
-        item.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            const afterElement = getDragAfterElement(list, e.clientY);
-            if (afterElement == null) list.appendChild(draggedItem);
-            else list.insertBefore(draggedItem, afterElement);
-        });
+        
+        // --- MOBILE (Touch Events) ---
+        const handle = item.querySelector('.drag-handle');
+        if(handle) {
+            handle.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Stop scrolling
+                const targetItem = e.target.closest('.song-item');
+                if(!targetItem) return;
+
+                isTouch = true;
+                draggedItem = targetItem;
+                draggedItem.classList.add('dragging');
+                
+                haptic(25); // Stronger pickup feedback
+
+                document.addEventListener('touchmove', onTouchMove, { passive: false });
+                document.addEventListener('touchend', onTouchEnd);
+            }, { passive: false });
+        }
     });
+
+    // --- SHARED LOGIC ---
+    list.ondragover = (e) => {
+        e.preventDefault(); // Allow drop
+        if (isTouch) return; // Handled by touchmove
+        handleMove(e.clientY);
+    };
+
+    let lastMoveTime = 0;
+    function onTouchMove(e) {
+        e.preventDefault(); 
+        const touch = e.touches[0];
+        
+        // Throttle to ~60fps to conserve battery
+        const now = Date.now();
+        if (now - lastMoveTime < 16) return; 
+        lastMoveTime = now;
+
+        handleMove(touch.clientY);
+        handleAutoScroll(touch.clientY);
+    }
+
+    function handleMove(y) {
+        const afterElement = getDragAfterElement(list, y);
+        const draggable = document.querySelector('.dragging');
+
+        if (draggable) {
+            const currentNextSibling = draggable.nextElementSibling;
+            
+            // Only manipulate DOM if the insertion point has changed
+            if (afterElement !== currentNextSibling) {
+                
+                // FLIP Animation: Capture positions BEFORE move
+                // We only animate the non-dragging items to slide them out of the way
+                const siblings = [...list.querySelectorAll('.song-item:not(.dragging)')];
+                const positions = new Map();
+                
+                if (isTouch) {
+                    siblings.forEach(el => positions.set(el, el.getBoundingClientRect().top));
+                }
+
+                // Perform DOM Move
+                if (afterElement == null) {
+                    list.appendChild(draggable);
+                } else {
+                    list.insertBefore(draggable, afterElement);
+                }
+                
+                // Haptic Feedback for the "snap" / reorder event
+                haptic(5); 
+
+                // FLIP Animation: Animate AFTER move
+                if (isTouch) {
+                    siblings.forEach(el => {
+                        const oldTop = positions.get(el);
+                        const newTop = el.getBoundingClientRect().top;
+                        const delta = oldTop - newTop;
+
+                        if (delta !== 0) {
+                            // Invert the change
+                            el.style.transform = `translateY(${delta}px)`;
+                            el.style.transition = 'none';
+                            
+                            // Force reflow
+                            void el.offsetHeight; 
+
+                            // Play transition to 0
+                            el.style.transform = '';
+                            el.style.transition = 'transform 0.3s cubic-bezier(0.2, 1, 0.3, 1)';
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    function handleAutoScroll(y) {
+        const scrollThreshold = 80;
+        const scrollSpeed = 12; 
+        const rect = list.getBoundingClientRect();
+        
+        if (y < rect.top + scrollThreshold) {
+            list.scrollTop -= scrollSpeed;
+        } else if (y > rect.bottom - scrollThreshold) {
+            list.scrollTop += scrollSpeed;
+        }
+    }
+
+    function onTouchEnd(e) {
+        if (draggedItem) {
+            draggedItem.classList.remove('dragging');
+            
+            // Cleanup transitions
+            const items = list.querySelectorAll('.song-item');
+            items.forEach(el => {
+                el.style.transform = '';
+                el.style.transition = '';
+            });
+
+            draggedItem = null;
+            haptic(20); // Drop feedback
+            saveQueueOrder(list);
+        }
+        
+        document.removeEventListener('touchmove', onTouchMove);
+        document.removeEventListener('touchend', onTouchEnd);
+        isTouch = false;
+    }
+}
+
+function saveQueueOrder(list) {
+    const newOrderKeys = Array.from(list.querySelectorAll('.song-item')).map(el => el.dataset.key);
+    // Filter out undefineds to be safe
+    const newOrder = newOrderKeys.map(key => currentQueue.find(s => s.key === key)).filter(s => s);
+    if(newOrder.length > 0) updateQueueOrder(newOrder);
 }
 
 function getDragAfterElement(container, y) {
     const draggableElements = [...container.querySelectorAll('.song-item:not(.dragging)')];
+    
     return draggableElements.reduce((closest, child) => {
         const box = child.getBoundingClientRect();
         const offset = y - box.top - box.height / 2;
-        if (offset < 0 && offset > closest.offset) return { offset: offset, element: child };
-        else return closest;
+        
+        // "offset < 0" means the cursor is above the center of the element.
+        // We want the element with the largest negative offset (closest to 0 from negative side)
+        if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+        } else {
+            return closest;
+        }
     }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
