@@ -1048,14 +1048,35 @@ document.getElementById('mobileSheetClose').addEventListener('click', () => {
     document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
 });
 
-// --- RESTORED: SEARCH LOGIC ---
+// --- UPDATED: SEARCH & PLAYLIST IMPORT LOGIC ---
 async function handleSearch() {
     const query = UI.searchInput.value.trim();
     if (!query) return;
 
+    // 1. Detect Spotify Links (Explain limitation)
+    if (query.includes('spotify.com')) {
+        showToast("System", "Spotify import requires specific API keys. Please use YouTube/YouTube Music playlists.");
+        return;
+    }
+
+    // 2. Detect YouTube Playlist Link (Standard or Music)
+    // Matches: list=PL... or full URL
+    let playlistId = null;
+    try {
+        const listMatch = query.match(/[?&]list=([^#\&\?]+)/);
+        if (listMatch) {
+            playlistId = listMatch[1];
+        }
+    } catch(e) {}
+
+    if (playlistId) {
+        UI.searchInput.value = '';
+        importYouTubePlaylist(playlistId);
+        return;
+    }
+
+    // 3. Normal Search
     UI.resultsList.innerHTML = '<div style="display:flex; justify-content:center; padding:20px;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
-    
-    // Switch to results tab automatically
     switchTab('results', true);
 
     try {
@@ -1070,6 +1091,61 @@ async function handleSearch() {
     } catch (error) {
         console.error("Search Error:", error);
         UI.resultsList.innerHTML = '<div class="empty-state"><p>Error searching. Please try again.</p></div>';
+    }
+}
+
+async function importYouTubePlaylist(playlistId) {
+    showToast("System", "Fetching playlist items...");
+    
+    let items = [];
+    let nextPageToken = '';
+    const maxResults = 50; 
+    let keepFetching = true;
+    let page = 0;
+    
+    // Switch to queue tab so user sees incoming items
+    switchTab('queue');
+
+    try {
+        // Fetch up to 5 pages (approx 250 songs) to prevent API quota exhaustion
+        while (keepFetching && page < 5) {
+            const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=${maxResults}&playlistId=${playlistId}&key=${YOUTUBE_API_KEY}&pageToken=${nextPageToken}`);
+            const data = await res.json();
+            
+            if (!data.items) break;
+            
+            const validItems = data.items
+                .filter(i => i.snippet.title !== 'Private video' && i.snippet.title !== 'Deleted video')
+                .map(i => ({
+                    videoId: i.snippet.resourceId.videoId,
+                    title: smartCleanTitle(i.snippet.title),
+                    uploader: i.snippet.videoOwnerChannelTitle || i.snippet.channelTitle,
+                    thumbnail: i.snippet.thumbnails.medium?.url || i.snippet.thumbnails.default?.url || 'https://via.placeholder.com/512'
+                }));
+            
+            items = [...items, ...validItems];
+            nextPageToken = data.nextPageToken || '';
+            
+            if (!nextPageToken) keepFetching = false;
+            page++;
+        }
+
+        if (items.length > 0) {
+            addBatchToQueue(items);
+            // Auto-play if queue was empty
+            if (!currentVideoId && currentQueue.length === 0) {
+                setTimeout(() => {
+                    const first = items[0];
+                    if(first) initiateSongLoad(first);
+                }, 1500); // Slight delay for Firebase sync
+            }
+            showToast("System", `Imported ${items.length} songs.`);
+        } else {
+            showToast("System", "No playable songs found in this playlist.");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("System", "Error loading playlist. Is it private?");
     }
 }
 
