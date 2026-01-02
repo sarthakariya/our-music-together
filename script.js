@@ -1346,11 +1346,11 @@ if (unsyncLyricsBtn) {
     unsyncLyricsBtn.addEventListener('click', () => {
         if (lyricsInterval) {
             stopLyricsSync();
-            unsyncLyricsBtn.innerHTML = '<i class="fa-solid fa-play"></i> Resume Sync';
+            unsyncLyricsBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
             showToast("System", "Lyrics sync paused");
         } else {
             startLyricsSync();
-            unsyncLyricsBtn.innerHTML = '<i class="fa-solid fa-pause"></i> Stop Sync';
+            unsyncLyricsBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
             showToast("System", "Lyrics sync resumed");
         }
     });
@@ -1496,7 +1496,7 @@ async function fetchLyrics(manualQuery = null) {
     searchBar.style.display = 'none'; 
     if(unsyncBtn) {
         unsyncBtn.style.display = 'none';
-        unsyncBtn.innerHTML = '<i class="fa-solid fa-pause"></i> Stop Sync';
+        unsyncBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
     }
     lastLyricsIndex = -1; 
     currentPlainLyrics = ""; 
@@ -1532,7 +1532,7 @@ async function fetchLyrics(manualQuery = null) {
                 startLyricsSync();
                 if(unsyncBtn) {
                      unsyncBtn.style.display = 'grid';
-                     unsyncBtn.innerHTML = '<i class="fa-solid fa-pause"></i> Stop Sync';
+                     unsyncBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
                 }
             } else {
                 currentLyrics = null;
