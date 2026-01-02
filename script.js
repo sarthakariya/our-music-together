@@ -347,8 +347,12 @@ setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
         
+        // FIX FOR REECHITA: Bypass ad detection in background to force playback
+        // This fixes the issue where background play stops on her phone due to false positives
+        const forceBackground = (myName === "Reechita");
+
         // CASE 1: Stopped/Paused but NOT by user. Force Play.
-        if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
+        if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && (!detectAd() || forceBackground)) {
             console.log("Background Keep-Alive: Resuming paused video");
             try { player.playVideo(); } catch(e){}
         }
@@ -360,7 +364,7 @@ setInterval(() => {
              try { player.playVideo(); } catch(e){}
         }
     }
-}, 1000); // Check every 1 second
+}, 800); // Check every 800ms (more aggressive)
 
 // --- CORE SYNC LOGIC ---
 
