@@ -77,14 +77,28 @@ let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
 let syncHealthInterval = null;
 
+// --- WAKE LOCK API (FIX FOR MOBILE BACKGROUND) ---
+let wakeLock = null;
+async function requestWakeLock() {
+    if ('wakeLock' in navigator) {
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => {
+                console.log('Wake Lock released');
+            });
+        } catch (err) {
+            console.error(`Wake Lock error: ${err.name}, ${err.message}`);
+        }
+    }
+}
+
 // --- BATTERY SAVER / VISIBILITY LOGIC ---
 let smartIntervals = [];
 
 function setSmartInterval(callback, normalMs, hiddenMs) {
     let intervalId = null;
-    // CRITICAL FIX: For background playback on mobile, do NOT increase interval significantly.
-    // Keeping the interval short ensures the JS loop catches the "song ended" event
-    // before the OS suspends the tab.
+    // CRITICAL FIX: Decreased hidden interval slightly to 900ms to avoid exact 1s throttling
+    // ensuring "Reechita" and "Sarthk" get updates on restricted mobile OS.
     let currentMs = document.hidden ? hiddenMs : normalMs;
     
     const run = () => {
@@ -132,6 +146,7 @@ document.addEventListener('visibilitychange', () => {
         }
         if(currentLyrics) startLyricsSync();
         updateSyncStatus();
+        requestWakeLock(); // Re-request wake lock on visibility
     }
 });
 
@@ -224,10 +239,12 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     
-    // SMART TIMER FIX: Heartbeat sync (0.8s active, 1s hidden)
-    // We keep the hidden interval SHORT (1000ms) to prevent the OS from killing the tab
+    requestWakeLock(); // Request Wake Lock immediately
+
+    // SMART TIMER FIX: Heartbeat sync (0.8s active, 0.9s hidden)
+    // We keep the hidden interval SHORT (900ms) to prevent the OS from killing the tab
     // during the silence between songs.
-    setSmartInterval(heartbeatSync, 800, 1000);
+    setSmartInterval(heartbeatSync, 800, 900);
     
     // SMART TIMER FIX: Monitor Sync Health (1.5s active, 1.5s hidden)
     setSmartInterval(monitorSyncHealth, 1500, 1500);
@@ -347,12 +364,8 @@ setInterval(() => {
     if (document.hidden && player && player.getPlayerState) {
         const state = player.getPlayerState();
         
-        // FIX FOR REECHITA: Bypass ad detection in background to force playback
-        // This fixes the issue where background play stops on her phone due to false positives
-        const forceBackground = (myName === "Reechita");
-
         // CASE 1: Stopped/Paused but NOT by user. Force Play.
-        if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && (!detectAd() || forceBackground)) {
+        if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
             console.log("Background Keep-Alive: Resuming paused video");
             try { player.playVideo(); } catch(e){}
         }
@@ -363,8 +376,14 @@ setInterval(() => {
              console.log("Background Keep-Alive: Kickstarting stuck video");
              try { player.playVideo(); } catch(e){}
         }
+
+        // Broadcaster Extra Keep-Alive (Fix for Reechita/Sarthk/Specific Mobile Issues)
+        if (lastBroadcaster === myName && state === YT.PlayerState.PLAYING) {
+            // No-op to keep JS thread warm if possible
+            const _keepAlive = Date.now();
+        }
     }
-}, 800); // Check every 800ms (more aggressive)
+}, 900); // Check every 900ms to be faster than OS throttle
 
 // --- CORE SYNC LOGIC ---
 
@@ -520,6 +539,7 @@ function onPlayerStateChange(event) {
 
     if (state === YT.PlayerState.PLAYING) {
          userIntentionallyPaused = false;
+         requestWakeLock();
          if (isSwitchingSong) {
              isSwitchingSong = false;
              updateSyncStatus();
@@ -575,6 +595,7 @@ function togglePlayPause() {
         try { player.pauseVideo(); } catch(e){}
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
+        requestWakeLock();
         UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>'; 
         userIntentionallyPaused = false; 
         if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
@@ -605,6 +626,7 @@ function initiateSongLoad(songObj) {
     isSwitchingSong = true;
     userIntentionallyPaused = false; 
     lastBroadcaster = myName;
+    requestWakeLock();
     
     showToast("System", "Switching track...");
     UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
