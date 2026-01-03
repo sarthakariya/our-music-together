@@ -1220,7 +1220,8 @@ function initDragAndDrop(list) {
 
         const rect = list.getBoundingClientRect();
         const threshold = 80; 
-        const maxSpeed = 15; 
+        // Increased scroll speed as requested
+        const maxSpeed = 40; 
         let scrollY = 0;
         
         if (currentY < rect.top + threshold) {
@@ -1658,13 +1659,17 @@ document.addEventListener('click', (e) => {
         
         if (player) {
              if (currentVideoId) { try { player.playVideo(); } catch(e){} } 
-             else if (currentRemoteState && currentRemoteState.videoId) {
+             // --- CRITICAL FIX FOR JOIN SYNC ---
+             // If a partner is already playing a song, prioritize that state over the top of the queue.
+             else if (currentRemoteState && currentRemoteState.videoId && currentRemoteState.action !== 'pause') {
                  const vidId = currentRemoteState.videoId;
+                 const time = currentRemoteState.time || 0;
                  const song = currentQueue.find(s => s.videoId === vidId);
                  const title = song ? song.title : "Syncing...";
                  const uploader = song ? song.uploader : "";
-                 const startTime = currentRemoteState.time || 0;
-                 loadAndPlayVideo(vidId, title, uploader, startTime, false, true);
+                 
+                 // Force load remote song immediately
+                 loadAndPlayVideo(vidId, title, uploader, time, false, true);
              }
              else if (currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
         }
