@@ -31,6 +31,29 @@ dndStyles.innerHTML = `
     border: 1px solid #f50057;
 }
 
+/* Duplicate Modal Styles */
+.dup-modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85); z-index: 10000;
+    display: flex; justify-content: center; align-items: center;
+    backdrop-filter: blur(5px); opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+.dup-modal-overlay.active { opacity: 1; pointer-events: all; }
+.dup-modal {
+    background: #1e1e1e; border: 1px solid #333; border-radius: 12px;
+    padding: 25px; width: 90%; max-width: 400px; text-align: center;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5); transform: scale(0.9); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.dup-modal-overlay.active .dup-modal { transform: scale(1); }
+.dup-modal h3 { margin: 0 0 15px; color: #f50057; font-size: 1.2rem; }
+.dup-modal p { color: #ccc; margin-bottom: 25px; line-height: 1.5; font-size: 0.95rem; }
+.dup-btn-group { display: flex; flex-direction: column; gap: 10px; }
+.dup-btn { padding: 12px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 0.9rem; }
+.dup-btn.replace { background: #f50057; color: white; }
+.dup-btn.add { background: #333; color: white; border: 1px solid #444; }
+.dup-btn.cancel { background: transparent; color: #888; }
+.dup-btn:active { transform: scale(0.98); }
+
 /* BATTERY SAVER: Pause animations when class .low-power-mode is active */
 body.low-power-mode .song-item.playing,
 body.low-power-mode .mini-eq-bar,
@@ -95,6 +118,28 @@ const UI = {
     closeInfoBtn: document.getElementById('closeInfoBtn')
 };
 
+// --- INJECT DUPLICATE MODAL HTML ---
+const dupModalHTML = `
+<div id="dupModal" class="dup-modal-overlay">
+    <div class="dup-modal">
+        <h3><i class="fa-solid fa-copy"></i> Duplicate Detected</h3>
+        <p id="dupMsg">This song seems to be in the queue already.</p>
+        <div class="dup-btn-group">
+            <button id="dupReplaceBtn" class="dup-btn replace">Replace Old Version</button>
+            <button id="dupAddBtn" class="dup-btn add">Add Anyway (Duplicate)</button>
+            <button id="dupCancelBtn" class="dup-btn cancel">Cancel</button>
+        </div>
+    </div>
+</div>`;
+document.body.insertAdjacentHTML('beforeend', dupModalHTML);
+const UI_DUP = {
+    overlay: document.getElementById('dupModal'),
+    msg: document.getElementById('dupMsg'),
+    replaceBtn: document.getElementById('dupReplaceBtn'),
+    addBtn: document.getElementById('dupAddBtn'),
+    cancelBtn: document.getElementById('dupCancelBtn')
+};
+
 // --- STATE VARIABLES ---
 let player, currentQueue = [], currentVideoId = null;
 let lastBroadcaster = "System"; 
@@ -103,6 +148,7 @@ let currentRemoteState = null;
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
 let lastQueueSignature = ""; 
+let pendingAddData = null; // Store data for duplicate resolution
 
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
@@ -966,8 +1012,8 @@ async function handleSearch() {
     const query = UI.searchInput.value.trim();
     if (!query) return;
 
-    if (query.includes('spotify.com')) {
-        showToast("System", "Spotify import requires specific API keys. Please use YouTube/YouTube Music playlists.");
+    if (query.includes('open.spotify.com')) {
+        handleSpotifyImport(query);
         return;
     }
 
@@ -994,6 +1040,84 @@ async function handleSearch() {
     } catch (error) {
         console.error("Search Error:", error);
         UI.resultsList.innerHTML = '<div class="empty-state"><p>Error searching. Please try again.</p></div>';
+    }
+}
+
+// --- SPOTIFY IMPORT LOGIC ---
+async function handleSpotifyImport(url) {
+    const regex = /playlist\/([a-zA-Z0-9]+)/;
+    const match = url.match(regex);
+    if (!match) { showToast("System", "Invalid Spotify playlist URL."); return; }
+    const playlistId = match[1];
+
+    let clientId = localStorage.getItem('sp_id');
+    let clientSecret = localStorage.getItem('sp_secret');
+
+    if (!clientId || !clientSecret) {
+        if(!confirm("To import from Spotify, we need a Client ID & Secret (Workaround). Do you have them?")) return;
+        clientId = prompt("Enter Spotify Client ID:");
+        clientSecret = prompt("Enter Spotify Client Secret:");
+        if (!clientId || !clientSecret) return;
+        localStorage.setItem('sp_id', clientId);
+        localStorage.setItem('sp_secret', clientSecret);
+    }
+
+    UI.searchInput.value = '';
+    showToast("System", "Authenticating with Spotify...");
+    switchTab('queue');
+
+    try {
+        // 1. Get Token
+        const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': 'Basic ' + btoa(clientId + ':' + clientSecret)
+            },
+            body: 'grant_type=client_credentials'
+        });
+        const tokenData = await tokenRes.json();
+        if (!tokenData.access_token) throw new Error("Invalid Spotify Credentials");
+
+        // 2. Get Tracks
+        showToast("System", "Fetching Spotify tracks...");
+        const tracksRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=20`, {
+            headers: { 'Authorization': 'Bearer ' + tokenData.access_token }
+        });
+        const tracksData = await tracksRes.json();
+        
+        if (!tracksData.items || tracksData.items.length === 0) throw new Error("No tracks found");
+
+        showToast("System", `Converting ${tracksData.items.length} songs (Limit 20)...`);
+        
+        // 3. Convert Loop
+        let addedCount = 0;
+        for (const item of tracksData.items) {
+            if (!item.track) continue;
+            const query = `${item.track.name} ${item.track.artists[0].name} audio`;
+            
+            try {
+                const ytRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${encodeURIComponent(query)}&type=video&key=${YOUTUBE_API_KEY}`);
+                const ytData = await ytRes.json();
+                
+                if (ytData.items && ytData.items.length > 0) {
+                    const vid = ytData.items[0];
+                    // Using direct add to prevent spamming modals for every duplicate in a playlist
+                    directAddToQueue(vid.id.videoId, vid.snippet.title, vid.snippet.channelTitle, vid.snippet.thumbnails.medium?.url || vid.snippet.thumbnails.default?.url);
+                    addedCount++;
+                    // Basic throttle to prevent hitting rate limit instantly
+                    await new Promise(r => setTimeout(r, 100)); 
+                }
+            } catch (e) { console.error("Conversion failed for one track", e); }
+        }
+        
+        showToast("System", `Imported ${addedCount} songs from Spotify!`);
+
+    } catch (e) {
+        console.error(e);
+        localStorage.removeItem('sp_id'); 
+        localStorage.removeItem('sp_secret');
+        showToast("System", "Spotify Import Failed. Check Credentials.");
     }
 }
 
@@ -1065,9 +1189,9 @@ function renderSearchResults(items) {
         `;
 
         el.onclick = () => {
-            addToQueue(videoId, title, channel, thumb);
+            // Interactive Add (Checks for duplicates)
+            interactiveAddToQueue(videoId, title, channel, thumb);
             triggerHaptic();
-            showToast("System", "Added to queue");
         };
 
         fragment.appendChild(el);
@@ -1075,13 +1199,114 @@ function renderSearchResults(items) {
     UI.resultsList.appendChild(fragment);
 }
 
-// --- QUEUE LOGIC ---
-function addToQueue(videoId, title, uploader, thumbnail) {
+// --- QUEUE LOGIC & DUPLICATE DETECTION ---
+
+function getLevenshteinDistance(a, b) {
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+function getStringSimilarity(s1, s2) {
+    if (s1 === s2) return 1;
+    if (!s1 || !s2) return 0;
+    const longer = s1.length > s2.length ? s1 : s2;
+    const shorter = s1.length > s2.length ? s2 : s1;
+    if (longer.length === 0) return 1.0;
+    return (longer.length - getLevenshteinDistance(longer, shorter)) / parseFloat(longer.length);
+}
+
+function generateFingerprints(title) {
+    if (!title) return { sorted: "", ordered: "" };
+    let s = title.toLowerCase();
+    // Remove bracketed content (often contains fluff like 'official video')
+    s = s.replace(/\s*[\(\[].*?[\)\]]/g, ' '); 
+    // Remove specific keywords
+    s = s.replace(/\b(official|video|audio|music|lyrics|lyric|hd|hq|4k|ft|feat|featuring|live|performance|mv|prod|dir|remix|with)\b/g, ' ');
+    
+    // 1. Ordered Fingerprint (Just alphanumeric, good for exact title matches ignoring spaces)
+    const ordered = s.replace(/[^a-z0-9]/g, '');
+
+    // 2. Sorted Fingerprint (Bag of words, good for 'Artist - Title' vs 'Title - Artist')
+    // Split by non-alphanumeric to get tokens
+    const tokens = s.split(/[^a-z0-9]+/).filter(t => t.length > 0);
+    const sorted = tokens.sort().join('');
+    
+    return { ordered, sorted };
+}
+
+function findDuplicateInQueue(videoId, title) {
+    const newFps = generateFingerprints(title);
+    
+    for (const song of currentQueue) {
+        // 1. Exact Video ID Match
+        if (song.videoId === videoId) return song;
+
+        const existingFps = generateFingerprints(song.title);
+        
+        // 2. Compare Ordered Fingerprints (High precision)
+        // e.g. "despacito" vs "despacito"
+        if (newFps.ordered.length > 3 && existingFps.ordered.length > 3) {
+             if (newFps.ordered.includes(existingFps.ordered) || existingFps.ordered.includes(newFps.ordered)) return song;
+             // Fuzzy match ordered
+             if (getStringSimilarity(newFps.ordered, existingFps.ordered) > 0.85) return song;
+        }
+
+        // 3. Compare Sorted Fingerprints (Handles reordering)
+        // e.g. "imaginedragonsbeliever" vs "believerimaginedragons"
+        if (newFps.sorted.length > 5 && existingFps.sorted.length > 5) {
+             // Exact sorted match
+             if (newFps.sorted === existingFps.sorted) return song;
+             // Fuzzy sorted match
+             if (getStringSimilarity(newFps.sorted, existingFps.sorted) > 0.85) return song;
+        }
+    }
+    return null;
+}
+
+function interactiveAddToQueue(videoId, title, uploader, thumbnail) {
+    const dup = findDuplicateInQueue(videoId, title);
+    if (dup) {
+        // Show Duplicate Modal
+        pendingAddData = { videoId, title, uploader, thumbnail, replaceKey: dup.key, dupOrder: dup.order };
+        UI_DUP.msg.innerHTML = `
+            <span style="color:#fff; font-weight:bold;">${smartCleanTitle(title)}</span><br>
+            <span style="font-size:0.85em; opacity:0.7;">is similar to existing:</span><br>
+            <span style="color:#f50057;">${dup.title}</span>
+        `;
+        UI_DUP.overlay.classList.add('active');
+    } else {
+        directAddToQueue(videoId, title, uploader, thumbnail);
+        showToast("System", "Added to queue");
+    }
+}
+
+function directAddToQueue(videoId, title, uploader, thumbnail, replaceKey = null, replaceOrder = null) {
+    if (replaceKey) {
+        queueRef.child(replaceKey).remove();
+        showToast("System", "Replaced old version.");
+    }
+    
     const newKey = queueRef.push().key;
     const cleanTitle = smartCleanTitle(title);
-    queueRef.child(newKey).set({ videoId, title: cleanTitle, uploader, thumbnail, addedBy: myName, order: Date.now() })
+    const order = replaceOrder ? replaceOrder : Date.now();
+    
+    queueRef.child(newKey).set({ videoId, title: cleanTitle, uploader, thumbnail, addedBy: myName, order: order })
         .then(() => {
-            showToast("System", `Added ${cleanTitle}`);
+            if (!replaceKey) {
+                // Only show toast here if not replacing (as we showed 'Replaced' above, or show 'Added' if simple add)
+                // Actually, let's let the caller handle success messages if complex logic, but for simple adds this is fine.
+            }
             if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title: cleanTitle, uploader});
         });
 }
@@ -1091,6 +1316,8 @@ function addBatchToQueue(songs) {
     showToast("System", `Adding ${songs.length} songs to queue...`); 
     const updates = {};
     songs.forEach((s, i) => {
+        // We use direct add logic but in batch. 
+        // Note: Batch add skips duplication check to allow bulk operations without user interaction
         const newKey = queueRef.push().key;
         updates[newKey] = { ...s, addedBy: myName, order: Date.now() + i * 100 };
     });
@@ -1639,6 +1866,26 @@ document.querySelectorAll('.mobile-nav-item').forEach(btn => {
 document.querySelectorAll('.nav-tab').forEach(btn => {
     btn.addEventListener('click', (e) => { const target = e.currentTarget.dataset.target; if(target) switchTab(target); });
 });
+
+// --- DUP MODAL LISTENERS ---
+UI_DUP.addBtn.onclick = () => {
+    if(!pendingAddData) return;
+    directAddToQueue(pendingAddData.videoId, pendingAddData.title, pendingAddData.uploader, pendingAddData.thumbnail);
+    showToast("System", "Added duplicate.");
+    UI_DUP.overlay.classList.remove('active');
+    pendingAddData = null;
+};
+UI_DUP.replaceBtn.onclick = () => {
+    if(!pendingAddData) return;
+    // We pass replaceKey and dupOrder to remove old and use old order
+    directAddToQueue(pendingAddData.videoId, pendingAddData.title, pendingAddData.uploader, pendingAddData.thumbnail, pendingAddData.replaceKey, pendingAddData.dupOrder);
+    UI_DUP.overlay.classList.remove('active');
+    pendingAddData = null;
+};
+UI_DUP.cancelBtn.onclick = () => {
+    UI_DUP.overlay.classList.remove('active');
+    pendingAddData = null;
+};
 
 // --- WELCOME SCREEN (ROBUST FIX) ---
 document.addEventListener('click', (e) => {
