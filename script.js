@@ -1,31 +1,3 @@
-// ============================================================================
-// --- ULTIMATE BACKGROUND PLAYBACK HACK (VISIBILITY SPOOFING) ---
-// ============================================================================
-// This forces YouTube to think the tab is ALWAYS visible. It prevents YouTube 
-// from triggering its auto-pause when you lock the phone or switch apps!
-try {
-    Object.defineProperty(document, 'hidden', { get: () => false });
-    Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
-    Object.defineProperty(document, 'webkitHidden', { get: () => false });
-    
-    // Completely block the visibilitychange event from reaching YouTube's scripts
-    const originalAddEventListener = document.addEventListener;
-    document.addEventListener = function(type, listener, options) {
-        if (type === 'visibilitychange' || type === 'webkitvisibilitychange') {
-            return; // Drop the event!
-        }
-        return originalAddEventListener.call(this, type, listener, options);
-    };
-} catch(e) {
-    console.warn("Visibility spoofing blocked by browser.", e);
-}
-
-// --- BACKGROUND KEEP-ALIVE AUDIO ---
-// Keeps the Chrome processing active
-const silentAudio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
-silentAudio.loop = true;
-silentAudio.volume = 0.01;
-
 // --- INJECTED STYLES FOR DRAG & DROP VISUALS & BATTERY OPTIMIZATIONS ---
 const dndStyles = document.createElement('style');
 dndStyles.innerHTML = `
@@ -202,7 +174,7 @@ async function requestWakeLock() {
     }
 }
 
-// --- BATTERY SAVER (Using Window Blur since we broke visibilitychange on purpose) ---
+// --- BATTERY SAVER ---
 let smartIntervals = [];
 
 function setSmartInterval(callback, ms) {
@@ -386,16 +358,13 @@ function monitorAdStatus() {
     }
 }
 
-// --- MEDIA SESSION FIX FOR BACKGROUND ---
+// --- TRUE NATIVE MEDIA SESSION SUPPORT ---
 function setupMediaSession() {
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', function() {
             if(player && player.playVideo) { 
                 userIntentionallyPaused = false;
                 try { player.playVideo(); } catch(e){} 
-                updatePlayPauseButton(YT.PlayerState.PLAYING);
-                lastBroadcaster = myName;
-                broadcastState('play', player.getCurrentTime(), currentVideoId, true);
             }
         });
         
@@ -403,14 +372,20 @@ function setupMediaSession() {
             if(player && player.pauseVideo) { 
                 userIntentionallyPaused = true;
                 try { player.pauseVideo(); } catch(e){}
-                updatePlayPauseButton(YT.PlayerState.PAUSED);
-                lastBroadcaster = myName;
-                broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
             }
         });
         
         navigator.mediaSession.setActionHandler('previoustrack', function() { initiatePrevSong(); });
         navigator.mediaSession.setActionHandler('nexttrack', function() { initiateNextSong(); });
+        
+        // ADDED: Enables scrolling through the song from the notification bar!
+        navigator.mediaSession.setActionHandler('seekto', function(details) {
+            if(player && player.seekTo && details.seekTime) {
+                player.seekTo(details.seekTime);
+                lastBroadcaster = myName;
+                broadcastState('play', details.seekTime, currentVideoId, true);
+            }
+        });
     }
 }
 
@@ -436,6 +411,18 @@ function heartbeatSync() {
             userIntentionallyPaused = false; 
             const duration = player.getDuration();
             const current = player.getCurrentTime();
+            
+            // ADDED: Continually updates the notification bar slider
+            if ('mediaSession' in navigator) {
+                try {
+                    navigator.mediaSession.setPositionState({
+                        duration: duration || 0,
+                        playbackRate: player.getPlaybackRate() || 1,
+                        position: current || 0
+                    });
+                } catch(e){}
+            }
+
             if (duration > 0 && duration - current < 1) initiateNextSong(); 
             else broadcastState('play', current, currentVideoId);
         }
@@ -517,7 +504,6 @@ function updatePlayPauseButton(state) {
     if (!UI.playPauseBtn.innerHTML.includes(iconClass)) {
         UI.playPauseBtn.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
     }
-    if(navigator.mediaSession) navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
 }
 
 function onPlayerStateChange(event) {
@@ -528,6 +514,11 @@ function onPlayerStateChange(event) {
          userIntentionallyPaused = false;
          requestWakeLock();
          if (isSwitchingSong) { isSwitchingSong = false; updateSyncStatus(); }
+         if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
+    }
+
+    if (state === YT.PlayerState.PAUSED) {
+         if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
     }
 
     if(Date.now() - lastLocalInteractionTime > 500) updatePlayPauseButton(state);
@@ -1695,8 +1686,6 @@ if (startSessionBtn && welcomeOverlay) {
         }, 500);
         
         hasUserInteracted = true;
-        
-        silentAudio.play().catch(err => console.log("Silent audio blocked", err));
 
         if(player && typeof player.unMute === 'function') {
             player.unMute();
