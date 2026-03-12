@@ -1,3 +1,10 @@
+// --- BACKGROUND KEEP-ALIVE AUDIO ---
+// This tiny, silent audio file loops continuously to trick the mobile browser
+// into keeping the tab alive in the background without user intervention.
+const silentAudio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
+silentAudio.loop = true;
+silentAudio.volume = 0.01;
+
 // --- INJECTED STYLES FOR DRAG & DROP VISUALS & BATTERY OPTIMIZATIONS ---
 const dndStyles = document.createElement('style');
 dndStyles.innerHTML = `
@@ -409,22 +416,33 @@ function monitorAdStatus() {
     }
 }
 
+// --- MEDIA SESSION FIX FOR BACKGROUND ---
 function setupMediaSession() {
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', function() {
             if(player && player.playVideo) { 
                 userIntentionallyPaused = false;
                 try { player.playVideo(); } catch(e){} 
-                togglePlayPause(); 
+                
+                // Update UI and Sync state directly instead of toggling to avoid reversing command
+                updatePlayPauseButton(YT.PlayerState.PLAYING);
+                lastBroadcaster = myName;
+                broadcastState('play', player.getCurrentTime(), currentVideoId, true);
             }
         });
+        
         navigator.mediaSession.setActionHandler('pause', function() {
             if(player && player.pauseVideo) { 
                 userIntentionallyPaused = true;
                 try { player.pauseVideo(); } catch(e){}
-                togglePlayPause(); 
+                
+                // Update UI and Sync state directly instead of toggling
+                updatePlayPauseButton(YT.PlayerState.PAUSED);
+                lastBroadcaster = myName;
+                broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
             }
         });
+        
         navigator.mediaSession.setActionHandler('previoustrack', function() { initiatePrevSong(); });
         navigator.mediaSession.setActionHandler('nexttrack', function() { initiateNextSong(); });
     }
@@ -1067,7 +1085,6 @@ async function handleSpotifyImport(url) {
     switchTab('queue');
 
     try {
-        // 1. Get Token
         const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
             method: 'POST',
             headers: {
@@ -1079,7 +1096,6 @@ async function handleSpotifyImport(url) {
         const tokenData = await tokenRes.json();
         if (!tokenData.access_token) throw new Error("Invalid Spotify Credentials");
 
-        // 2. Get Tracks
         showToast("System", "Fetching Spotify tracks...");
         const tracksRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=20`, {
             headers: { 'Authorization': 'Bearer ' + tokenData.access_token }
@@ -1090,7 +1106,6 @@ async function handleSpotifyImport(url) {
 
         showToast("System", `Converting ${tracksData.items.length} songs (Limit 20)...`);
         
-        // 3. Convert Loop
         let addedCount = 0;
         for (const item of tracksData.items) {
             if (!item.track) continue;
@@ -1102,10 +1117,8 @@ async function handleSpotifyImport(url) {
                 
                 if (ytData.items && ytData.items.length > 0) {
                     const vid = ytData.items[0];
-                    // Using direct add to prevent spamming modals for every duplicate in a playlist
                     directAddToQueue(vid.id.videoId, vid.snippet.title, vid.snippet.channelTitle, vid.snippet.thumbnails.medium?.url || vid.snippet.thumbnails.default?.url);
                     addedCount++;
-                    // Basic throttle to prevent hitting rate limit instantly
                     await new Promise(r => setTimeout(r, 100)); 
                 }
             } catch (e) { console.error("Conversion failed for one track", e); }
@@ -1189,7 +1202,6 @@ function renderSearchResults(items) {
         `;
 
         el.onclick = () => {
-            // Interactive Add (Checks for duplicates)
             interactiveAddToQueue(videoId, title, channel, thumb);
             triggerHaptic();
         };
@@ -1229,19 +1241,11 @@ function getStringSimilarity(s1, s2) {
 function generateFingerprints(title) {
     if (!title) return { sorted: "", ordered: "" };
     let s = title.toLowerCase();
-    // Remove bracketed content (often contains fluff like 'official video')
     s = s.replace(/\s*[\(\[].*?[\)\]]/g, ' '); 
-    // Remove specific keywords
     s = s.replace(/\b(official|video|audio|music|lyrics|lyric|hd|hq|4k|ft|feat|featuring|live|performance|mv|prod|dir|remix|with)\b/g, ' ');
-    
-    // 1. Ordered Fingerprint (Just alphanumeric, good for exact title matches ignoring spaces)
     const ordered = s.replace(/[^a-z0-9]/g, '');
-
-    // 2. Sorted Fingerprint (Bag of words, good for 'Artist - Title' vs 'Title - Artist')
-    // Split by non-alphanumeric to get tokens
     const tokens = s.split(/[^a-z0-9]+/).filter(t => t.length > 0);
     const sorted = tokens.sort().join('');
-    
     return { ordered, sorted };
 }
 
@@ -1249,25 +1253,16 @@ function findDuplicateInQueue(videoId, title) {
     const newFps = generateFingerprints(title);
     
     for (const song of currentQueue) {
-        // 1. Exact Video ID Match
         if (song.videoId === videoId) return song;
 
         const existingFps = generateFingerprints(song.title);
-        
-        // 2. Compare Ordered Fingerprints (High precision)
-        // e.g. "despacito" vs "despacito"
         if (newFps.ordered.length > 3 && existingFps.ordered.length > 3) {
              if (newFps.ordered.includes(existingFps.ordered) || existingFps.ordered.includes(newFps.ordered)) return song;
-             // Fuzzy match ordered
              if (getStringSimilarity(newFps.ordered, existingFps.ordered) > 0.85) return song;
         }
 
-        // 3. Compare Sorted Fingerprints (Handles reordering)
-        // e.g. "imaginedragonsbeliever" vs "believerimaginedragons"
         if (newFps.sorted.length > 5 && existingFps.sorted.length > 5) {
-             // Exact sorted match
              if (newFps.sorted === existingFps.sorted) return song;
-             // Fuzzy sorted match
              if (getStringSimilarity(newFps.sorted, existingFps.sorted) > 0.85) return song;
         }
     }
@@ -1277,7 +1272,6 @@ function findDuplicateInQueue(videoId, title) {
 function interactiveAddToQueue(videoId, title, uploader, thumbnail) {
     const dup = findDuplicateInQueue(videoId, title);
     if (dup) {
-        // Show Duplicate Modal
         pendingAddData = { videoId, title, uploader, thumbnail, replaceKey: dup.key, dupOrder: dup.order };
         UI_DUP.msg.innerHTML = `
             <span style="color:#fff; font-weight:bold;">${smartCleanTitle(title)}</span><br>
@@ -1291,634 +1285,4 @@ function interactiveAddToQueue(videoId, title, uploader, thumbnail) {
     }
 }
 
-function directAddToQueue(videoId, title, uploader, thumbnail, replaceKey = null, replaceOrder = null) {
-    if (replaceKey) {
-        queueRef.child(replaceKey).remove();
-        showToast("System", "Replaced old version.");
-    }
-    
-    const newKey = queueRef.push().key;
-    const cleanTitle = smartCleanTitle(title);
-    const order = replaceOrder ? replaceOrder : Date.now();
-    
-    queueRef.child(newKey).set({ videoId, title: cleanTitle, uploader, thumbnail, addedBy: myName, order: order })
-        .then(() => {
-            if (!replaceKey) {
-                // Only show toast here if not replacing (as we showed 'Replaced' above, or show 'Added' if simple add)
-                // Actually, let's let the caller handle success messages if complex logic, but for simple adds this is fine.
-            }
-            if (!currentVideoId && currentQueue.length === 0) initiateSongLoad({videoId, title: cleanTitle, uploader});
-        });
-}
-
-function addBatchToQueue(songs) {
-    if (!songs.length) return;
-    showToast("System", `Adding ${songs.length} songs to queue...`); 
-    const updates = {};
-    songs.forEach((s, i) => {
-        // We use direct add logic but in batch. 
-        // Note: Batch add skips duplication check to allow bulk operations without user interaction
-        const newKey = queueRef.push().key;
-        updates[newKey] = { ...s, addedBy: myName, order: Date.now() + i * 100 };
-    });
-    queueRef.update(updates);
-}
-
-function removeFromQueue(key, event) {
-    if (event) event.stopPropagation();
-    const idx = currentQueue.findIndex(s => s.key === key);
-    if (idx === -1) return;
-    
-    const song = currentQueue[idx];
-    
-    // If deleting the currently playing song, play next first
-    if (song.videoId === currentVideoId) {
-        if (currentQueue.length > 1) {
-            // (idx + 1) handles wrapping.
-            const next = currentQueue[(idx + 1) % currentQueue.length];
-            initiateSongLoad(next);
-        } else {
-            // Queue is effectively empty after this
-            if(player) {
-                try { player.stopVideo(); } catch(e){}
-                player.loadVideoById(""); 
-            }
-            currentVideoId = null;
-            UI.songTitle.textContent = "Heart's Rhythm";
-            updateMediaSessionMetadata();
-        }
-    }
-    
-    queueRef.child(key).remove();
-}
-
-function updateQueueOrder(newOrder) {
-    const updates = {};
-    newOrder.forEach((song, index) => { updates[`${song.key}/order`] = index; });
-    queueRef.update(updates);
-}
-
-function scrollToCurrentSong() {
-    if (window.innerWidth <= 1100) {
-        if (!UI.mobileSheet || !UI.mobileSheet.classList.contains('active')) return;
-    }
-    setTimeout(() => {
-        const activeItem = document.querySelector('.song-item.playing');
-        if (activeItem) activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 100);
-}
-
-function renderQueue(queueArray, currentVideoId) {
-    const list = UI.queueList;
-    UI.queueBadge.textContent = queueArray.length;
-    if(UI.mobileQueueBadge) UI.mobileQueueBadge.textContent = queueArray.length;
-
-    if (queueArray.length === 0) {
-        list.innerHTML = '<div class="empty-state"><p>Queue is empty.</p></div>';
-        return;
-    }
-    
-    const fragment = document.createDocumentFragment();
-
-    queueArray.forEach((song, index) => {
-        const item = document.createElement('div');
-        item.className = `song-item ${song.videoId === currentVideoId ? 'playing' : ''}`;
-        item.draggable = true;
-        item.dataset.key = song.key;
-        item.onclick = () => initiateSongLoad(song);
-        
-        const user = song.addedBy || 'System';
-        const isMe = user === myName;
-        const badgeClass = isMe ? 'is-me' : 'is-other';
-        const displayText = isMe ? 'You' : `${user}`;
-        const number = index + 1;
-        
-        let statusIndicator = '';
-        if (song.videoId === currentVideoId) {
-            statusIndicator = `
-                <div class="mini-eq-container">
-                    <div class="mini-eq-bar"></div>
-                    <div class="mini-eq-bar"></div>
-                    <div class="mini-eq-bar"></div>
-                </div>`;
-        }
-        
-        item.innerHTML = `
-            <i class="fa-solid fa-bars drag-handle" title="Drag to order"></i>
-            <div class="song-index">${number}</div>
-            <img src="${song.thumbnail}" class="song-thumb">
-            <div class="song-details">
-                <h4>${song.title}</h4>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="added-by-badge ${badgeClass}">Added by ${displayText}</span>
-                    ${statusIndicator}
-                </div>
-            </div>
-            <button class="emoji-trigger" onclick="removeFromQueue('${song.key}', event)"><i class="fa-solid fa-trash"></i></button>
-        `;
-        fragment.appendChild(item);
-    });
-
-    list.innerHTML = '';
-    list.appendChild(fragment);
-
-    initDragAndDrop(list);
-    scrollToCurrentSong();
-}
-
-function initDragAndDrop(list) {
-    let draggedItem = null;
-    let isTouch = false;
-    let isDragging = false;
-    let currentY = 0;
-    let autoScrollRafId = null;
-
-    const haptic = (pattern) => { if (navigator.vibrate) navigator.vibrate(pattern); };
-
-    // Smooth Auto-Scroll Loop - Optimized with RAF
-    const performAutoScroll = () => {
-        if (!isDragging) {
-            if (autoScrollRafId) {
-                cancelAnimationFrame(autoScrollRafId);
-                autoScrollRafId = null;
-            }
-            return;
-        }
-
-        const rect = list.getBoundingClientRect();
-        const threshold = 80; 
-        // Increased scroll speed as requested
-        const maxSpeed = 40; 
-        let scrollY = 0;
-        
-        if (currentY < rect.top + threshold) {
-             const ratio = (rect.top + threshold - currentY) / threshold;
-             scrollY = -maxSpeed * ratio;
-        } else if (currentY > rect.bottom - threshold) {
-             const ratio = (currentY - (rect.bottom - threshold)) / threshold;
-             scrollY = maxSpeed * ratio;
-        }
-
-        if (scrollY !== 0) {
-            list.scrollTop += scrollY;
-        }
-        
-        autoScrollRafId = requestAnimationFrame(performAutoScroll);
-    };
-
-    // Throttled Move Handler (Battery Saver)
-    const handleMove = throttle((y) => {
-        const afterElement = getDragAfterElement(list, y);
-        const draggable = document.querySelector('.dragging');
-
-        if (draggable) {
-            const currentNextSibling = draggable.nextElementSibling;
-            if (afterElement !== currentNextSibling) {
-                // FLIP Animation Setup
-                const siblings = [...list.querySelectorAll('.song-item:not(.dragging)')];
-                const positions = new Map();
-                if (isTouch) siblings.forEach(el => positions.set(el, el.getBoundingClientRect().top));
-
-                // Move in DOM
-                if (afterElement == null) list.appendChild(draggable);
-                else list.insertBefore(draggable, afterElement);
-                
-                haptic(5); 
-
-                // FLIP Animation Execution
-                if (isTouch) {
-                    siblings.forEach(el => {
-                        const oldTop = positions.get(el);
-                        const newTop = el.getBoundingClientRect().top;
-                        const delta = oldTop - newTop;
-                        if (delta !== 0) {
-                            el.style.transform = `translateY(${delta}px)`;
-                            el.style.transition = 'none';
-                            void el.offsetHeight; 
-                            el.style.transform = '';
-                            el.style.transition = 'transform 0.3s cubic-bezier(0.2, 1, 0.3, 1)';
-                        }
-                    });
-                }
-            }
-        }
-    }, 20); // Run at most once every 20ms
-
-    const items = list.querySelectorAll('.song-item');
-    items.forEach(item => {
-        // --- DESKTOP ---
-        item.addEventListener('dragstart', (e) => { 
-            draggedItem = item;
-            isTouch = false;
-            isDragging = true;
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', item.dataset.key);
-            setTimeout(() => item.classList.add('dragging'), 0);
-            haptic(20);
-            performAutoScroll();
-        });
-
-        item.addEventListener('drag', (e) => {
-            if(e.clientY !== 0) {
-                currentY = e.clientY;
-                // Native drag events fire frequently, but actual DOM moves are throttled in dragover
-            }
-        });
-
-        item.addEventListener('dragend', () => {
-            item.classList.remove('dragging');
-            draggedItem = null;
-            isDragging = false;
-            cancelAnimationFrame(autoScrollRafId);
-            saveQueueOrder(list);
-            haptic(20); 
-        });
-        
-        // --- MOBILE ---
-        const handle = item.querySelector('.drag-handle');
-        if(handle) {
-            handle.addEventListener('touchstart', (e) => {
-                e.preventDefault(); 
-                const targetItem = e.target.closest('.song-item');
-                if(!targetItem) return;
-
-                isTouch = true;
-                isDragging = true;
-                draggedItem = targetItem;
-                draggedItem.classList.add('dragging');
-                haptic(30); 
-                performAutoScroll();
-
-                const onTouchMove = (evt) => {
-                    evt.preventDefault(); 
-                    const touch = evt.touches[0];
-                    currentY = touch.clientY;
-                    handleMove(touch.clientY);
-                };
-
-                const onTouchEnd = () => {
-                    if (draggedItem) {
-                        draggedItem.classList.remove('dragging');
-                        const allItems = list.querySelectorAll('.song-item');
-                        allItems.forEach(el => { el.style.transform = ''; el.style.transition = ''; });
-                        draggedItem = null;
-                        haptic(20); 
-                        saveQueueOrder(list);
-                    }
-                    isDragging = false;
-                    cancelAnimationFrame(autoScrollRafId);
-                    document.removeEventListener('touchmove', onTouchMove);
-                    document.removeEventListener('touchend', onTouchEnd);
-                    isTouch = false;
-                };
-
-                document.addEventListener('touchmove', onTouchMove, { passive: false });
-                document.addEventListener('touchend', onTouchEnd);
-            }, { passive: false });
-        }
-    });
-
-    list.ondragover = (e) => {
-        e.preventDefault(); 
-        if (isTouch) return;
-        currentY = e.clientY;
-        handleMove(e.clientY);
-    };
-}
-
-function saveQueueOrder(list) {
-    const newOrderKeys = Array.from(list.querySelectorAll('.song-item')).map(el => el.dataset.key);
-    const newOrder = newOrderKeys.map(key => currentQueue.find(s => s.key === key)).filter(s => s);
-    if(newOrder.length > 0) updateQueueOrder(newOrder);
-}
-
-function getDragAfterElement(container, y) {
-    const draggableElements = [...container.querySelectorAll('.song-item:not(.dragging)')];
-    return draggableElements.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
-        if (offset < 0 && offset > closest.offset) return { offset: offset, element: child };
-        else return closest;
-    }, { offset: Number.NEGATIVE_INFINITY }).element;
-}
-
-// --- LYRICS ---
-document.getElementById('lyrics-btn').addEventListener('click', () => { UI.lyricsOverlay.classList.add('active'); fetchLyrics(); });
-document.getElementById('closeLyricsBtn').addEventListener('click', () => { UI.lyricsOverlay.classList.remove('active'); stopLyricsSync(); });
-document.getElementById('manualLyricsBtn').addEventListener('click', () => {
-    const input = document.getElementById('manualLyricsInput');
-    const query = input.value.trim();
-    if(query) fetchLyrics(query);
-});
-document.getElementById('manualLyricsInput').addEventListener('keypress', (e) => { if(e.key === 'Enter') document.getElementById('manualLyricsBtn').click(); });
-
-const unsyncLyricsBtn = document.getElementById('unsyncLyricsBtn');
-if (unsyncLyricsBtn) {
-    unsyncLyricsBtn.addEventListener('click', () => {
-        if (lyricsInterval) {
-            stopLyricsSync();
-            unsyncLyricsBtn.innerHTML = '<i class="fa-solid fa-link"></i>';
-            showToast("System", "Lyrics sync paused");
-        } else {
-            startLyricsSync();
-            unsyncLyricsBtn.innerHTML = '<i class="fa-solid fa-link-slash"></i>';
-            showToast("System", "Lyrics sync resumed");
-        }
-    });
-}
-
-const dedicateBtn = document.getElementById('dedicateBtn');
-if (dedicateBtn) {
-    dedicateBtn.addEventListener('click', () => {
-        const title = UI.songTitle.textContent;
-        if(title && title !== "Heart's Rhythm") {
-            chatRef.push({ user: myName, text: `🎵 Dedicated to you: ${title} ❤️`, timestamp: Date.now(), seen: false });
-            showToast("System", "Dedication sent!");
-            switchTab('chat');
-        } else {
-            showToast("System", "Play a song to dedicate it!");
-        }
-    });
-}
-
-function sendVibe(emoji) {
-    const msgs = [`Vibing with ${emoji}`, `Sending ${emoji}`, `${emoji} ${emoji} ${emoji}`];
-    chatRef.push({ user: myName, text: msgs[Math.floor(Math.random() * msgs.length)], timestamp: Date.now(), seen: false });
-    triggerHaptic();
-}
-
-function decodeHTMLEntities(text) {
-    if (!text) return "";
-    const txt = document.createElement("textarea");
-    txt.innerHTML = text;
-    return txt.value;
-}
-
-function smartCleanTitle(title) {
-    let processed = decodeHTMLEntities(title);
-    processed = processed.replace(/\s*[\(\[].*?[\)\]]/g, '');
-    processed = processed.replace(/\s(ft\.|feat\.|featuring)\s.*/gi, '');
-    const artifacts = ["official video", "official audio", "official music video", "official lyric video", "music video", "lyric video", "visualizer", "official", "video", "audio", "lyrics", "lyric", "hq", "hd", "4k", "remastered", "live", "performance", "mv", "with", "prod\\.", "dir\\."];
-    const artifactRegex = new RegExp(`\\b(${artifacts.join('|')})\\b`, 'gi');
-    processed = processed.replace(artifactRegex, '');
-    processed = processed.replace(/\|/g, ' '); 
-    processed = processed.replace(/-/g, ' '); 
-    processed = processed.replace(/\s+/g, ' ').trim();
-    return processed;
-}
-
-function parseSyncedLyrics(lrc) {
-    const lines = lrc.split('\n');
-    const result = [];
-    const timeReg = /\[(\d{2}):(\d{2}(?:\.\d+)?)\]/;
-    lines.forEach(line => {
-        const match = line.match(timeReg);
-        if (match) {
-            const min = parseFloat(match[1]);
-            const sec = parseFloat(match[2]);
-            const time = min * 60 + sec;
-            const text = line.replace(timeReg, '').trim();
-            if(text) result.push({ time, text });
-        }
-    });
-    return result;
-}
-
-function renderSyncedLyrics(lyrics) {
-    UI.lyricsContent.innerHTML = '';
-    const wrapper = document.createElement('div');
-    wrapper.className = 'synced-lyrics-wrapper';
-    lyrics.forEach((line, index) => {
-        const p = document.createElement('p');
-        p.className = 'lyrics-line';
-        p.id = 'lyric-line-' + index;
-        p.textContent = line.text;
-        wrapper.appendChild(p);
-    });
-    UI.lyricsContent.appendChild(wrapper);
-}
-
-function startLyricsSync() {
-    if(lyricsInterval) clearInterval(lyricsInterval);
-    if(UI.lyricsOverlay.classList.contains('active')) {
-        lyricsInterval = setInterval(syncLyricsDisplay, 1000); 
-    }
-}
-
-function stopLyricsSync() {
-    if(lyricsInterval) clearInterval(lyricsInterval);
-    lyricsInterval = null; 
-}
-
-function syncLyricsDisplay() {
-    if (document.hidden) return;
-    if (!player || !player.getCurrentTime || !currentLyrics) return;
-    const time = player.getCurrentTime();
-    let activeIndex = -1;
-    let startIdx = 0;
-    if (lastLyricsIndex !== -1 && currentLyrics[lastLyricsIndex] && currentLyrics[lastLyricsIndex].time < time) {
-        startIdx = lastLyricsIndex;
-    }
-    for(let i = startIdx; i < currentLyrics.length; i++) {
-        if(currentLyrics[i].time <= time) activeIndex = i;
-        else break;
-    }
-    if(activeIndex !== -1 && activeIndex !== lastLyricsIndex) {
-        lastLyricsIndex = activeIndex;
-        const prevActive = document.querySelector('.lyrics-line.active');
-        if (prevActive) prevActive.classList.remove('active');
-        const activeLine = document.getElementById('lyric-line-' + activeIndex);
-        if(activeLine) {
-            activeLine.classList.add('active');
-            activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-    }
-}
-
-async function fetchLyrics(manualQuery = null) {
-    const searchBar = document.getElementById('lyricsSearchBar');
-    const lyricsTitle = document.getElementById('lyrics-title');
-    const unsyncBtn = document.getElementById('unsyncLyricsBtn');
-    
-    let searchWords = "";
-    searchBar.classList.remove('visible');
-    searchBar.style.display = 'none'; 
-    if(unsyncBtn) {
-        unsyncBtn.style.display = 'none';
-        unsyncBtn.innerHTML = '<i class="fa-solid fa-link-slash"></i>';
-    }
-    lastLyricsIndex = -1; 
-    currentPlainLyrics = ""; 
-    
-    if(manualQuery) {
-        searchWords = manualQuery;
-        lyricsTitle.textContent = "Search: " + manualQuery;
-    } else {
-        const titleEl = UI.songTitle;
-        let rawTitle = "Heart's Rhythm";
-        if(titleEl && titleEl.textContent !== "Heart's Rhythm") rawTitle = titleEl.textContent;
-        const cleanTitle = smartCleanTitle(rawTitle);
-        searchWords = cleanTitle.split(/\s+/).slice(0, 5).join(" ");
-        lyricsTitle.textContent = "Lyrics: " + cleanTitle;
-    }
-
-    UI.lyricsContent.innerHTML = '<div style="margin-top:20px; width:40px; height:40px; border:4px solid rgba(245,0,87,0.2); border-top:4px solid #f50057; border-radius:50%; animation: spin 1s infinite linear;"></div>';
-
-    try {
-        const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchWords)}`;
-        const res = await fetch(searchUrl);
-        const data = await res.json();
-        
-        if (Array.isArray(data) && data.length > 0) {
-            const song = data.find(s => s.syncedLyrics) || data[0];
-            if (song.syncedLyrics) {
-                currentPlainLyrics = song.plainLyrics || song.syncedLyrics.replace(/\[.*?\]/g, '');
-                currentLyrics = parseSyncedLyrics(song.syncedLyrics);
-                renderSyncedLyrics(currentLyrics);
-                startLyricsSync();
-                if(unsyncBtn) {
-                     unsyncBtn.style.display = 'grid';
-                     unsyncBtn.innerHTML = '<i class="fa-solid fa-link-slash"></i>';
-                }
-            } else {
-                currentLyrics = null;
-                stopLyricsSync();
-                const text = song.plainLyrics || "Instrumental";
-                UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${text.replace(/\n/g, "<br>")}</div>`;
-            }
-            searchBar.classList.remove('visible');
-            setTimeout(() => { if(!searchBar.classList.contains('visible')) searchBar.style.display = 'none'; }, 500);
-
-        } else {
-            throw new Error("No lyrics found");
-        }
-    } catch (e) {
-        if(!manualQuery) {
-            try {
-                const titleText = UI.songTitle.textContent;
-                if(titleText.includes('-')) {
-                   const parts = titleText.split('-');
-                   const p1 = parts[0].trim();
-                   const p2 = parts[1].trim();
-                   let fallbackUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(p1)}/${encodeURIComponent(p2)}`;
-                   let fRes = await fetch(fallbackUrl);
-                   let fData = await fRes.json();
-                   if(fData.lyrics) {
-                        currentLyrics = null;
-                        stopLyricsSync();
-                        UI.lyricsContent.innerHTML = `<div class="lyrics-text-block" style="text-align:center;">${fData.lyrics.replace(/\n/g, "<br>")}</div>`;
-                        return; 
-                   }
-                }
-            } catch(err) { console.log("Fallback lyrics failed"); }
-        }
-        stopLyricsSync();
-        searchBar.style.display = 'block';
-        setTimeout(() => searchBar.classList.add('visible'), 10);
-        UI.lyricsContent.innerHTML = `
-            <p style="opacity:0.7; margin-bottom: 5px;">Lyrics not found via API.</p>
-            <p style="font-size:0.9rem; color:#aaa; margin-bottom:20px;">Use the search bar above to try manually.</p>
-        `;
-    }
-}
-
-// --- GLOBAL LISTENERS ---
-document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
-document.getElementById('prev-btn').addEventListener('click', initiatePrevSong);
-document.getElementById('next-btn').addEventListener('click', initiateNextSong);
-document.getElementById('search-btn').addEventListener('click', handleSearch);
-UI.searchInput.addEventListener('keypress', (e) => { if(e.key==='Enter') handleSearch(); });
-document.getElementById('chatSendBtn').addEventListener('click', () => {
-    const val = document.getElementById('chatInput').value.trim();
-    if(val) { chatRef.push({ user: myName, text: val, timestamp: Date.now(), seen: false }); document.getElementById('chatInput').value=''; }
-});
-document.getElementById('chatInput').addEventListener('keypress', (e) => { if(e.key === 'Enter') document.getElementById('chatSendBtn').click(); });
-document.getElementById('clearQueueBtn').addEventListener('click', () => { if(confirm("Clear the entire queue?")) queueRef.remove(); });
-document.getElementById('shuffleQueueBtn').addEventListener('click', () => {
-    if (currentQueue.length < 2) { showToast("System", "Not enough songs to shuffle."); return; }
-    let playingSong = null;
-    let songsToShuffle = [];
-    if (currentVideoId) {
-        playingSong = currentQueue.find(s => s.videoId === currentVideoId);
-        songsToShuffle = currentQueue.filter(s => s.videoId !== currentVideoId);
-    } else {
-        songsToShuffle = [...currentQueue];
-    }
-    if (songsToShuffle.length === 0) return;
-    for (let i = songsToShuffle.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [songsToShuffle[i], songsToShuffle[j]] = [songsToShuffle[j], songsToShuffle[i]];
-    }
-    const newOrderList = playingSong ? [playingSong, ...songsToShuffle] : songsToShuffle;
-    updateQueueOrder(newOrderList);
-    showToast("System", "Queue shuffled!");
-    triggerHaptic();
-});
-document.getElementById('forceSyncBtn').addEventListener('click', () => {
-    UI.syncOverlay.classList.remove('active');
-    player.playVideo(); broadcastState('play', player.getCurrentTime(), currentVideoId);
-});
-if(UI.infoBtn && UI.infoOverlay) UI.infoBtn.addEventListener('click', () => UI.infoOverlay.classList.add('active'));
-if(UI.closeInfoBtn && UI.infoOverlay) UI.closeInfoBtn.addEventListener('click', () => UI.infoOverlay.classList.remove('active'));
-document.querySelectorAll('.mobile-nav-item').forEach(btn => {
-    btn.addEventListener('click', (e) => { const target = e.currentTarget.dataset.target; if(target) switchTab(target); });
-});
-document.querySelectorAll('.nav-tab').forEach(btn => {
-    btn.addEventListener('click', (e) => { const target = e.currentTarget.dataset.target; if(target) switchTab(target); });
-});
-
-// --- DUP MODAL LISTENERS ---
-UI_DUP.addBtn.onclick = () => {
-    if(!pendingAddData) return;
-    directAddToQueue(pendingAddData.videoId, pendingAddData.title, pendingAddData.uploader, pendingAddData.thumbnail);
-    showToast("System", "Added duplicate.");
-    UI_DUP.overlay.classList.remove('active');
-    pendingAddData = null;
-};
-UI_DUP.replaceBtn.onclick = () => {
-    if(!pendingAddData) return;
-    // We pass replaceKey and dupOrder to remove old and use old order
-    directAddToQueue(pendingAddData.videoId, pendingAddData.title, pendingAddData.uploader, pendingAddData.thumbnail, pendingAddData.replaceKey, pendingAddData.dupOrder);
-    UI_DUP.overlay.classList.remove('active');
-    pendingAddData = null;
-};
-UI_DUP.cancelBtn.onclick = () => {
-    UI_DUP.overlay.classList.remove('active');
-    pendingAddData = null;
-};
-
-// --- WELCOME SCREEN (ROBUST FIX) ---
-document.addEventListener('click', (e) => {
-    const overlay = UI.welcomeOverlay || document.getElementById('welcomeOverlay');
-    if (!overlay) return;
-    const isVisible = overlay.style.display !== 'none' && overlay.style.opacity !== '0';
-    if (!isVisible) return;
-    const target = e.target;
-    const isStartBtn = target.closest('#start-btn') || target.closest('.start-btn') || (overlay.contains(target) && target.closest('button'));
-
-    if (isStartBtn) {
-        overlay.style.opacity = '0';
-        overlay.style.pointerEvents = 'none';
-        setTimeout(() => { overlay.style.display = 'none'; overlay.classList.remove('active'); }, 500);
-        
-        hasUserInteracted = true;
-        if(player && player.unMute) player.unMute();
-        
-        if (player) {
-             if (currentVideoId) { try { player.playVideo(); } catch(e){} } 
-             // --- CRITICAL FIX FOR JOIN SYNC ---
-             // If a partner is already playing a song, prioritize that state over the top of the queue.
-             else if (currentRemoteState && currentRemoteState.videoId && currentRemoteState.action !== 'pause') {
-                 const vidId = currentRemoteState.videoId;
-                 const time = currentRemoteState.time || 0;
-                 const song = currentQueue.find(s => s.videoId === vidId);
-                 const title = song ? song.title : "Syncing...";
-                 const uploader = song ? song.uploader : "";
-                 
-                 // Force load remote song immediately
-                 loadAndPlayVideo(vidId, title, uploader, time, false, true);
-             }
-             else if (currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
-        }
-    }
-});
+function directAddToQueue(videoId, title, uploader, thumbnail, replaceKey =
