@@ -1,3 +1,13 @@
+// --- BACKGROUND AUDIO ANCHOR (THE 110% FIX) ---
+// This replaces the broken 'silentAudio' trick. By placing an actual audio element in the DOM
+// and linking it EXACTLY to the YouTube player's state, we force the mobile operating system
+// to respect our lock-screen controls and maintain background execution.
+const anchorAudio = document.createElement('audio');
+anchorAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+anchorAudio.loop = true;
+anchorAudio.style.display = 'none';
+document.body.appendChild(anchorAudio);
+
 // --- INJECTED STYLES FOR DRAG & DROP VISUALS & BATTERY OPTIMIZATIONS ---
 const dndStyles = document.createElement('style');
 dndStyles.innerHTML = `
@@ -174,32 +184,28 @@ async function requestWakeLock() {
     }
 }
 
-// --- BATTERY SAVER ---
-let smartIntervals = [];
-
-function setSmartInterval(callback, ms) {
-    let intervalId = setInterval(callback, ms);
-    const handler = { id: intervalId, ms, callback };
-    smartIntervals.push(handler);
-    return handler;
-}
-
-window.addEventListener('blur', () => {
-    document.body.classList.add('low-power-mode');
-    UI.equalizer.classList.add('paused'); 
-    stopLyricsSync(); 
-});
-
-window.addEventListener('focus', () => {
-    document.body.classList.remove('low-power-mode');
-    UI.equalizer.classList.remove('paused');
-    if (currentVideoId) {
-         const song = currentQueue.find(s => s.videoId === currentVideoId);
-         if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
+// --- PREEMPTIVE STRIKE & BATTERY SAVER ---
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        document.body.classList.add('low-power-mode');
+        UI.equalizer.classList.add('paused'); 
+        stopLyricsSync(); 
+        
+        // PREEMPTIVE STRIKE: Force play exactly as the browser attempts to suspend the app!
+        if (!userIntentionallyPaused && player && typeof player.playVideo === 'function') {
+            try { player.playVideo(); } catch(e){}
+        }
+    } else {
+        document.body.classList.remove('low-power-mode');
+        UI.equalizer.classList.remove('paused');
+        if (currentVideoId) {
+             const song = currentQueue.find(s => s.videoId === currentVideoId);
+             if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
+        }
+        if(currentLyrics) startLyricsSync();
+        updateSyncStatus();
+        requestWakeLock();
     }
-    if(currentLyrics) startLyricsSync();
-    updateSyncStatus();
-    requestWakeLock();
 });
 
 function throttle(func, limit) {
@@ -298,9 +304,10 @@ function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     requestWakeLock();
     
-    setSmartInterval(heartbeatSync, 800);
-    setSmartInterval(monitorSyncHealth, 1500);
-    setSmartInterval(monitorAdStatus, 1500);
+    // Core timing loops
+    setInterval(heartbeatSync, 800);
+    setInterval(monitorSyncHealth, 1500);
+    setInterval(monitorAdStatus, 1500);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -362,15 +369,17 @@ function monitorAdStatus() {
 function setupMediaSession() {
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', function() {
+            userIntentionallyPaused = false;
+            anchorAudio.play().catch(()=>{}); // Resume anchor
             if(player && player.playVideo) { 
-                userIntentionallyPaused = false;
                 try { player.playVideo(); } catch(e){} 
             }
         });
         
         navigator.mediaSession.setActionHandler('pause', function() {
+            userIntentionallyPaused = true;
+            anchorAudio.pause(); // Pause anchor
             if(player && player.pauseVideo) { 
-                userIntentionallyPaused = true;
                 try { player.pauseVideo(); } catch(e){}
             }
         });
@@ -412,7 +421,7 @@ function heartbeatSync() {
             const duration = player.getDuration();
             const current = player.getCurrentTime();
             
-            // ADDED: Continually updates the notification bar slider
+            // Continually updates the notification bar slider progress
             if ('mediaSession' in navigator) {
                 try {
                     navigator.mediaSession.setPositionState({
@@ -506,6 +515,7 @@ function updatePlayPauseButton(state) {
     }
 }
 
+// --- THE CRITICAL FIX: SMART PAUSE DETECTION ---
 function onPlayerStateChange(event) {
     const state = event.data;
     if (detectAd() || state === YT.PlayerState.BUFFERING) { updateSyncStatus(); return; }
@@ -513,12 +523,32 @@ function onPlayerStateChange(event) {
     if (state === YT.PlayerState.PLAYING) {
          userIntentionallyPaused = false;
          requestWakeLock();
-         if (isSwitchingSong) { isSwitchingSong = false; updateSyncStatus(); }
+         
+         // Start the Anchor so the OS knows we are playing!
+         if (anchorAudio.paused) anchorAudio.play().catch(()=>{});
          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
+         if (isSwitchingSong) { isSwitchingSong = false; updateSyncStatus(); }
     }
 
     if (state === YT.PlayerState.PAUSED) {
-         if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
+        if (document.hidden && !userIntentionallyPaused) {
+            // The OS forced YouTube to pause because you locked the screen or minimized Chrome.
+            // Fight back instantly:
+            try { player.playVideo(); } catch(e){}
+            
+            // Check 500ms later. If the OS won the fight and we are still paused, 
+            // WE MUST pause the Anchor Audio too so your lock screen shows the Play button!
+            setTimeout(() => {
+                if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                    anchorAudio.pause();
+                    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
+                }
+            }, 500);
+        } else {
+            // Normal intentional pause
+            anchorAudio.pause();
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
+        }
     }
 
     if(Date.now() - lastLocalInteractionTime > 500) updatePlayPauseButton(state);
@@ -1686,6 +1716,11 @@ if (startSessionBtn && welcomeOverlay) {
         }, 500);
         
         hasUserInteracted = true;
+
+        // Initialize the anchor audio silently to take over Media Session controls natively!
+        anchorAudio.play().then(() => {
+            anchorAudio.pause(); 
+        }).catch(err => console.log("Anchor audio blocked", err));
 
         if(player && typeof player.unMute === 'function') {
             player.unMute();
