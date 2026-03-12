@@ -1,31 +1,24 @@
-// --- BACKGROUND AUDIO ANCHOR (THE 110% FIX) ---
-// This replaces the broken 'silentAudio' trick. By placing an actual audio element in the DOM
-// and linking it EXACTLY to the YouTube player's state, we force the mobile operating system
-// to respect our lock-screen controls and maintain background execution.
-const anchorAudio = document.createElement('audio');
-anchorAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+// ============================================================================
+// --- THE BACKGROUND KEEPER (PERSISTENT ANCHOR AUDIO) ---
+// ============================================================================
+// We create a persistent silent audio track. This forces the mobile browser's
+// media engine to stay awake, holding the lock-screen notification open even 
+// when it tries to suspend the YouTube iframe.
+const anchorAudio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
 anchorAudio.loop = true;
-anchorAudio.style.display = 'none';
-document.body.appendChild(anchorAudio);
+anchorAudio.volume = 0.01;
 
-// --- INJECTED STYLES FOR DRAG & DROP VISUALS & BATTERY OPTIMIZATIONS ---
+// Spoof visibility to trick the YouTube API
+try {
+    Object.defineProperty(document, 'hidden', { get: () => false });
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
+} catch (e) {}
+
+// --- INJECTED STYLES FOR PERFORMANCE ---
 const dndStyles = document.createElement('style');
 dndStyles.innerHTML = `
-.song-item { 
-    transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s, background-color 0.2s, border-color 0.2s; 
-    will-change: transform, box-shadow, background-color; 
-    transform: translateZ(0);
-}
-.song-item.dragging {
-    opacity: 1 !important;
-    background: #333 !important;
-    border: 1px solid #ff4081 !important;
-    box-shadow: 0 16px 32px rgba(0,0,0,0.75) !important;
-    transform: scale(1.05) translateZ(0) !important;
-    z-index: 1000 !important;
-    position: relative;
-    border-radius: 8px;
-}
+.song-item { transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s; will-change: transform; transform: translateZ(0); }
+.song-item.dragging { opacity: 1 !important; background: #333 !important; border: 1px solid #ff4081 !important; box-shadow: 0 16px 32px rgba(0,0,0,0.75) !important; transform: scale(1.05) translateZ(0) !important; z-index: 1000 !important; position: relative; border-radius: 8px; }
 .song-item.dragging .song-thumb { opacity: 0.9; }
 
 @keyframes playing-pulse {
@@ -33,23 +26,11 @@ dndStyles.innerHTML = `
     50% { box-shadow: 0 0 8px 0 rgba(245, 0, 87, 0.2); border-color: rgba(245, 0, 87, 0.8); background-color: rgba(245, 0, 87, 0.15); }
     100% { box-shadow: 0 0 0 0 rgba(245, 0, 87, 0.4); border-color: rgba(245, 0, 87, 0.4); background-color: rgba(245, 0, 87, 0.05); }
 }
-.song-item.playing {
-    animation: playing-pulse 2s infinite;
-    border: 1px solid #f50057;
-}
+.song-item.playing { animation: playing-pulse 2s infinite; border: 1px solid #f50057; }
 
-.dup-modal-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.85); z-index: 10000;
-    display: flex; justify-content: center; align-items: center;
-    backdrop-filter: blur(5px); opacity: 0; pointer-events: none; transition: opacity 0.3s;
-}
+.dup-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(5px); opacity: 0; pointer-events: none; transition: opacity 0.3s; }
 .dup-modal-overlay.active { opacity: 1; pointer-events: all; }
-.dup-modal {
-    background: #1e1e1e; border: 1px solid #333; border-radius: 12px;
-    padding: 25px; width: 90%; max-width: 400px; text-align: center;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.5); transform: scale(0.9); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
+.dup-modal { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 25px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5); transform: scale(0.9); transition: transform 0.3s; }
 .dup-modal-overlay.active .dup-modal { transform: scale(1); }
 .dup-modal h3 { margin: 0 0 15px; color: #f50057; font-size: 1.2rem; }
 .dup-modal p { color: #ccc; margin-bottom: 25px; line-height: 1.5; font-size: 0.95rem; }
@@ -60,14 +41,8 @@ dndStyles.innerHTML = `
 .dup-btn.cancel { background: transparent; color: #888; }
 .dup-btn:active { transform: scale(0.98); }
 
-/* BATTERY SAVER: Pause animations when window is blurred */
-body.low-power-mode .song-item.playing,
-body.low-power-mode .mini-eq-bar,
-body.low-power-mode .sync-status-3d,
-body.low-power-mode .lyrics-content-area div {
-    animation: none !important;
-    transition: none !important;
-}
+/* BATTERY SAVER */
+body.low-power-mode .song-item.playing, body.low-power-mode .mini-eq-bar, body.low-power-mode .sync-status-3d, body.low-power-mode .lyrics-content-area div { animation: none !important; transition: none !important; }
 `;
 document.head.appendChild(dndStyles);
 
@@ -155,19 +130,13 @@ let isSwitchingSong = false;
 let hasUserInteracted = false; 
 let lastQueueSignature = ""; 
 let pendingAddData = null; 
-
-// --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
 let wasInAd = false; 
 let lastSeekTime = 0; 
-
-// --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
 let currentPlainLyrics = "";
 let lyricsInterval = null;
 let lastLyricsIndex = -1;
-
-// --- CRITICAL SYNC FLAGS ---
 let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
@@ -184,28 +153,29 @@ async function requestWakeLock() {
     }
 }
 
-// --- PREEMPTIVE STRIKE & BATTERY SAVER ---
-document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-        document.body.classList.add('low-power-mode');
-        UI.equalizer.classList.add('paused'); 
-        stopLyricsSync(); 
-        
-        // PREEMPTIVE STRIKE: Force play exactly as the browser attempts to suspend the app!
-        if (!userIntentionallyPaused && player && typeof player.playVideo === 'function') {
-            try { player.playVideo(); } catch(e){}
-        }
-    } else {
-        document.body.classList.remove('low-power-mode');
-        UI.equalizer.classList.remove('paused');
-        if (currentVideoId) {
-             const song = currentQueue.find(s => s.videoId === currentVideoId);
-             if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
-        }
-        if(currentLyrics) startLyricsSync();
-        updateSyncStatus();
-        requestWakeLock();
+// --- BATTERY SAVER (BLUR/FOCUS) ---
+window.addEventListener('blur', () => {
+    document.body.classList.add('low-power-mode');
+    UI.equalizer.classList.add('paused'); 
+    stopLyricsSync(); 
+    
+    // If we leave the app and didn't manually pause, aggressively force play and anchor audio
+    if (!userIntentionallyPaused && player && typeof player.playVideo === 'function') {
+        try { player.playVideo(); } catch(e){}
+        if (anchorAudio.paused) anchorAudio.play().catch(()=>{});
     }
+});
+
+window.addEventListener('focus', () => {
+    document.body.classList.remove('low-power-mode');
+    UI.equalizer.classList.remove('paused');
+    if (currentVideoId) {
+         const song = currentQueue.find(s => s.videoId === currentVideoId);
+         if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
+    }
+    if(currentLyrics) startLyricsSync();
+    updateSyncStatus();
+    requestWakeLock();
 });
 
 function throttle(func, limit) {
@@ -304,8 +274,7 @@ function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     requestWakeLock();
     
-    // Core timing loops
-    setInterval(heartbeatSync, 800);
+    setInterval(heartbeatSync, 1000);
     setInterval(monitorSyncHealth, 1500);
     setInterval(monitorAdStatus, 1500);
 
@@ -370,7 +339,7 @@ function setupMediaSession() {
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', function() {
             userIntentionallyPaused = false;
-            anchorAudio.play().catch(()=>{}); // Resume anchor
+            anchorAudio.play().catch(()=>{}); // Keep anchor pumping
             if(player && player.playVideo) { 
                 try { player.playVideo(); } catch(e){} 
             }
@@ -378,7 +347,7 @@ function setupMediaSession() {
         
         navigator.mediaSession.setActionHandler('pause', function() {
             userIntentionallyPaused = true;
-            anchorAudio.pause(); // Pause anchor
+            anchorAudio.pause(); // Pause anchor so phone knows we actually paused
             if(player && player.pauseVideo) { 
                 try { player.pauseVideo(); } catch(e){}
             }
@@ -387,7 +356,6 @@ function setupMediaSession() {
         navigator.mediaSession.setActionHandler('previoustrack', function() { initiatePrevSong(); });
         navigator.mediaSession.setActionHandler('nexttrack', function() { initiateNextSong(); });
         
-        // ADDED: Enables scrolling through the song from the notification bar!
         navigator.mediaSession.setActionHandler('seekto', function(details) {
             if(player && player.seekTo && details.seekTime) {
                 player.seekTo(details.seekTime);
@@ -421,7 +389,7 @@ function heartbeatSync() {
             const duration = player.getDuration();
             const current = player.getCurrentTime();
             
-            // Continually updates the notification bar slider progress
+            // Continually updates the notification bar slider
             if ('mediaSession' in navigator) {
                 try {
                     navigator.mediaSession.setPositionState({
@@ -515,7 +483,6 @@ function updatePlayPauseButton(state) {
     }
 }
 
-// --- THE CRITICAL FIX: SMART PAUSE DETECTION ---
 function onPlayerStateChange(event) {
     const state = event.data;
     if (detectAd() || state === YT.PlayerState.BUFFERING) { updateSyncStatus(); return; }
@@ -524,28 +491,18 @@ function onPlayerStateChange(event) {
          userIntentionallyPaused = false;
          requestWakeLock();
          
-         // Start the Anchor so the OS knows we are playing!
+         // Start the Anchor so the OS knows we are playing securely!
          if (anchorAudio.paused) anchorAudio.play().catch(()=>{});
          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
          if (isSwitchingSong) { isSwitchingSong = false; updateSyncStatus(); }
     }
 
     if (state === YT.PlayerState.PAUSED) {
-        if (document.hidden && !userIntentionallyPaused) {
-            // The OS forced YouTube to pause because you locked the screen or minimized Chrome.
-            // Fight back instantly:
+        if (!userIntentionallyPaused && document.hidden) {
+            // OS forced a pause. Fight back!
             try { player.playVideo(); } catch(e){}
-            
-            // Check 500ms later. If the OS won the fight and we are still paused, 
-            // WE MUST pause the Anchor Audio too so your lock screen shows the Play button!
-            setTimeout(() => {
-                if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
-                    anchorAudio.pause();
-                    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
-                }
-            }, 500);
         } else {
-            // Normal intentional pause
+            // Intentional pause. Tell OS we are paused to update notification icon.
             anchorAudio.pause();
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
         }
@@ -1702,7 +1659,7 @@ UI_DUP.cancelBtn.onclick = () => {
     pendingAddData = null;
 };
 
-// --- WELCOME SCREEN ---
+// --- WELCOME SCREEN (INITIALIZES ANCHOR) ---
 const startSessionBtn = document.getElementById('startSessionBtn');
 const welcomeOverlay = document.getElementById('welcomeOverlay');
 
@@ -1717,7 +1674,7 @@ if (startSessionBtn && welcomeOverlay) {
         
         hasUserInteracted = true;
 
-        // Initialize the anchor audio silently to take over Media Session controls natively!
+        // THE SECRET SAUCE: Unlocking the audio anchor on the very first tap
         anchorAudio.play().then(() => {
             anchorAudio.pause(); 
         }).catch(err => console.log("Anchor audio blocked", err));
