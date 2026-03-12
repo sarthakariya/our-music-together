@@ -140,6 +140,7 @@ let lastLyricsIndex = -1;
 let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
+let isWindowFocused = document.hasFocus ? document.hasFocus() : true;
 
 // --- WAKE LOCK API ---
 let wakeLock = null;
@@ -155,6 +156,7 @@ async function requestWakeLock() {
 
 // --- BATTERY SAVER (BLUR/FOCUS) ---
 window.addEventListener('blur', () => {
+    isWindowFocused = false;
     document.body.classList.add('low-power-mode');
     UI.equalizer.classList.add('paused'); 
     stopLyricsSync(); 
@@ -167,6 +169,7 @@ window.addEventListener('blur', () => {
 });
 
 window.addEventListener('focus', () => {
+    isWindowFocused = true;
     document.body.classList.remove('low-power-mode');
     UI.equalizer.classList.remove('paused');
     if (currentVideoId) {
@@ -498,7 +501,7 @@ function onPlayerStateChange(event) {
     }
 
     if (state === YT.PlayerState.PAUSED) {
-        if (!userIntentionallyPaused && document.hidden) {
+        if (!userIntentionallyPaused && !isWindowFocused) {
             // OS forced a pause. Fight back!
             try { player.playVideo(); } catch(e){}
         } else {
