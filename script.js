@@ -498,8 +498,9 @@ function onPlayerStateChange(event) {
     }
 
     if (state === YT.PlayerState.PAUSED) {
-        if (!userIntentionallyPaused && document.hidden) {
-            // OS forced a pause. Fight back!
+        if (!userIntentionallyPaused) {
+            // Mobile browsers may pause media without reliable focus/visibility events.
+            // If user did not explicitly pause, force playback to recover background audio.
             try { player.playVideo(); } catch(e){}
         } else {
             // Intentional pause. Tell OS we are paused to update notification icon.
