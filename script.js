@@ -1,6 +1,27 @@
+// ============================================================================
+// --- ULTIMATE BACKGROUND PLAYBACK HACK (VISIBILITY SPOOFING) ---
+// ============================================================================
+// This forces YouTube to think the tab is ALWAYS visible. It prevents YouTube 
+// from triggering its auto-pause when you lock the phone or switch apps!
+try {
+    Object.defineProperty(document, 'hidden', { get: () => false });
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
+    Object.defineProperty(document, 'webkitHidden', { get: () => false });
+    
+    // Completely block the visibilitychange event from reaching YouTube's scripts
+    const originalAddEventListener = document.addEventListener;
+    document.addEventListener = function(type, listener, options) {
+        if (type === 'visibilitychange' || type === 'webkitvisibilitychange') {
+            return; // Drop the event!
+        }
+        return originalAddEventListener.call(this, type, listener, options);
+    };
+} catch(e) {
+    console.warn("Visibility spoofing blocked by browser.", e);
+}
+
 // --- BACKGROUND KEEP-ALIVE AUDIO ---
-// This tiny, silent audio file loops continuously to trick the mobile browser
-// into keeping the tab alive in the background without user intervention.
+// Keeps the Chrome processing active
 const silentAudio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
 silentAudio.loop = true;
 silentAudio.volume = 0.01;
@@ -11,23 +32,20 @@ dndStyles.innerHTML = `
 .song-item { 
     transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s, background-color 0.2s, border-color 0.2s; 
     will-change: transform, box-shadow, background-color; 
-    /* Hardware acceleration hint */
     transform: translateZ(0);
 }
-/* Enhanced Dragging Visuals */
 .song-item.dragging {
     opacity: 1 !important;
     background: #333 !important;
     border: 1px solid #ff4081 !important;
     box-shadow: 0 16px 32px rgba(0,0,0,0.75) !important;
-    transform: scale(1.05) translateZ(0) !important; /* Pop out effect */
+    transform: scale(1.05) translateZ(0) !important;
     z-index: 1000 !important;
     position: relative;
     border-radius: 8px;
 }
 .song-item.dragging .song-thumb { opacity: 0.9; }
 
-/* Currently Playing Pulse Animation */
 @keyframes playing-pulse {
     0% { box-shadow: 0 0 0 0 rgba(245, 0, 87, 0.4); border-color: rgba(245, 0, 87, 0.4); background-color: rgba(245, 0, 87, 0.05); }
     50% { box-shadow: 0 0 8px 0 rgba(245, 0, 87, 0.2); border-color: rgba(245, 0, 87, 0.8); background-color: rgba(245, 0, 87, 0.15); }
@@ -38,7 +56,6 @@ dndStyles.innerHTML = `
     border: 1px solid #f50057;
 }
 
-/* Duplicate Modal Styles */
 .dup-modal-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.85); z-index: 10000;
@@ -61,7 +78,7 @@ dndStyles.innerHTML = `
 .dup-btn.cancel { background: transparent; color: #888; }
 .dup-btn:active { transform: scale(0.98); }
 
-/* BATTERY SAVER: Pause animations when class .low-power-mode is active */
+/* BATTERY SAVER: Pause animations when window is blurred */
 body.low-power-mode .song-item.playing,
 body.low-power-mode .mini-eq-bar,
 body.low-power-mode .sync-status-3d,
@@ -92,7 +109,7 @@ const queueRef = db.ref('queue');
 const chatRef = db.ref('chat'); 
 const presenceRef = db.ref('presence');
 
-// --- DOM CACHE (Performance Optimization) ---
+// --- DOM CACHE ---
 const UI = {
     player: document.getElementById('player'),
     playPauseBtn: document.getElementById('play-pause-btn'),
@@ -155,7 +172,7 @@ let currentRemoteState = null;
 let isSwitchingSong = false; 
 let hasUserInteracted = false; 
 let lastQueueSignature = ""; 
-let pendingAddData = null; // Store data for duplicate resolution
+let pendingAddData = null; 
 
 // --- PLAYBACK FLAGS ---
 let userIntentionallyPaused = false; 
@@ -172,83 +189,47 @@ let lastLyricsIndex = -1;
 let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
-let syncHealthInterval = null;
 
 // --- WAKE LOCK API ---
 let wakeLock = null;
 async function requestWakeLock() {
-    if (document.hidden) return;
-    
     if ('wakeLock' in navigator) {
         try {
-            if (wakeLock) return; // Already have lock
+            if (wakeLock) return; 
             wakeLock = await navigator.wakeLock.request('screen');
-            wakeLock.addEventListener('release', () => {
-                wakeLock = null;
-                console.log('Wake Lock released');
-            });
-        } catch (err) {
-            console.error(`Wake Lock error: ${err.name}, ${err.message}`);
-        }
+            wakeLock.addEventListener('release', () => { wakeLock = null; });
+        } catch (err) {}
     }
 }
 
-// --- BATTERY SAVER / VISIBILITY LOGIC ---
+// --- BATTERY SAVER (Using Window Blur since we broke visibilitychange on purpose) ---
 let smartIntervals = [];
 
-function setSmartInterval(callback, normalMs, hiddenMs) {
-    let intervalId = null;
-    let currentMs = document.hidden ? hiddenMs : normalMs;
-    
-    const run = () => {
-        if(document.hidden && hiddenMs === Infinity) {
-            // Do not run
-        } else {
-             callback();
-        }
-    };
-
-    intervalId = setInterval(run, currentMs);
-
-    const handler = {
-        id: intervalId,
-        normalMs,
-        hiddenMs,
-        callback,
-        restart: function() {
-            clearInterval(this.id);
-            const ms = document.hidden ? this.hiddenMs : this.normalMs;
-            if (ms !== Infinity) {
-                 this.id = setInterval(this.callback, ms);
-            }
-        }
-    };
+function setSmartInterval(callback, ms) {
+    let intervalId = setInterval(callback, ms);
+    const handler = { id: intervalId, ms, callback };
     smartIntervals.push(handler);
     return handler;
 }
 
-document.addEventListener('visibilitychange', () => {
-    smartIntervals.forEach(h => h.restart());
-    if (document.hidden) {
-        // Battery Optimization: Disable expensive animations
-        document.body.classList.add('low-power-mode');
-        UI.equalizer.classList.add('paused'); 
-        stopLyricsSync(); 
-    } else {
-        // Resume full fidelity
-        document.body.classList.remove('low-power-mode');
-        UI.equalizer.classList.remove('paused');
-        if (currentVideoId) {
-             const song = currentQueue.find(s => s.videoId === currentVideoId);
-             if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
-        }
-        if(currentLyrics) startLyricsSync();
-        updateSyncStatus();
-        requestWakeLock();
-    }
+window.addEventListener('blur', () => {
+    document.body.classList.add('low-power-mode');
+    UI.equalizer.classList.add('paused'); 
+    stopLyricsSync(); 
 });
 
-// --- HELPER: THROTTLE (Battery Saver for Scroll/Drag) ---
+window.addEventListener('focus', () => {
+    document.body.classList.remove('low-power-mode');
+    UI.equalizer.classList.remove('paused');
+    if (currentVideoId) {
+         const song = currentQueue.find(s => s.videoId === currentVideoId);
+         if(song) updateMediaSessionMetadata(song.title, song.uploader, song.thumbnail);
+    }
+    if(currentLyrics) startLyricsSync();
+    updateSyncStatus();
+    requestWakeLock();
+});
+
 function throttle(func, limit) {
     let inThrottle;
     return function() {
@@ -262,27 +243,29 @@ function throttle(func, limit) {
     }
 }
 
-// --- HAPTIC FEEDBACK HELPER ---
 function triggerHaptic() {
-    if (navigator.vibrate) {
-        navigator.vibrate(60); 
-    }
+    if (navigator.vibrate) navigator.vibrate(60); 
 }
 
 document.addEventListener('click', (e) => {
     const t = e.target;
-    if (t.tagName === 'BUTTON' || t.closest('button') || 
-        t.closest('.song-item') || t.closest('.nav-tab')) {
+    if (t.tagName === 'BUTTON' || t.closest('button') || t.closest('.song-item') || t.closest('.nav-tab')) {
         triggerHaptic();
     }
 });
 
-// --- USER IDENTIFICATION ---
-let myName = localStorage.getItem('deepSpaceUserName');
-if (!myName || myName === "null") {
-    myName = prompt("Enter your name (Sarthak or Reechita):");
-    if(!myName) myName = "Guest";
-    localStorage.setItem('deepSpaceUserName', myName);
+// --- USER IDENTIFICATION (FAIL-SAFE) ---
+let myName = "Guest";
+try {
+    myName = localStorage.getItem('deepSpaceUserName');
+    if (!myName || myName === "null") {
+        myName = prompt("Enter your name (Sarthak or Reechita):");
+        if(!myName) myName = "Guest";
+        localStorage.setItem('deepSpaceUserName', myName);
+    }
+} catch(e) {
+    console.warn("Storage blocked by privacy settings.");
+    myName = prompt("Enter your name (Sarthak or Reechita):") || "Guest";
 }
 myName = myName.charAt(0).toUpperCase() + myName.slice(1).toLowerCase();
 
@@ -294,9 +277,7 @@ presenceRef.child(sessionKey).set({ user: myName, online: true, timestamp: fireb
 function suppressBroadcast(duration = 1000) {
     ignoreSystemEvents = true;
     if (ignoreTimer) clearTimeout(ignoreTimer);
-    ignoreTimer = setTimeout(() => {
-        ignoreSystemEvents = false;
-    }, duration);
+    ignoreTimer = setTimeout(() => { ignoreSystemEvents = false; }, duration);
 }
 
 function showToast(sender, message) {
@@ -305,18 +286,14 @@ function showToast(sender, message) {
     toast.className = 'toast';
     toast.innerHTML = `<strong>${sender}</strong>: ${message}`;
     UI.toastContainer.appendChild(toast);
-    
-    // Trigger reflow to enable transition - minimal impact for single toast
     void toast.offsetWidth;
     toast.classList.add('show');
-    
     setTimeout(() => {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 300);
     }, 3000);
 }
 
-// --- NETWORK RECOVERY LISTENERS ---
 window.addEventListener('online', () => {
     showToast("System", "Back online! Resyncing...");
     if (currentVideoId && player) {
@@ -327,9 +304,7 @@ window.addEventListener('online', () => {
     }
 });
 
-window.addEventListener('offline', () => {
-    showToast("System", "Connection lost. Trying to keep playing...");
-});
+window.addEventListener('offline', () => { showToast("System", "Connection lost. Trying to keep playing..."); });
 
 // --- YOUTUBE PLAYER CONFIG ---
 function onYouTubeIframeAPIReady() {
@@ -351,9 +326,9 @@ function onPlayerReady(event) {
     if (player && player.setVolume) player.setVolume(100);
     requestWakeLock();
     
-    setSmartInterval(heartbeatSync, 800, 900);
-    setSmartInterval(monitorSyncHealth, 1500, 1500);
-    setSmartInterval(monitorAdStatus, 1000, 2000);
+    setSmartInterval(heartbeatSync, 800);
+    setSmartInterval(monitorSyncHealth, 1500);
+    setSmartInterval(monitorAdStatus, 1500);
 
     syncRef.once('value').then(snapshot => {
         const state = snapshot.val();
@@ -374,7 +349,6 @@ function onPlayerError(event) {
     setTimeout(() => { initiateNextSong(); }, 1000);
 }
 
-// --- AD DETECTION ---
 function detectAd() {
     if (!player) return false;
     try {
@@ -388,11 +362,9 @@ function detectAd() {
 }
 
 function monitorAdStatus() {
-    if (document.hidden && userIntentionallyPaused) return;
     if (!player || !currentVideoId) return;
 
     const isAd = detectAd();
-    
     if (isAd) {
         if (!wasInAd) {
             wasInAd = true;
@@ -403,7 +375,7 @@ function monitorAdStatus() {
     } else {
         if (wasInAd) {
             wasInAd = false;
-            if(player.getPlayerState() !== YT.PlayerState.PLAYING) {
+            if(player.getPlayerState() !== YT.PlayerState.PLAYING && !userIntentionallyPaused) {
                 try { player.playVideo(); } catch(e){}
             }
             setTimeout(() => {
@@ -421,8 +393,6 @@ function setupMediaSession() {
             if(player && player.playVideo) { 
                 userIntentionallyPaused = false;
                 try { player.playVideo(); } catch(e){} 
-                
-                // Update UI and Sync state directly instead of toggling to avoid reversing command
                 updatePlayPauseButton(YT.PlayerState.PLAYING);
                 lastBroadcaster = myName;
                 broadcastState('play', player.getCurrentTime(), currentVideoId, true);
@@ -433,8 +403,6 @@ function setupMediaSession() {
             if(player && player.pauseVideo) { 
                 userIntentionallyPaused = true;
                 try { player.pauseVideo(); } catch(e){}
-                
-                // Update UI and Sync state directly instead of toggling
                 updatePlayPauseButton(YT.PlayerState.PAUSED);
                 lastBroadcaster = myName;
                 broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
@@ -457,27 +425,9 @@ function updateMediaSessionMetadata(title, artist, artworkUrl) {
     }
 }
 
-// --- BACKGROUND KEEP-ALIVE ---
-setInterval(() => {
-    // Only intervene if absolutely necessary to keep playback alive in background
-    if (document.hidden && player && player.getPlayerState) {
-        const state = player.getPlayerState();
-        if (state === YT.PlayerState.PAUSED && !userIntentionallyPaused && !detectAd()) {
-            try { player.playVideo(); } catch(e){}
-        }
-        if ((state === -1 || state === 0 || state === 5) && !userIntentionallyPaused && !isSwitchingSong) {
-             try { player.playVideo(); } catch(e){}
-        }
-    }
-}, 900);
-
 // --- CORE SYNC LOGIC ---
 function heartbeatSync() {
-    if (isSwitchingSong) return;
-    if (detectAd()) {
-        if (lastBroadcaster === myName) updateSyncStatus();
-        return;
-    }
+    if (isSwitchingSong || detectAd()) return;
     if (currentRemoteState && currentRemoteState.action === 'ad_wait') return;
 
     if (player && player.getPlayerState && currentVideoId && lastBroadcaster === myName && !ignoreSystemEvents) {
@@ -494,13 +444,12 @@ function heartbeatSync() {
                 broadcastState('pause', player.getCurrentTime(), currentVideoId);
             }
         }
-        if(!document.hidden && Date.now() - lastLocalInteractionTime > 1000) updatePlayPauseButton(state);
+        if(Date.now() - lastLocalInteractionTime > 1000) updatePlayPauseButton(state);
     }
 }
 
 function monitorSyncHealth() {
-    if (!hasUserInteracted) return;
-    if (lastBroadcaster === myName || isSwitchingSong) return;
+    if (!hasUserInteracted || lastBroadcaster === myName || isSwitchingSong) return;
     if (!player || !currentRemoteState || !player.getPlayerState) return;
     
     if (currentRemoteState.action === 'ad_wait') {
@@ -573,18 +522,12 @@ function updatePlayPauseButton(state) {
 
 function onPlayerStateChange(event) {
     const state = event.data;
-    if (detectAd()) { updateSyncStatus(); return; }
-    if (state === YT.PlayerState.BUFFERING) { updateSyncStatus(); return; }
+    if (detectAd() || state === YT.PlayerState.BUFFERING) { updateSyncStatus(); return; }
 
     if (state === YT.PlayerState.PLAYING) {
          userIntentionallyPaused = false;
          requestWakeLock();
          if (isSwitchingSong) { isSwitchingSong = false; updateSyncStatus(); }
-    }
-
-    if (state === YT.PlayerState.PAUSED && document.hidden && !userIntentionallyPaused) {
-        try { player.playVideo(); } catch(e){}
-        return; 
     }
 
     if(Date.now() - lastLocalInteractionTime > 500) updatePlayPauseButton(state);
@@ -599,13 +542,12 @@ function onPlayerStateChange(event) {
     }
     else if (state === YT.PlayerState.PAUSED) {
         if (Date.now() - lastLocalInteractionTime > 500) {
-            if (!document.hidden || userIntentionallyPaused) {
-                lastBroadcaster = myName; 
-                broadcastState('pause', player.getCurrentTime(), currentVideoId);
-            }
+             lastBroadcaster = myName; 
+             broadcastState('pause', player.getCurrentTime(), currentVideoId);
         }
     }
     else if (state === YT.PlayerState.ENDED) initiateNextSong();
+    
     updateSyncStatus();
 }
 
@@ -699,20 +641,14 @@ function loadInitialData() {
         const msg = snapshot.val();
         const key = snapshot.key;
         displayChatMessage(key, msg.user, msg.text, msg.timestamp, msg.image, msg.seen);
-        if (msg.user !== myName && isChatActive() && !msg.seen) {
-             chatRef.child(key).update({ seen: true });
-        }
+        if (msg.user !== myName && isChatActive() && !msg.seen) chatRef.child(key).update({ seen: true });
         calculateUnreadCount();
-        if (msg.user !== myName && !isChatActive()) {
-            const isRecent = (Date.now() - msg.timestamp) < 30000; 
-            if(isRecent) showToast(msg.user, msg.text);
-        }
+        if (msg.user !== myName && !isChatActive() && (Date.now() - msg.timestamp) < 30000) showToast(msg.user, msg.text);
     });
     
     chatRef.limitToLast(50).on('child_changed', (snapshot) => {
         const msg = snapshot.val();
-        const key = snapshot.key;
-        const tickEl = document.getElementById(`tick-${key}`);
+        const tickEl = document.getElementById(`tick-${snapshot.key}`);
         if(tickEl) {
              tickEl.innerHTML = msg.seen ? '<i class="fa-solid fa-check-double"></i>' : '<i class="fa-solid fa-check"></i>';
              tickEl.className = msg.seen ? 'msg-tick seen' : 'msg-tick';
@@ -731,13 +667,11 @@ function displayChatMessage(key, user, text, timestamp, image, seen) {
     const timeStr = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const tickIcon = seen ? '<i class="fa-solid fa-check-double"></i>' : '<i class="fa-solid fa-check"></i>';
     const tickClass = seen ? 'msg-tick seen' : 'msg-tick';
-    let contentHtml = `<div class="msg-text">${text}</div>`;
-    if (image) contentHtml = `<img src="${image}" class="msg-image" alt="Shared image">`;
-
+    
     msgDiv.innerHTML = `
         <div class="msg-bubble">
             ${!isMe ? `<div class="msg-user">${user}</div>` : ''}
-            ${contentHtml}
+            <div class="msg-text">${text}</div>
             <div class="msg-meta">
                 <span class="msg-time">${timeStr}</span>
                 ${isMe ? `<span id="tick-${key}" class="${tickClass}">${tickIcon}</span>` : ''}
@@ -751,39 +685,29 @@ function displayChatMessage(key, user, text, timestamp, image, seen) {
 function calculateUnreadCount() {
     chatRef.limitToLast(50).once('value', (snapshot) => {
         let count = 0;
-        snapshot.forEach((child) => {
-            const msg = child.val();
-            if (msg.user !== myName && !msg.seen) count++;
-        });
-        updateChatBadges(count);
+        snapshot.forEach((child) => { if (child.val().user !== myName && !child.val().seen) count++; });
+        if (count > 0) {
+            if(UI.chatBadge) { UI.chatBadge.textContent = count; UI.chatBadge.style.display = 'inline-block'; }
+            if(UI.mobileChatBadge) { UI.mobileChatBadge.textContent = count; UI.mobileChatBadge.style.display = 'block'; }
+        } else {
+            if(UI.chatBadge) UI.chatBadge.style.display = 'none';
+            if(UI.mobileChatBadge) UI.mobileChatBadge.style.display = 'none';
+        }
     });
-}
-
-function updateChatBadges(count) {
-    if (count > 0) {
-        if(UI.chatBadge) { UI.chatBadge.textContent = count; UI.chatBadge.style.display = 'inline-block'; }
-        if(UI.mobileChatBadge) { UI.mobileChatBadge.textContent = count; UI.mobileChatBadge.style.display = 'block'; }
-    } else {
-        if(UI.chatBadge) UI.chatBadge.style.display = 'none';
-        if(UI.mobileChatBadge) UI.mobileChatBadge.style.display = 'none';
-    }
 }
 
 function markMessagesAsSeen() {
     chatRef.limitToLast(50).once('value', (snapshot) => {
         const updates = {};
         snapshot.forEach((child) => {
-            const msg = child.val();
-            if (msg.user !== myName && !msg.seen) updates[`${child.key}/seen`] = true;
+            if (child.val().user !== myName && !child.val().seen) updates[`${child.key}/seen`] = true;
         });
         if(Object.keys(updates).length > 0) chatRef.update(updates);
     });
 }
 
 function isChatActive() {
-    const isMobile = window.innerWidth <= 1100;
-    if (isMobile) return activeTab === 'chat' && UI.mobileSheet.classList.contains('active');
-    return activeTab === 'chat';
+    return window.innerWidth <= 1100 ? activeTab === 'chat' && UI.mobileSheet.classList.contains('active') : activeTab === 'chat';
 }
 
 function forceChatScroll() {
@@ -827,9 +751,7 @@ function applyRemoteCommand(state) {
     if (!hasUserInteracted && (state.action === 'play' || state.action === 'restart')) {
         if (state.videoId !== currentVideoId) {
              const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
-             const title = songInQueue ? songInQueue.title : "Syncing...";
-             const uploader = songInQueue ? songInQueue.uploader : "";
-             loadAndPlayVideo(state.videoId, title, uploader, state.time, false, false); 
+             loadAndPlayVideo(state.videoId, songInQueue ? songInQueue.title : "Syncing...", songInQueue ? songInQueue.uploader : "", state.time, false, false); 
         }
         return; 
     }
@@ -847,15 +769,11 @@ function applyRemoteCommand(state) {
     }
 
     const now = Date.now();
-    const msgTimestamp = state.timestamp || now;
-    const latency = (now - msgTimestamp) / 1000;
-    const compensatedTime = (state.time || 0) + Math.min(Math.max(0, latency), 3.0);
+    const compensatedTime = (state.time || 0) + Math.min(Math.max(0, (now - (state.timestamp || now)) / 1000), 3.0);
 
     if (state.videoId !== currentVideoId) {
         const songInQueue = currentQueue.find(s => s.videoId === state.videoId);
-        const title = songInQueue ? songInQueue.title : "Syncing...";
-        const uploader = songInQueue ? songInQueue.uploader : "";
-        loadAndPlayVideo(state.videoId, title, uploader, compensatedTime, false); 
+        loadAndPlayVideo(state.videoId, songInQueue ? songInQueue.title : "Syncing...", songInQueue ? songInQueue.uploader : "", compensatedTime, false); 
         if(state.action === 'play' || state.action === 'restart') {
             userIntentionallyPaused = false;
             player.setVolume(100);
@@ -892,7 +810,6 @@ function applyRemoteCommand(state) {
 }
 
 function updateSyncStatus() {
-    if (document.hidden) return;
     const msgEl = UI.syncStatusMsg;
     const eq = UI.equalizer;
     let icon = '', text = '', className = '';
@@ -1056,79 +973,6 @@ async function handleSearch() {
     } catch (error) {
         console.error("Search Error:", error);
         UI.resultsList.innerHTML = '<div class="empty-state"><p>Error searching. Please try again.</p></div>';
-    }
-}
-
-// --- SPOTIFY IMPORT LOGIC ---
-async function handleSpotifyImport(url) {
-    const regex = /playlist\/([a-zA-Z0-9]+)/;
-    const match = url.match(regex);
-    if (!match) { showToast("System", "Invalid Spotify playlist URL."); return; }
-    const playlistId = match[1];
-
-    let clientId = localStorage.getItem('sp_id');
-    let clientSecret = localStorage.getItem('sp_secret');
-
-    if (!clientId || !clientSecret) {
-        if(!confirm("To import from Spotify, we need a Client ID & Secret (Workaround). Do you have them?")) return;
-        clientId = prompt("Enter Spotify Client ID:");
-        clientSecret = prompt("Enter Spotify Client Secret:");
-        if (!clientId || !clientSecret) return;
-        localStorage.setItem('sp_id', clientId);
-        localStorage.setItem('sp_secret', clientSecret);
-    }
-
-    UI.searchInput.value = '';
-    showToast("System", "Authenticating with Spotify...");
-    switchTab('queue');
-
-    try {
-        const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Authorization': 'Basic ' + btoa(clientId + ':' + clientSecret)
-            },
-            body: 'grant_type=client_credentials'
-        });
-        const tokenData = await tokenRes.json();
-        if (!tokenData.access_token) throw new Error("Invalid Spotify Credentials");
-
-        showToast("System", "Fetching Spotify tracks...");
-        const tracksRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=20`, {
-            headers: { 'Authorization': 'Bearer ' + tokenData.access_token }
-        });
-        const tracksData = await tracksRes.json();
-        
-        if (!tracksData.items || tracksData.items.length === 0) throw new Error("No tracks found");
-
-        showToast("System", `Converting ${tracksData.items.length} songs (Limit 20)...`);
-        
-        let addedCount = 0;
-        for (const item of tracksData.items) {
-            if (!item.track) continue;
-            const query = `${item.track.name} ${item.track.artists[0].name} audio`;
-            
-            try {
-                const ytRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${encodeURIComponent(query)}&type=video&key=${YOUTUBE_API_KEY}`);
-                const ytData = await ytRes.json();
-                
-                if (ytData.items && ytData.items.length > 0) {
-                    const vid = ytData.items[0];
-                    directAddToQueue(vid.id.videoId, vid.snippet.title, vid.snippet.channelTitle, vid.snippet.thumbnails.medium?.url || vid.snippet.thumbnails.default?.url);
-                    addedCount++;
-                    await new Promise(r => setTimeout(r, 100)); 
-                }
-            } catch (e) { console.error("Conversion failed for one track", e); }
-        }
-        
-        showToast("System", `Imported ${addedCount} songs from Spotify!`);
-
-    } catch (e) {
-        console.error(e);
-        localStorage.removeItem('sp_id'); 
-        localStorage.removeItem('sp_secret');
-        showToast("System", "Spotify Import Failed. Check Credentials.");
     }
 }
 
@@ -1495,9 +1339,7 @@ function initDragAndDrop(list) {
         });
 
         item.addEventListener('drag', (e) => {
-            if(e.clientY !== 0) {
-                currentY = e.clientY;
-            }
+            if(e.clientY !== 0) currentY = e.clientY;
         });
 
         item.addEventListener('dragend', () => {
@@ -1601,26 +1443,6 @@ if (unsyncLyricsBtn) {
     });
 }
 
-const dedicateBtn = document.getElementById('dedicateBtn');
-if (dedicateBtn) {
-    dedicateBtn.addEventListener('click', () => {
-        const title = UI.songTitle.textContent;
-        if(title && title !== "Heart's Rhythm") {
-            chatRef.push({ user: myName, text: `🎵 Dedicated to you: ${title} ❤️`, timestamp: Date.now(), seen: false });
-            showToast("System", "Dedication sent!");
-            switchTab('chat');
-        } else {
-            showToast("System", "Play a song to dedicate it!");
-        }
-    });
-}
-
-function sendVibe(emoji) {
-    const msgs = [`Vibing with ${emoji}`, `Sending ${emoji}`, `${emoji} ${emoji} ${emoji}`];
-    chatRef.push({ user: myName, text: msgs[Math.floor(Math.random() * msgs.length)], timestamp: Date.now(), seen: false });
-    triggerHaptic();
-}
-
 function decodeHTMLEntities(text) {
     if (!text) return "";
     const txt = document.createElement("textarea");
@@ -1685,7 +1507,6 @@ function stopLyricsSync() {
 }
 
 function syncLyricsDisplay() {
-    if (document.hidden) return;
     if (!player || !player.getCurrentTime || !currentLyrics) return;
     const time = player.getCurrentTime();
     let activeIndex = -1;
@@ -1851,7 +1672,6 @@ UI_DUP.addBtn.onclick = () => {
 };
 UI_DUP.replaceBtn.onclick = () => {
     if(!pendingAddData) return;
-    // We pass replaceKey and dupOrder to remove old and use old order
     directAddToQueue(pendingAddData.videoId, pendingAddData.title, pendingAddData.uploader, pendingAddData.thumbnail, pendingAddData.replaceKey, pendingAddData.dupOrder);
     UI_DUP.overlay.classList.remove('active');
     pendingAddData = null;
@@ -1861,31 +1681,31 @@ UI_DUP.cancelBtn.onclick = () => {
     pendingAddData = null;
 };
 
-// --- WELCOME SCREEN (ROBUST FIX) ---
-document.addEventListener('click', (e) => {
-    const overlay = UI.welcomeOverlay || document.getElementById('welcomeOverlay');
-    if (!overlay) return;
-    const isVisible = overlay.style.display !== 'none' && overlay.style.opacity !== '0';
-    if (!isVisible) return;
-    const target = e.target;
-    const isStartBtn = target.closest('#start-btn') || target.closest('.start-btn') || (overlay.contains(target) && target.closest('button'));
+// --- WELCOME SCREEN ---
+const startSessionBtn = document.getElementById('startSessionBtn');
+const welcomeOverlay = document.getElementById('welcomeOverlay');
 
-    if (isStartBtn) {
-        overlay.style.opacity = '0';
-        overlay.style.pointerEvents = 'none';
-        setTimeout(() => { overlay.style.display = 'none'; overlay.classList.remove('active'); }, 500);
+if (startSessionBtn && welcomeOverlay) {
+    startSessionBtn.addEventListener('click', () => {
+        welcomeOverlay.style.opacity = '0';
+        welcomeOverlay.style.pointerEvents = 'none';
+        setTimeout(() => { 
+            welcomeOverlay.style.display = 'none'; 
+            welcomeOverlay.classList.remove('active'); 
+        }, 500);
         
         hasUserInteracted = true;
         
-        // --- ADDED: Play the silent keep-alive audio to enable seamless background playback ---
         silentAudio.play().catch(err => console.log("Silent audio blocked", err));
 
-        if(player && player.unMute) player.unMute();
+        if(player && typeof player.unMute === 'function') {
+            player.unMute();
+        }
         
-        if (player) {
-             if (currentVideoId) { try { player.playVideo(); } catch(e){} } 
-             // --- CRITICAL FIX FOR JOIN SYNC ---
-             // If a partner is already playing a song, prioritize that state over the top of the queue.
+        if (player && typeof player.playVideo === 'function') {
+             if (currentVideoId) { 
+                 try { player.playVideo(); } catch(e){} 
+             } 
              else if (currentRemoteState && currentRemoteState.videoId && currentRemoteState.action !== 'pause') {
                  const vidId = currentRemoteState.videoId;
                  const time = currentRemoteState.time || 0;
@@ -1893,10 +1713,11 @@ document.addEventListener('click', (e) => {
                  const title = song ? song.title : "Syncing...";
                  const uploader = song ? song.uploader : "";
                  
-                 // Force load remote song immediately
                  loadAndPlayVideo(vidId, title, uploader, time, false, true);
              }
-             else if (currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
+             else if (currentQueue.length > 0) {
+                 initiateSongLoad(currentQueue[0]);
+             }
         }
-    }
-});
+    });
+}
