@@ -1,19 +1,18 @@
 // ============================================================================
-// --- MOBILE CHROME BACKGROUND BYPASS (THE DESKTOP MODE SIMULATOR) ---
+// --- THE BACKGROUND KEEPER (PERSISTENT ANCHOR AUDIO) ---
 // ============================================================================
+// We create a persistent silent audio track. This forces the mobile browser's
+// media engine to stay awake, holding the lock-screen notification open even 
+// when it tries to suspend the YouTube iframe.
+const anchorAudio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
+anchorAudio.loop = true;
+anchorAudio.volume = 0.01;
 
-// 1. VISIBILITY SPOOFING: Force the browser to lie to YouTube about being visible.
+// Spoof visibility to trick the YouTube API
 try {
     Object.defineProperty(document, 'hidden', { get: () => false });
     Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
 } catch (e) {}
-
-// 2. THE UNBREAKABLE AUDIO ANCHOR: 
-// This native element keeps the audio engine awake. We will ONLY pause this
-// when you intentionally press pause. We will IGNORE Chrome's auto-pausing!
-const anchorAudio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
-anchorAudio.loop = true;
-anchorAudio.volume = 0.01;
 
 // --- INJECTED STYLES FOR PERFORMANCE ---
 const dndStyles = document.createElement('style');
@@ -131,19 +130,13 @@ let isSwitchingSong = false;
 let hasUserInteracted = false; 
 let lastQueueSignature = ""; 
 let pendingAddData = null; 
-
-// --- PLAYBACK FLAGS ---
-let userIntentionallyPaused = true; // DEFAULT TO TRUE UNTIL CLICKED
+let userIntentionallyPaused = false; 
 let wasInAd = false; 
 let lastSeekTime = 0; 
-
-// --- LYRICS SYNC VARIABLES ---
 let currentLyrics = null;
 let currentPlainLyrics = "";
 let lyricsInterval = null;
 let lastLyricsIndex = -1;
-
-// --- CRITICAL SYNC FLAGS ---
 let ignoreSystemEvents = false;
 let ignoreTimer = null;
 let lastLocalInteractionTime = 0; 
@@ -160,11 +153,17 @@ async function requestWakeLock() {
     }
 }
 
-// --- BATTERY SAVER & BACKGROUND ENFORCER ---
+// --- BATTERY SAVER (BLUR/FOCUS) ---
 window.addEventListener('blur', () => {
     document.body.classList.add('low-power-mode');
     UI.equalizer.classList.add('paused'); 
     stopLyricsSync(); 
+    
+    // If we leave the app and didn't manually pause, aggressively force play and anchor audio
+    if (!userIntentionallyPaused && player && typeof player.playVideo === 'function') {
+        try { player.playVideo(); } catch(e){}
+        if (anchorAudio.paused) anchorAudio.play().catch(()=>{});
+    }
 });
 
 window.addEventListener('focus', () => {
@@ -178,23 +177,6 @@ window.addEventListener('focus', () => {
     updateSyncStatus();
     requestWakeLock();
 });
-
-// THIS KEEPS THE NOTIFICATION ALIVE
-setInterval(() => {
-    if (!hasUserInteracted) return;
-    
-    // 1. If we did NOT intentionally pause, the Anchor Audio MUST run!
-    if (!userIntentionallyPaused && anchorAudio.paused) {
-        anchorAudio.play().catch(()=>{});
-    }
-
-    // 2. If the OS killed YouTube while hidden, try to kickstart it
-    if (!userIntentionallyPaused && player && player.getPlayerState) {
-        if (player.getPlayerState() === YT.PlayerState.PAUSED) {
-            try { player.playVideo(); } catch(e){}
-        }
-    }
-}, 1000);
 
 function throttle(func, limit) {
     let inThrottle;
@@ -357,7 +339,7 @@ function setupMediaSession() {
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', function() {
             userIntentionallyPaused = false;
-            anchorAudio.play().catch(()=>{}); // Keep anchor pumping to hold notification!
+            anchorAudio.play().catch(()=>{}); // Keep anchor pumping
             if(player && player.playVideo) { 
                 try { player.playVideo(); } catch(e){} 
             }
@@ -365,7 +347,7 @@ function setupMediaSession() {
         
         navigator.mediaSession.setActionHandler('pause', function() {
             userIntentionallyPaused = true;
-            anchorAudio.pause(); // User pressed pause, allow the notification to disappear naturally
+            anchorAudio.pause(); // Pause anchor so phone knows we actually paused
             if(player && player.pauseVideo) { 
                 try { player.pauseVideo(); } catch(e){}
             }
@@ -407,6 +389,7 @@ function heartbeatSync() {
             const duration = player.getDuration();
             const current = player.getCurrentTime();
             
+            // Continually updates the notification bar slider
             if ('mediaSession' in navigator) {
                 try {
                     navigator.mediaSession.setPositionState({
@@ -500,7 +483,6 @@ function updatePlayPauseButton(state) {
     }
 }
 
-// --- THE CRITICAL FIX: DECOUPLING ANCHOR AUDIO FROM OS PAUSE ---
 function onPlayerStateChange(event) {
     const state = event.data;
     if (detectAd() || state === YT.PlayerState.BUFFERING) { updateSyncStatus(); return; }
@@ -508,20 +490,20 @@ function onPlayerStateChange(event) {
     if (state === YT.PlayerState.PLAYING) {
          userIntentionallyPaused = false;
          requestWakeLock();
+         
+         // Start the Anchor so the OS knows we are playing securely!
          if (anchorAudio.paused) anchorAudio.play().catch(()=>{});
          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
          if (isSwitchingSong) { isSwitchingSong = false; updateSyncStatus(); }
     }
 
     if (state === YT.PlayerState.PAUSED) {
-        if (userIntentionallyPaused) {
-            // YOU clicked pause. Let the anchor pause.
-            anchorAudio.pause();
-            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
-        } else {
-            // THE BROWSER KILLED YOUTUBE. DO NOT PAUSE THE ANCHOR!
-            // Keeping the anchor playing prevents Chrome from deleting the lock-screen notification.
+        if (!userIntentionallyPaused && document.hidden) {
+            // OS forced a pause. Fight back!
             try { player.playVideo(); } catch(e){}
+        } else {
+            // Intentional pause. Tell OS we are paused to update notification icon.
+            anchorAudio.pause();
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
         }
     }
@@ -537,8 +519,7 @@ function onPlayerStateChange(event) {
         }
     }
     else if (state === YT.PlayerState.PAUSED) {
-        // Only broadcast pause if we intentionally triggered it
-        if (Date.now() - lastLocalInteractionTime > 500 && userIntentionallyPaused) {
+        if (Date.now() - lastLocalInteractionTime > 500) {
              lastBroadcaster = myName; 
              broadcastState('pause', player.getCurrentTime(), currentVideoId);
         }
@@ -557,19 +538,16 @@ function togglePlayPause() {
 
     const state = player.getPlayerState();
     if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
-        userIntentionallyPaused = true; // Mark intentional
         UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>'; 
-        anchorAudio.pause(); // Manually kill anchor
+        userIntentionallyPaused = true; 
         try { player.pauseVideo(); } catch(e){}
         broadcastState('pause', player.getCurrentTime(), currentVideoId, true);
     } else {
-        userIntentionallyPaused = false; // Mark intentional play
         requestWakeLock();
         UI.playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>'; 
-        
+        userIntentionallyPaused = false; 
         if (!currentVideoId && currentQueue.length > 0) initiateSongLoad(currentQueue[0]);
         else if (currentVideoId) {
-            anchorAudio.play().catch(()=>{}); // Re-start anchor
             player.setVolume(100);
             try { player.playVideo(); } catch(e){}
             broadcastState('play', player.getCurrentTime(), currentVideoId, true);
@@ -1651,7 +1629,6 @@ document.getElementById('shuffleQueueBtn').addEventListener('click', () => {
 });
 document.getElementById('forceSyncBtn').addEventListener('click', () => {
     UI.syncOverlay.classList.remove('active');
-    userIntentionallyPaused = false;
     player.playVideo(); broadcastState('play', player.getCurrentTime(), currentVideoId);
 });
 if(UI.infoBtn && UI.infoOverlay) UI.infoBtn.addEventListener('click', () => UI.infoOverlay.classList.add('active'));
@@ -1696,10 +1673,11 @@ if (startSessionBtn && welcomeOverlay) {
         }, 500);
         
         hasUserInteracted = true;
-        userIntentionallyPaused = false; // We are officially playing!
 
-        // Start the anchor on first click to bind the Media Session securely to Chrome!
-        anchorAudio.play().catch(err => console.log("Anchor audio blocked", err));
+        // THE SECRET SAUCE: Unlocking the audio anchor on the very first tap
+        anchorAudio.play().then(() => {
+            anchorAudio.pause(); 
+        }).catch(err => console.log("Anchor audio blocked", err));
 
         if(player && typeof player.unMute === 'function') {
             player.unMute();
